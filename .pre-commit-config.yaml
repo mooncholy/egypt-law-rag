@@ -1,0 +1,44 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.16.6
+  hooks:
+  - id: ruff
+    args: [--fix]
+
+  - id: ruff-format
+
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v6.0.0
+  hooks:
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: check-yaml
+  - id: check-added-large-files
+    args: [--maxkb=1024]
+  - id: mixed-line-ending
+    args: [--fix=lf]
+
+- repo: https://github.com/treeverse/dvc
+  rev: 3.67.1
+  hooks:
+  - id: dvc-pre-commit
+    additional_dependencies:
+    - .[all]
+    language_version: python3
+    stages:
+    - pre-commit
+  - id: dvc-pre-push
+    additional_dependencies:
+    - .[all]
+    language_version: python3
+    stages:
+    - pre-push
+  - id: dvc-post-checkout
+    additional_dependencies:
+    - .[all]
+    language_version: python3
+    stages:
+    - post-checkout
+    always_run: true
