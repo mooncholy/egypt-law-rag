@@ -1,0 +1,67 @@
+[project]
+name = "egypt-law-rag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "mooncholy", email = "m.yzh.zayn@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+egypt-law-rag = "raglaw:main"
+
+[build-system]
+requires = ["uv_build>=0.12.20,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+# Plain `uv sync` / `uv run` keep the pipeline installed; the Docker image
+# opts out with `uv sync --no-default-groups`.
+default-groups = ["dev", "ingest"]
+
+[tool.uv.build-backend]
+module-name = "raglaw"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",
+    "pdfplumber>=0.11.10",
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.9",
+]
+ingest = [
+    "awscli>=1.46.1",
+    "boto3>=1.43.75",
+    "dvc[s3]>=3.67.1",
+    "mlflow>=3.16.1",
+    "pikepdf>=10.15.0",
+    "pymupdf>=1.28.2",
+    "pyyaml>=6.0.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "unit: synthetic inputs or the stub",
+    "smoke: end to end on the committed fixture PDFs",
+    "profile: needs the DVC-tracked PDF (raw baselines)",
+    "corpus: needs the DVC-tracked corpus (validate metrics)",
+]
+
+[tool.coverage.run]
+source = ["raglaw"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
