@@ -32,6 +32,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          # Read the cache `test` saves (its full install covers this job's); only
+          # one job writes, since all three share the same uv.lock-based key.
+          save-cache: false
       - uses: actions/cache@v6
         with:
           path: ~/.cache/pre-commit
@@ -66,6 +69,9 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
+          # Read the cache `test` saves (its full install covers this job's); only
+          # one job writes, since all three share the same uv.lock-based key.
+          save-cache: false
       - run: uv sync --locked --no-default-groups
       # Fails if the API imports anything outside the runtime group, or can't
       # serve. No LLM key and no index here, so it reports "degraded".
