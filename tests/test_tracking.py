@@ -77,9 +77,9 @@ def test_artifacts_land_under_the_configured_root(tracking_settings, mlflow_clie
         pass
 
     experiment = mlflow_client.get_experiment_by_name(
-        tracking_settings.tracking.experiment
+        tracking_settings.tracking.experiments.corpus
     )
-    root = f"{tracking_settings.mlflow_artifact_root}/{tracking_settings.tracking.experiment}"
+    root = f"{tracking_settings.mlflow_artifact_root}/{tracking_settings.tracking.experiments.corpus}"
     assert experiment.artifact_location == root
     assert mlflow_client.get_run(run.run_id).info.artifact_uri.startswith(root)
 
@@ -113,7 +113,7 @@ def test_deleted_experiment_fails_loudly(tracking_settings, mlflow_client):
     with stage_run("profile", input_hash="x", settings=tracking_settings):
         pass
     experiment = mlflow_client.get_experiment_by_name(
-        tracking_settings.tracking.experiment
+        tracking_settings.tracking.experiments.corpus
     )
     mlflow_client.delete_experiment(experiment.experiment_id)
 

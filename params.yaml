@@ -20,6 +20,8 @@ root_heading:
   ar: "باب تمهيدي / أحكام عامة"
   en: TODO
 
-# MLflow: one run per stage execution, in this experiment.
+# MLflow: one experiment per kind of work, since runs are compared within one.
+# Not a stage input: never list these under a stage's `params:` in dvc.yaml.
 tracking:
-  experiment: corpus-build
+  experiments:
+    corpus: corpus-build   # one run per `dvc repro` stage execution

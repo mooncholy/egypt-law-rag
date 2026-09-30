@@ -5,7 +5,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from raglaw.config import Paths, RootHeading, Settings, Tracking
+from raglaw.config import Experiments, Paths, RootHeading, Settings
 
 pytestmark = pytest.mark.unit
 
@@ -118,8 +118,8 @@ def test_env_settings_reject_invalid_values(clean_env, field, bad):
 
 @pytest.mark.parametrize("bad", ["Corpus Build", "-leading-dash", ""])
 def test_experiment_name_must_be_safe_as_an_s3_prefix(bad):
-    with pytest.raises(ValidationError, match="experiment"):
-        Tracking(experiment=bad)
+    with pytest.raises(ValidationError, match="corpus"):
+        Experiments(corpus=bad)
 
 
 def test_root_heading_must_not_be_blank():

@@ -149,8 +149,12 @@ def tracking_settings(
             # test_x[None] -> test_x-none-
             "tracking": settings.tracking.model_copy(
                 update={
-                    "experiment": re.sub(
-                        r"[^a-z0-9._-]+", "-", request.node.name.lower()
+                    "experiments": settings.tracking.experiments.model_copy(
+                        update={
+                            "corpus": re.sub(
+                                r"[^a-z0-9._-]+", "-", request.node.name.lower()
+                            )
+                        }
                     )
                 }
             ),

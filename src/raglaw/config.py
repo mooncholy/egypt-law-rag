@@ -60,13 +60,27 @@ class RootHeading(BaseModel):
     )
 
 
-class Tracking(BaseModel):
-    """Where MLflow groups the pipeline's runs."""
+# An experiment's name is also its S3 prefix under the artifact root.
+ExperimentName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9._-]*$")]
 
-    experiment: str = Field(
-        pattern=r"^[a-z0-9][a-z0-9._-]*$",
-        description="MLflow experiment name. It is also the S3 prefix under the "
-        "artifact root, so lowercase letters, digits, `.`, `_` and `-` only.",
+
+class Experiments(BaseModel):
+    """One MLflow experiment per kind of work, since runs are compared within one.
+
+    Later kinds (retrieval and answer evaluation) add a field each here.
+    """
+
+    corpus: ExperimentName = Field(
+        description="Every `dvc repro` stage run (`stage_run`). Lowercase "
+        "letters, digits, `.`, `_` and `-` only."
+    )
+
+
+class Tracking(BaseModel):
+    """How MLflow groups the project's runs."""
+
+    experiments: Experiments = Field(
+        description="The experiment for each kind of work."
     )
 
 

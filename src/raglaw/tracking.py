@@ -95,9 +95,10 @@ def _git(*args: str) -> str:
     return result.stdout.strip()
 
 
-def _experiment_id(client: MlflowClient, settings: Settings) -> str:
+def _experiment_id(client: MlflowClient, settings: Settings, name: str) -> str:
     """
-    Find or create the experiment, refusing one whose artifacts live elsewhere.
+    Find or create the named experiment, refusing one whose artifacts live
+    elsewhere. Takes the name, so each kind of work passes its own.
 
     MLflow fixes an experiment's artifact location when it is created, so an
     experiment made before the S3 root was configured would keep writing
@@ -107,7 +108,6 @@ def _experiment_id(client: MlflowClient, settings: Settings) -> str:
     - TrackingConfigError: the experiment is deleted, or its artifact
       location differs from the configured one
     """
-    name = settings.tracking.experiment
     wanted = (
         f"{settings.mlflow_artifact_root.rstrip('/')}/{name}"
         if settings.mlflow_artifact_root
@@ -156,7 +156,9 @@ def stage_run(
 
     client = MlflowClient(tracking_uri=settings.mlflow_tracking_uri)
     sha, dirty = git_state()
-    experiment_id = _experiment_id(client, settings)
+    experiment_id = _experiment_id(
+        client, settings, settings.tracking.experiments.corpus
+    )
     run = client.create_run(
         experiment_id,
         run_name=stage,
