@@ -5,7 +5,7 @@ Usage:
         --out docs/analysis/source_pdf
 
 The output is gitignored. Check a rerun against the committed checksums with:
-    sha256sum -c docs/reports/source_pdf_analysis.sha256
+    sha256sum -c docs/reports/0_source_pdf_analysis.sha256
 
 Outputs (in --out):
     summary.json            one entry per prerequisite ID, with the computed evidence
