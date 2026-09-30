@@ -17,16 +17,11 @@ class LogEvent(StrEnum):
     REQUEST_COMPLETED = "request_completed"
     REQUEST_FAILED = "request_failed"
 
-    # Pipeline events
-    DATA_INGESTION_START = "data_ingestion_start"
-    DATA_INGESTION_COMPLETED = "data_ingestion_completed"
-    DATA_INGESTION_FAILED = "data_ingestion_failed"
-    DATA_MANIPULATION_FAILED = "data_manipulation_failed"
-    TRAINING_START = "training_start"
-    TRAINING_COMPLETED = "training_completed"
-    TRAINING_FAILED = "training_failed"
-    EXPORT_COMPLETED = "export_completed"
-    EXPORT_FAILED = "export_failed"
-    PREDICTION_COMPLETED = "prediction_completed"
-    PREDICTION_FAILED = "prediction_failed"
     VALIDATION_FAILED = "validation_failed"
+
+    # Pipeline events: each DVC stage logs its input hash at start and its
+    # output counts at completion; anomalies are never silently absorbed.
+    STAGE_START = "stage_start"
+    STAGE_COMPLETED = "stage_completed"
+    STAGE_FAILED = "stage_failed"
+    ANOMALY = "anomaly"

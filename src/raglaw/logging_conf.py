@@ -16,6 +16,20 @@ ACCESS_LOGGER: Final[str] = "uvicorn.access"
 _RESERVED_KEYS = frozenset(
     vars(logging.LogRecord("", logging.INFO, "", 0, "", (), None))
 )
+# Set on a record by formatters (``message``, ``asctime``) or by uvicorn
+# (``color_message``, the same text with terminal colour codes), not by callers.
+_NON_EXTRA_KEYS = _RESERVED_KEYS | {"message", "asctime", "color_message"}
+
+
+def extra_fields(record: logging.LogRecord) -> dict[str, Any]:
+    """
+    Return the fields a caller attached through ``extra={...}``.
+
+    returns:
+    - fields (dict[str, Any]): every record attribute that logging itself does
+      not set, keyed by name
+    """
+    return {k: v for k, v in record.__dict__.items() if k not in _NON_EXTRA_KEYS}
 
 
 class JsonFormatter(logging.Formatter):
@@ -44,9 +58,8 @@ class JsonFormatter(logging.Formatter):
             "correlation_id": corr_id,
             "message": record.getMessage(),
         }
-        for key, value in record.__dict__.items():
-            if key not in _RESERVED_KEYS and key not in payload:
-                payload[key] = value
+        for key, value in extra_fields(record).items():
+            payload.setdefault(key, value)
         return json.dumps(payload, default=str)
 
 
@@ -60,14 +73,14 @@ def get_logger(name: str) -> logging.Logger:
 
     returns:
     - logger (logging.Logger): a logger writing JSON to stdout at the level in
-      ``PRODML_LOG_LEVEL``, defaulting to INFO
+      ``RAGLAW_LOG_LEVEL``, defaulting to INFO
     """
     logger = logging.getLogger(name)
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(JsonFormatter())
         logger.addHandler(handler)
-        logger.setLevel(os.getenv("PRODML_LOG_LEVEL", "INFO").upper())
+        logger.setLevel(os.getenv("RAGLAW_LOG_LEVEL", "INFO").upper())
         logger.propagate = False
     return logger
 
@@ -92,7 +105,7 @@ def configure_server_logging() -> None:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(JsonFormatter())
         server_logger.addHandler(handler)
-        server_logger.setLevel(os.getenv("PRODML_LOG_LEVEL", "INFO").upper())
+        server_logger.setLevel(os.getenv("RAGLAW_LOG_LEVEL", "INFO").upper())
         server_logger.propagate = False
 
     access_logger = logging.getLogger(ACCESS_LOGGER)
