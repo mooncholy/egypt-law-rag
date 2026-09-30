@@ -1,5 +1,7 @@
 import logging
 import os
+import re
+import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -7,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from mlflow.tracking import MlflowClient
 
 from raglaw.api.main import create_app
 from raglaw.api.schemas import ComponentStatus
@@ -113,6 +116,84 @@ def log_records(
         ]
 
     return _records
+
+
+# --- Tracking --------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def tracking_db(tmp_path_factory: pytest.TempPathFactory) -> str:
+    """One MLflow sqlite database for the session; creating one takes ~1.5 s."""
+    return f"sqlite:///{tmp_path_factory.mktemp('mlflow')}/mlflow.db"
+
+
+@pytest.fixture
+def tracking_settings(
+    tracking_db: str, tmp_path: Path, request: pytest.FixtureRequest
+) -> Settings:
+    """Settings for a tracked stage, isolated per test.
+
+    The session database, but an experiment named after this test, with its
+    artifacts and logs under ``tmp_path``. No AWS profile, so nothing reaches S3.
+    """
+    settings = Settings(
+        _env_file=None,
+        mlflow_tracking_uri=tracking_db,
+        mlflow_artifact_root=f"file://{tmp_path}/artifacts",
+        aws_profile=None,
+    )
+    return settings.model_copy(
+        update={
+            "paths": settings.paths.model_copy(update={"logs_dir": tmp_path / "logs"}),
+            # model_copy skips validation, so make the name valid here:
+            # test_x[None] -> test_x-none-
+            "tracking": settings.tracking.model_copy(
+                update={
+                    "experiment": re.sub(
+                        r"[^a-z0-9._-]+", "-", request.node.name.lower()
+                    )
+                }
+            ),
+        }
+    )
+
+
+@pytest.fixture
+def mlflow_client(tracking_db: str) -> MlflowClient:
+    """A client on the session database, for reading back what a stage recorded."""
+    return MlflowClient(tracking_uri=tracking_db)
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A throwaway git repo as the working directory, committed clean.
+
+    It holds a tracked module under ``src/``, a ``dvc.lock`` outside the code
+    paths, and a ``.gitignore`` for ``__pycache__``, so a test can change one
+    kind of file and see what ``git_state`` makes of it.
+    """
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "stage.py").write_text("ROWS = 1\n")
+    (tmp_path / "dvc.lock").write_text("md5: 1\n")
+    (tmp_path / ".gitignore").write_text("__pycache__/\n")
+    # Signing and hooks off, so a developer's global git config can't interfere.
+    git = [
+        "git",
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "commit.gpgsign=false",
+    ]
+    for args in (
+        ["init", "-q"],
+        ["add", "."],
+        ["commit", "-q", "--no-verify", "-m", "init"],
+    ):
+        subprocess.run([*git, *args], cwd=tmp_path, check=True, capture_output=True)
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
 
 
 # --- API -------------------------------------------------------------------

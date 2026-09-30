@@ -3,8 +3,9 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
-from raglaw.config import Settings
+from raglaw.config import Paths, RootHeading, Settings, Tracking
 
 pytestmark = pytest.mark.unit
 
@@ -80,3 +81,47 @@ def test_missing_params_yaml_fails_loudly(tmp_path, monkeypatch, clean_env):
 
     with pytest.raises(ValueError, match="paths"):
         Settings(_env_file=None)
+
+
+VALID_PATHS = {
+    "raw_pdf": "data/raw/civil_code.pdf",
+    "errata": "data/errata.yaml",
+    "interim_dir": "data/interim",
+    "corpus_dir": "data/corpus",
+    "gold_dir": "data/gold",
+    "metrics_dir": "docs/metrics",
+    "reports_dir": "docs/reports",
+    "logs_dir": "logs",
+}
+
+
+@pytest.mark.parametrize("bad", ["/data/raw/civil_code.pdf", "../outside.pdf"])
+def test_paths_must_stay_inside_the_repo(bad):
+    with pytest.raises(ValidationError, match="relative to the repo root"):
+        Paths.model_validate({**VALID_PATHS, "raw_pdf": bad})
+
+
+@pytest.mark.parametrize(
+    ("field", "bad"),
+    [
+        ("s3_bucket", "Has_Upper_And_Underscore"),
+        ("s3_bucket", "ab"),
+        ("mlflow_artifact_root", "gs://elsewhere/mlflow"),
+        ("aws_profile", "  "),
+        ("mlflow_tracking_uri", ""),
+    ],
+)
+def test_env_settings_reject_invalid_values(clean_env, field, bad):
+    with pytest.raises(ValidationError, match=field):
+        Settings(_env_file=None, **{field: bad})
+
+
+@pytest.mark.parametrize("bad", ["Corpus Build", "-leading-dash", ""])
+def test_experiment_name_must_be_safe_as_an_s3_prefix(bad):
+    with pytest.raises(ValidationError, match="experiment"):
+        Tracking(experiment=bad)
+
+
+def test_root_heading_must_not_be_blank():
+    with pytest.raises(ValidationError, match="en"):
+        RootHeading(ar="باب تمهيدي / أحكام عامة", en="   ")

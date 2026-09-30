@@ -48,6 +48,11 @@ ingest = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+filterwarnings = [
+    # Raised inside MLflow's SQLAlchemy models (deprecated in SQLAlchemy 2.1);
+    # not ours to fix. Every other deprecation still shows.
+    "ignore:The ``noload`` loader strategy is deprecated:DeprecationWarning",
+]
 markers = [
     "unit: synthetic inputs or the stub",
     "smoke: end to end on the committed fixture PDFs",

@@ -1,6 +1,7 @@
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import BaseModel, SecretStr
+from pydantic import AfterValidator, BaseModel, Field, SecretStr, StringConstraints
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -9,24 +10,64 @@ from pydantic_settings import (
 )
 
 
+def _inside_repo(path: Path) -> Path:
+    """Reject absolute paths and ``..``: dvc.yaml names the same paths from the root."""
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("must be relative to the repo root and stay inside it")
+    return path
+
+
+RepoPath = Annotated[Path, AfterValidator(_inside_repo)]
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
 class Paths(BaseModel):
     """Where the pipeline reads and writes, relative to the repo root."""
 
-    raw_pdf: Path
-    errata: Path
-    interim_dir: Path
-    corpus_dir: Path
-    gold_dir: Path
-    metrics_dir: Path
-    reports_dir: Path
-    logs_dir: Path
+    raw_pdf: RepoPath = Field(
+        description="The source PDF, placed by `dvc pull` (DVC-tracked)."
+    )
+    errata: RepoPath = Field(
+        description="Owner-approved fixes for one-off source errors (git-tracked YAML)."
+    )
+    interim_dir: RepoPath = Field(
+        description="Row-level outputs of `extract` and `repair` (DVC-tracked)."
+    )
+    corpus_dir: RepoPath = Field(
+        description="`articles.json` and `chunks.json` (DVC-tracked)."
+    )
+    gold_dir: RepoPath = Field(
+        description="The 30 hand-corrected gold articles (DVC-tracked)."
+    )
+    metrics_dir: RepoPath = Field(
+        description="Stage metrics as JSON, read by `dvc metrics` (git-tracked)."
+    )
+    reports_dir: RepoPath = Field(
+        description="Generated and hand-written reports (git-tracked)."
+    )
+    logs_dir: RepoPath = Field(
+        description="One JSONL log per stage run (gitignored; attached to MLflow)."
+    )
 
 
 class RootHeading(BaseModel):
     """The page 1 heading that opens every heading path (P7)."""
 
-    ar: str
-    en: str
+    ar: NonEmptyStr = Field(description="The heading as printed on page 1.")
+    en: NonEmptyStr = Field(
+        description="English label; the source has none, so the owner supplies it "
+        "(D7). `TODO` until then."
+    )
+
+
+class Tracking(BaseModel):
+    """Where MLflow groups the pipeline's runs."""
+
+    experiment: str = Field(
+        pattern=r"^[a-z0-9][a-z0-9._-]*$",
+        description="MLflow experiment name. It is also the S3 prefix under the "
+        "artifact root, so lowercase letters, digits, `.`, `_` and `-` only.",
+    )
 
 
 class Settings(BaseSettings):
@@ -54,16 +95,42 @@ class Settings(BaseSettings):
     )
 
     # From params.yaml
-    paths: Paths
-    root_heading: RootHeading
+    paths: Paths = Field(description="Pipeline inputs and outputs.")
+    root_heading: RootHeading = Field(description="The fixed root of heading paths.")
+    tracking: Tracking = Field(description="MLflow run grouping.")
 
-    # From the environment or .env. The key is optional so the service still
-    # starts without it: /health reports the gap and /ask answers 503.
-    llm_api_key: SecretStr | None = None
-    s3_bucket: str | None = None
-    mlflow_tracking_uri: str = "sqlite:///mlflow.db"
-    # s3://<bucket>/mlflow; unset, MLflow keeps artifacts beside its database.
-    mlflow_artifact_root: str | None = None
+    # From the environment or .env
+    llm_api_key: SecretStr | None = Field(
+        default=None,
+        description="Key for the OpenAI-compatible LLM backend. Optional so the "
+        "service still starts without it: /health reports the gap and /ask "
+        "answers 503.",
+    )
+    s3_bucket: (
+        Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")]
+        | None
+    ) = Field(
+        default=None,
+        description="The project bucket (prefixes `dvc/`, `mlflow/`, `eval/`). S3 "
+        "naming rules: 3–63 lowercase letters, digits, dots and hyphens.",
+    )
+    mlflow_tracking_uri: NonEmptyStr = Field(
+        default="sqlite:///mlflow.db",
+        description="Where MLflow keeps run records: a local, gitignored sqlite file.",
+    )
+    mlflow_artifact_root: (
+        Annotated[str, StringConstraints(pattern=r"^(s3|file)://\S+$")] | None
+    ) = Field(
+        default=None,
+        description="Root for run artifacts: `s3://<bucket>/mlflow`, or `file://` in "
+        "tests. Each experiment writes under `<root>/<experiment>`. Unset, MLflow "
+        "keeps artifacts beside its database.",
+    )
+    aws_profile: NonEmptyStr | None = Field(
+        default=None,
+        description="The ~/.aws profile boto3 uses for MLflow's S3 artifacts. DVC "
+        "reads its own from `.dvc/config.local`, which boto3 doesn't see.",
+    )
 
     @classmethod
     def settings_customise_sources(

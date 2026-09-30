@@ -1,4 +1,7 @@
 from enum import StrEnum
+from typing import Final
+
+SCHEMA_VERSION: Final = "1.0"
 
 
 class LogEvent(StrEnum):
