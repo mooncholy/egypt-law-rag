@@ -9,7 +9,7 @@ The evidence files are not committed. Regenerate them (needs `dvc pull` for the 
 
 ```bash
 uv run python scripts/analyze_source_pdf.py data/raw/civil_code.pdf
-sha256sum -c docs/reports/source_pdf_analysis.sha256
+sha256sum -c docs/reports/0_source_pdf_analysis.sha256
 ```
 
 Every line must read `OK`. A mismatch means the PDF or the script changed since this report was written, and the facts below must be re-checked.
@@ -59,3 +59,73 @@ Every line must read `OK`. A mismatch means the PDF or the script changed since 
 | P24 | Every multi-digit Arabic-Indic run (1,167) is stored right to left. Sorting its digits by ascending `x0` restores the order, which explains 987 of 990 header mismatches. The other 3: the page 7 repeal row, the page 147 typo row, and Article 601 (page 81), whose number is split by a space (`٠٦ ١`) | Measured | `P24_header_number_mismatches`, `number_mismatches.tsv` |
 | P25 | `find_tables().extract()` returns Arabic in reversed visual order; `get_text(clip=cell_bbox)` returns logical order | Measured | `extractor_comparison.txt` |
 | P26 | Spurious spaces also occur inside ordinary Arabic words (`قان ون`, page 4). Not measured, and no safe rule exists to repair them, so they are left as they are | Judgment | — |
+
+# Subsequent Decisions
+
+The pipeline follows these rules; each rests on the facts above. **Decided** rules follow directly from measured facts. **Judgment** rules are a reading of the source that the named gate confirms.
+
+## 1. Extraction (`extract`)
+
+| ID | Rule | Based on | Status |
+| --- | --- | --- | --- |
+| R1 | Segment by table rows only: one detected row is one unit. No regex over whole-page or whole-document text finds article boundaries | P3, P4, P13 | Decided |
+| R2 | Detect tables with `find_tables(strategy="lines_strict")`, never the default `lines` strategy | P3, P6 | Decided |
+| R3 | Read only inside the page's table. Text outside it is never read, which excludes the promulgation law | P7, D9 | Decided |
+| R4 | Build cell text from `get_text("rawdict", clip=cell_bbox)`, never `Table.extract()` | P25 | Decided |
+| R5 | Lam-alef: a zero-width alef variant directly before `ل` swaps with it, before characters are joined. Exactly 3,500 swaps | P23 | Decided; spelling confirmed by the gold set |
+| R6 | Digits: each multi-digit Arabic-Indic run is ordered by ascending `x0`. Exactly 1,167 runs | P24 | Decided |
+
+## 2. Repair (`repair`, in this order)
+
+| ID | Rule | Based on | Status |
+| --- | --- | --- | --- |
+| R7 | Errata first. An entry whose expected text is absent fails the stage | P9, P24 | Decided |
+| R8 | Split same-line headers: `Article N` plus body text becomes a header line and a body line. Exactly 6 | P8 | Decided |
+| R9 | Normalize the Arabic header: `مادة` with inner spaces or stray parentheses becomes one form, with the number on the same line. Exactly 13 spaced forms | P10 | Decided |
+| R10 | No other edits to source text. Spurious spaces inside ordinary Arabic words stay as they are | P26 | Judgment |
+
+## 3. Assembly (`assemble`)
+
+| ID | Rule | Based on | Status |
+| --- | --- | --- | --- |
+| R11 | Classify each row: **article** if the English cell's first line is a header (`Article N`); **heading** if every English span is bold; **continuation** if neither and it is the first row on its page; otherwise **anomaly**, logged and never merged. A trailing colon is not a heading signal | P5, P8, P15, P20 | Decided |
+| R12 | Only a header-form *first line* starts an article. Inline citations (`paragraph 2 of Article 717.`) never do | P13 | Decided |
+| R13 | A continuation merges into the last row of the previous page, and every merge is logged. A continuation with no previous page (an excerpt's first page) is an `orphan_continuation` anomaly | P5 | Decided |
+| R14 | Heading rank comes from the English keyword, case-insensitive: PART and the root 1, BOOK 2, CHAPTER 3, SECTION 4, numbered 5, unnumbered 6. A heading of rank *r* pops every open heading of rank ≥ *r* | P16, P17, P22 | Judgment, Gate 3 |
+| R15 | A heading is numbered if either language numbers it; when they disagree, a `numbering_mismatch` anomaly is logged | P21 | Decided |
+| R16 | In a multi-line heading cell, a keyword-only line plus the next line is one heading; a numbered line plus the next line is two | P18 | Judgment, Gate 3 |
+| R17 | A keyword-only heading that ends a page waits for its title on the next page | P19 | Decided |
+| R18 | The root heading `باب تمهيدي / أحكام عامة` opens every heading stack at rank 1; its English label comes from config | P7, D7 | Decided; label pending (D7) |
+| R19 | Both repeal formats expand to one record per article (54–80, 389–417), each marked repealed | P12 | Decided |
+| R20 | Records are keyed on the English article number; the Arabic number must agree after R6, R7 and R9 | P11, P24 | Decided |
+
+## 4. Validation and chunking
+
+| ID | Rule | Based on | Status |
+| --- | --- | --- | --- |
+| R21 | Article numbers run exactly 1 to 1,149, with no duplicates and no gaps | P11 | Decided |
+| R22 | An article longer than `max_chars` splits only at Arabic paragraph markers (`(١)`, `(٢)`, …). A single paragraph longer than `max_chars` is an anomaly, not cut. The full English text goes on every part | P14, D4 | Decided |
+| R23 | The `profile` stage re-measures the raw baselines above on every build; any mismatch stops `dvc repro` before a repair runs | All measured Ps | Decided |
+
+## 5. Errata
+
+Errata fix **one known error at one place** in the source, where a rule would be unsafe: each is a single occurrence with no pattern to generalize. They live in `data/errata.yaml`, tracked by git, not DVC.
+
+**Rules for every entry**
+
+- One entry per known source error: `page`, `row`, `side` (`en` or `ar`), `expect`, `replace`, `reason` (naming its P).
+- `page` is the source page number (1-based), also for the fixture excerpts, which pass `--first-page`. `row` is the 0-based index of the row in that page's `lines_strict` table, as in the analysis output.
+- `expect` must equal a **whole line** of that cell, never part of one. `rticle 452` is a substring of its own fix, so substring matching would re-apply to corrected text.
+- An entry whose `expect` isn't found at its page, row and side **fails the stage**: a changed source stops the build instead of being patched in the wrong place.
+- Errata apply first in `repair`, after the glyph repairs of `extract` (R5, R6), so `expect` is written in post-glyph-repair text.
+- The owner approves every entry before it takes effect (Gate 2). The errata count in `docs/metrics/repair.json` must equal the number of entries.
+
+**Entries**
+
+| # | Page, row, side | Expect → replace | Reason | Status |
+| --- | --- | --- | --- | --- |
+| E1 | 59, 2, en | `rticle 452` → `Article 452` | Header typo: missing `A` (P9) | Proposed |
+| E2 | 147, 6, en | `Article1022` → `Article 1022` | Header typo: missing space (P9) | Proposed |
+| E3 | 81, 6, ar | Filled in Phase 2 from `rows.jsonl` | Article 601's number split by a space, `٠٦ ١` in the raw text (P24) | Pending: `expect` needs the post-R6 text |
+
+E1 and E2 were re-checked against the PDF: the first English line at those rows is exactly `rticle 452` and `Article1022`.
