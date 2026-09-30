@@ -20,25 +20,30 @@ repos:
   - id: mixed-line-ending
     args: [--fix=lf]
 
-- repo: https://github.com/treeverse/dvc
-  rev: 3.67.1
+- repo: local
   hooks:
   - id: dvc-pre-commit
-    additional_dependencies:
-    - .[all]
-    language_version: python3
-    stages:
-    - pre-commit
-  - id: dvc-pre-push
-    additional_dependencies:
-    - .[all]
-    language_version: python3
-    stages:
-    - pre-push
-  - id: dvc-post-checkout
-    additional_dependencies:
-    - .[all]
-    language_version: python3
-    stages:
-    - post-checkout
+    name: dvc-pre-commit
+    entry: uv run --no-sync dvc git-hook pre-commit
+    language: system
     always_run: true
+    pass_filenames: false
+    verbose: true          # dvc status exits 0 even when data changed; show its report
+    stages: [pre-commit]
+
+  - id: dvc-pre-push
+    name: dvc-pre-push
+    entry: uv run --frozen dvc git-hook pre-push
+    language: system
+    always_run: true
+    pass_filenames: false
+    verbose: true          # show what dvc push uploaded
+    stages: [pre-push]
+
+  - id: dvc-post-checkout
+    name: dvc-post-checkout
+    entry: uv run --frozen dvc git-hook post-checkout
+    language: system
+    always_run: true
+    pass_filenames: false
+    stages: [post-checkout]
