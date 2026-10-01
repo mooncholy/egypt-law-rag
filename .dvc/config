@@ -1,0 +1,4 @@
+[core]
+    remote = storage
+['remote "storage"']
+    url = s3://mlops-rag-data-773317598646-eu-north-1-an/dvc

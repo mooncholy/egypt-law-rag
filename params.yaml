@@ -1,0 +1,27 @@
+# Tracked project parameters, read by raglaw.config.Settings and, from Phase 1,
+# by dvc.yaml through ${...} (e.g. ${paths.raw_pdf}). Changing a value here is
+# a reviewed change, and `dvc repro` reruns the stages that depend on it.
+# Per-machine and secret values (API key, bucket, MLflow URI) go in .env instead.
+
+# Relative to the repo root, where `dvc repro` runs its stages.
+paths:
+  raw_pdf: data/raw/civil_code.pdf
+  errata: data/errata.yaml
+  interim_dir: data/interim
+  corpus_dir: data/corpus
+  gold_dir: data/gold
+  metrics_dir: docs/metrics
+  reports_dir: docs/reports
+  logs_dir: logs
+
+# The page 1 heading that opens every heading path (P7). It has no English side
+# in the source; the owner supplies the label (D7).
+root_heading:
+  ar: "باب تمهيدي / أحكام عامة"
+  en: TODO
+
+# MLflow: one experiment per kind of work, since runs are compared within one.
+# Not a stage input: never list these under a stage's `params:` in dvc.yaml.
+tracking:
+  experiments:
+    corpus: corpus-build   # one run per `dvc repro` stage execution

@@ -1,0 +1,58 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.16.6
+  hooks:
+  - id: ruff
+    args: [--fix]
+
+  - id: ruff-format
+
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v6.0.0
+  hooks:
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: check-yaml
+  - id: check-added-large-files
+    args: [--maxkb=1024]
+  - id: mixed-line-ending
+    args: [--fix=lf]
+
+- repo: local
+  hooks:
+  # Every `uses:` pin must exist on GitHub, so a bad pin fails the commit
+  # instead of CI. Runs only when a workflow changes; needs network access
+  # (offline: SKIP=check-action-pins git commit ...).
+  - id: check-action-pins
+    name: check-action-pins
+    entry: scripts/check_action_pins.sh
+    language: script
+    files: ^\.github/workflows/.*\.ya?ml$
+
+  - id: dvc-pre-commit
+    name: dvc-pre-commit
+    entry: uv run --no-sync dvc git-hook pre-commit
+    language: system
+    always_run: true
+    pass_filenames: false
+    verbose: true          # dvc status exits 0 even when data changed; show its report
+    stages: [pre-commit]
+
+  - id: dvc-pre-push
+    name: dvc-pre-push
+    entry: uv run --frozen dvc git-hook pre-push
+    language: system
+    always_run: true
+    pass_filenames: false
+    verbose: true          # show what dvc push uploaded
+    stages: [pre-push]
+
+  - id: dvc-post-checkout
+    name: dvc-post-checkout
+    entry: uv run --frozen dvc git-hook post-checkout
+    language: system
+    always_run: true
+    pass_filenames: false
+    stages: [post-checkout]
