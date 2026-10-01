@@ -186,16 +186,17 @@ def stage_run(
         },
     )
     status = "FINISHED"
+    stage_exc: BaseException | None = None
     try:
         yield StageRun(run_id=run_id, log_path=log_path, _client=client)
-    except Exception:
-        status = "FAILED"
+    except Exception as exc:
+        status, stage_exc = "FAILED", exc
         logger.exception(
             "Stage failed", extra={**stage_fields, "event_type": LogEvent.STAGE_FAILED}
         )
         raise
-    except BaseException:
-        status = "KILLED"
+    except BaseException as exc:
+        status, stage_exc = "KILLED", exc
         logger.warning(
             "Stage interrupted",
             extra={**stage_fields, "event_type": LogEvent.STAGE_FAILED},
@@ -208,5 +209,13 @@ def stage_run(
         )
     finally:
         close_logging()
-        client.log_artifact(run_id, str(log_path), artifact_path="logs")
-        client.set_terminated(run_id, status)
+        try:
+            client.log_artifact(run_id, str(log_path), artifact_path="logs")
+        except Exception as upload_exc:
+            if stage_exc is None:
+                # The stage succeeded; the upload failure is the error to report.
+                status = "FAILED"
+                raise
+            stage_exc.add_note(f"Uploading the stage log also failed: {upload_exc!r}")
+        finally:
+            client.set_terminated(run_id, status)
