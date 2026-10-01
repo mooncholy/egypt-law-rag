@@ -33,6 +33,7 @@ dev = [
     "httpx2>=2.13.1",
     "pdfplumber>=0.11.10",
     "pre-commit>=4.6.2",
+    "pylint>=4.1.1",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.16.9",
