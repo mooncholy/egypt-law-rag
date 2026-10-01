@@ -1,0 +1,31 @@
+# Owner-approved fixes for known one-off errors in data/raw/civil_code.pdf.
+# Rules and reasons: docs/reports/0_source_pdf_analysis.md, section 6.
+#
+# - page: source page number (1-based), also for fixture excerpts.
+# - row:  0-based index of the row in that page's `lines_strict` table.
+# - side: en or ar.
+# - expect: a whole line of that cell, after the extract-stage glyph repairs.
+#   If it isn't found there, the `repair` stage fails.
+# - replace: the line that takes its place.
+
+- page: 59
+  row: 2
+  side: en
+  expect: "rticle 452"
+  replace: "Article 452"
+  reason: "Header typo: missing 'A' (P9)"
+
+- page: 147
+  row: 6
+  side: en
+  expect: "Article1022"
+  replace: "Article 1022"
+  reason: "Header typo: missing space (P9)"
+
+# TODO: Phase 2 adds the third entry, once rows.jsonl shows the post-repair text:
+# - page: 81
+#   row: 6
+#   side: ar
+#   expect: "<Article 601's split number line, from rows.jsonl>"
+#   replace: "<the same line with the number whole>"
+#   reason: "Article 601's number split by a space (P24)"
