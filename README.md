@@ -1,2 +1,105 @@
 # egypt-law-rag
-A RAG implementation of a chatbot used to answer questions regarding the civil laws in Egypt.
+
+A retrieval-augmented generation (RAG) chatbot that answers questions about the Egyptian Civil Code.
+The source is a bilingual PDF (170 pages, English and Arabic side by side).
+A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
+
+**Status:** Phase 1 (corpus build) is in progress.
+- Done: the `profile` stage checks the raw PDF against the analyzed baselines.
+- Next: `extract`, `repair`, `assemble`, `validate`, then `chunk`.
+- `/ask` answers 501 until retrieval is built.
+
+## Quickstart
+
+### Prerequisites
+
+- [uv](https://docs.astral.sh/uv/) **0.12.20**, which is pinned in `pyproject.toml`. uv installs Python 3.14 itself.
+- For the data and the tracking store only: an AWS profile with access to the project bucket.
+  - Unit and smoke tests don't need it. They run on the PDF excerpts committed under `tests/fixtures/`.
+
+### Setup
+
+```bash
+git clone <repo-url> && cd egypt-law-rag
+uv sync                      # dev + ingest groups, from uv.lock
+cp .env.example .env         # then set RAGLAW_AWS_PROFILE (and RAGLAW_LLM_API_KEY if you have one)
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type post-checkout
+uv run dvc pull              # fetches data/raw/civil_code.pdf from S3
+```
+
+### Run
+
+```bash
+uv run pytest -m "unit or smoke" --cov   # what CI runs; no data needed
+uv run pytest -m "profile or corpus"     # needs `dvc pull` and `dvc repro`
+uv run dvc repro                         # run the pipeline
+uv run dvc metrics show                  # each stage's checks and counts
+uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # one run per stage execution
+uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0.0.1:8000/docs
+```
+
+`GET /health` reports `degraded` until an LLM key and the retrieval index are present. It still answers 200, so a container healthcheck stays green.
+
+### Where things live
+
+| Path | What |
+| --- | --- |
+| `params.yaml` | Tracked parameters (paths, chunking, root heading), shared with `dvc.yaml` |
+| `.env` | Per-machine and secret values only (key, bucket, MLflow URI, AWS profile) |
+| `dvc.yaml`, `dvc.lock` | The pipeline: `profile → extract → repair → assemble → validate → chunk` |
+| `src/raglaw/ingest/` | One module per stage, runnable as `python -m raglaw.ingest.<stage>` |
+| `src/raglaw/schema.py`, `records.py` | Record models and their versioned file format |
+| `src/raglaw/api/` | The FastAPI service |
+| `data/errata.yaml` | Owner-approved fixes for one-off source errors |
+| `docs/reports/0_source_pdf_analysis.md` | The source facts (P1 to P26) and the rules (R1 to R23) built on them |
+| `docs/normalization.md` | Arabic normalization rules, shared by ingestion and query time |
+| `docs/metrics/` | Stage metrics read by `dvc metrics` |
+
+## Contributing
+
+### Workflow
+
+1. Branch off `main`, one branch per phase or feature (e.g., `phase-1-corpus`).
+2. Write the tests first. The rules in `docs/reports/0_source_pdf_analysis.md` are the spec. Never change an expected value or a threshold to make a test pass. If the data contradicts a rule, stop and raise it with the evidence (page, row index and the extracted text).
+3. Commit with a conventional prefix: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+4. Open a PR to `main`. CI must be green.
+
+### What CI checks
+
+| Job | Command | Needs |
+| --- | --- | --- |
+| lint | `pre-commit run --all-files` | dev group only |
+| test | `pytest -m "unit or smoke" --cov` (80% coverage gate) | no S3 access |
+| runtime | serves `/health` with `uv sync --no-default-groups` | API dependencies only |
+
+The runtime job fails if the API imports anything outside the runtime dependencies. Keep `pymupdf`, `mlflow` and other pipeline imports out of `raglaw.api` and `raglaw.schema`.
+
+### Test markers
+
+| Marker | Runs on | Where |
+| --- | --- | --- |
+| `unit` | Synthetic inputs | CI and locally |
+| `smoke` | The four PDF excerpts in `tests/fixtures/` | CI and locally |
+| `profile` | The full PDF, via `docs/metrics/source_profile.json` | Locally, after `dvc pull` |
+| `corpus` | The built corpus, via the `validate` metrics | Locally, after `dvc repro` |
+
+`profile` and `corpus` tests skip themselves when the PDF isn't pulled. All pytest fixtures go in `tests/conftest.py`, never in test modules.
+
+### Pipeline rules
+
+- **Segment by table rows only.** Article boundaries come from the PDF's table rows, never from a regex over page or document text.
+- **Repairs come from a rule or an errata entry.** No other edits to source text. A new errata entry needs owner approval and must match a whole line.
+- **Surface anomalies, never absorb them.** Log each one with `log_anomaly` at WARNING, and count it in the stage's metrics.
+- **Log, never `print`.** Ruff enforces this (`T20`).
+- **Wrap every stage in `stage_run`.** Pass the input hash and the model it writes (`output_model=`), so its MLflow run records both.
+- **List a stage's code in its `dvc.yaml` dependencies.** Include `src/raglaw/schema.py` for any stage that writes records, so a code change reruns it.
+- **Keep data out of git.** Everything under `data/` is tracked by DVC, except `data/errata.yaml`. The pre-push hook runs `dvc push`.
+- **Schema versions are automatic.** A model's version is a fingerprint of its fields, types and constraints (`Record.schema_fingerprint()`). Never set one by hand. Reading a file written under another fingerprint fails, and `dvc repro` rebuilds it.
+- **Keep the analysis evidence byte-identical.** Changes to `src/raglaw/ingest/measure.py` must keep `docs/analysis/source_pdf/` (rewritten by `dvc repro profile`) passing `sha256sum -c docs/reports/0_source_pdf_analysis.sha256`. The `profile` tests check this.
+
+### Configuration
+
+- **New project parameter:** add it to `params.yaml` and to `Settings` in `src/raglaw/config.py`.
+- **New per-machine or secret value:** add it to `.env.example` and `Settings`.
+
+`tests/test_config.py` fails if a setting lives in both files or in neither.
