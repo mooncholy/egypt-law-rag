@@ -90,7 +90,7 @@ The pipeline follows these rules; each rests on the facts above. **Decided** rul
 | --- | --- | --- | --- |
 | R11 | Classify each row: **article** if the English cell's first line is a header (`Article N`); **heading** if every English span is bold; **continuation** if neither and it is the first row on its page; otherwise **anomaly**, logged and never merged. A trailing colon is not a heading signal | P5, P8, P15, P20 | Decided |
 | R12 | Only a header-form *first line* starts an article. Inline citations (`paragraph 2 of Article 717.`) never do | P13 | Decided |
-| R13 | A continuation merges into the last row of the previous page, and every merge is logged. A continuation with no previous page (an excerpt's first page) is an `orphan_continuation` anomaly | P5 | Decided |
+| R13 | A continuation merges into the last row of the previous page, and every merge is logged. A continuation with no previous row to merge into is an `orphan_continuation` anomaly | P5 | Decided |
 | R14 | Heading rank comes from the English keyword, case-insensitive: PART and the root 1, BOOK 2, CHAPTER 3, SECTION 4, numbered 5, unnumbered 6. A heading of rank *r* pops every open heading of rank ≥ *r* | P16, P17, P22 | Judgment, Gate 3 |
 | R15 | A heading is numbered if either language numbers it; when they disagree, a `numbering_mismatch` anomaly is logged | P21 | Decided |
 | R16 | In a multi-line heading cell, a keyword-only line plus the next line is one heading; a numbered line plus the next line is two | P18 | Judgment, Gate 3 |
@@ -114,7 +114,7 @@ Errata fix **one known error at one place** in the source, where a rule would be
 **Rules for every entry**
 
 - One entry per known source error: `page`, `row`, `side` (`en` or `ar`), `expect`, `replace`, `reason` (naming its P).
-- `page` is the source page number (1-based), also for the fixture excerpts, which pass `--first-page`. `row` is the 0-based index of the row in that page's `lines_strict` table, as in the analysis output.
+- `page` is the source page number (1-based). `row` is the 0-based index of the row in that page's `lines_strict` table, as in the analysis output.
 - `expect` must equal a **whole line** of that cell, never part of one. `rticle 452` is a substring of its own fix, so substring matching would re-apply to corrected text.
 - An entry whose `expect` isn't found at its page, row and side **fails the stage**: a changed source stops the build instead of being patched in the wrong place.
 - Errata apply first in `repair`, after the glyph repairs of `extract` (R5, R6), so `expect` is written in post-glyph-repair text.

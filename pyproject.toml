@@ -55,8 +55,7 @@ filterwarnings = [
     "ignore:The ``noload`` loader strategy is deprecated:DeprecationWarning",
 ]
 markers = [
-    "unit: synthetic inputs or the stub",
-    "smoke: end to end on the committed fixture PDFs",
+    "unit: synthetic inputs (including a generated PDF), no DVC data",
     "profile: needs the DVC-tracked PDF (raw baselines)",
     "corpus: needs the DVC-tracked corpus (validate metrics)",
 ]

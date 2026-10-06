@@ -38,12 +38,13 @@ def test_a_missing_side_is_none_not_dropped():
     assert ar is None
 
 
-@pytest.mark.smoke
-def test_rows_carry_source_page_numbers(fixture_pdfs):
-    with pymupdf.open(fixture_pdfs["pages_046_047"]) as doc:
-        rows = list(iter_rows(doc[0], 46))
+@pytest.mark.unit
+def test_a_ruled_page_yields_every_row_in_order(synthetic_pdf):
+    with pymupdf.open(synthetic_pdf) as doc:
+        rows = list(iter_rows(doc[0], 1))
 
-    assert {r.page for r in rows} == {46}
-    assert [r.index for r in rows] == list(range(len(rows)))
-    assert [r.is_last for r in rows] == [False] * (len(rows) - 1) + [True]
+    assert len(rows) == 4
+    assert {r.page for r in rows} == {1}
+    assert [r.index for r in rows] == [0, 1, 2, 3]
+    assert [r.is_last for r in rows] == [False, False, False, True]
     assert all(r.has_both_sides for r in rows)

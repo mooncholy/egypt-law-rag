@@ -9,16 +9,16 @@ stages:
       size: 2599703
     - path: src/raglaw/ingest/measure.py
       hash: md5
-      md5: b5e8307eb3beeb8d83cb25221263b108
-      size: 26445
+      md5: 230917a4998ec7b84552a75cf781b815
+      size: 26149
     - path: src/raglaw/ingest/profile.py
       hash: md5
-      md5: 6aee1e2e04d493af06d2bc0ce65ced60
-      size: 9186
+      md5: 77e4be8715b2d095796758a37ed05bff
+      size: 7982
     - path: src/raglaw/ingest/table.py
       hash: md5
-      md5: 043c5d0c735bbe3d9325792ebb8a5dbf
-      size: 3279
+      md5: 05a4471486a1aaeb841df68eabcee045
+      size: 3269
     outs:
     - path: docs/analysis/source_pdf
       hash: md5

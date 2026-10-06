@@ -46,7 +46,6 @@ def source(*rows: RowFacts) -> SourceFacts:
     )
     return SourceFacts(
         path=Path("x.pdf"),
-        first_page=1,
         metadata={},
         page_count=1,
         pages=[page],

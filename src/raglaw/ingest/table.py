@@ -85,7 +85,7 @@ def iter_rows(page: pymupdf.Page, page_number: int) -> Iterator[TableRow]:
 
     returns:
     - rows (Iterator[TableRow]): one per detected row, with ``page`` set to
-      ``page_number`` (the source page number, also for excerpts)
+      ``page_number`` (the source page number, 1-based)
     """
     for table in find_tables(page):
         last = len(table.rows) - 1

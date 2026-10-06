@@ -14,61 +14,85 @@ from raglaw.ingest.profile import (
     run_profile,
 )
 
-# --- Smoke: excerpts (S1) ---------------------------------------------------
+# --- Unit: the stage on a synthetic PDF ----------------------------------------
+
+# What the synthetic PDF (tests/conftest.py) measures as: two pages, seven rows,
+# no tag tree, and one header with body text on its line ("Article 2 No ...").
+SYNTHETIC_BASELINES = {
+    "PAGES": 2,
+    "FONTS": ["Helvetica", "Helvetica-Bold"],
+    "ROWS_DETECTED": 7,
+    "ROWS_TAGGED": 0,
+    "PAGES_DETECTED_NE_TAGGED": [[1, 4, 0], [2, 3, 0]],
+    "RAW_DEFECTS": {
+        "lam_alef_signatures": 0,
+        "rtl_digit_runs": 0,
+        "header_typos": 0,
+        "same_line_headers": 1,
+        "spaced_mada_headers": 0,
+    },
+}
 
 
-@pytest.mark.smoke
-def test_excerpt_passes_the_per_page_gates(excerpt, tmp_path):
-    pdf, first_page = excerpt
+@pytest.mark.unit
+def test_pdf_matching_the_baselines_passes_every_gate(
+    tracked_pdf, tmp_path, monkeypatch
+):
+    for name, value in SYNTHETIC_BASELINES.items():
+        monkeypatch.setattr(profile, name, value)
     out = tmp_path / "source_profile.json"
 
-    metrics, gates = run_profile(pdf, out, first_page=first_page)
+    metrics, gates = run_profile(tracked_pdf, out)
 
-    assert {g.id: g.outcome for g in gates} == {
-        "G1": "skip",
-        "G2": "pass",
-        "G3": "pass",
-        "G4": "pass",
-        "G5": "skip",
-        "G6": "skip",
-    }
+    assert {g.id: g.outcome for g in gates} == {f"G{i}": "pass" for i in range(1, 7)}
     assert metrics["rows_missing_a_side"] == 0
     assert json.loads(out.read_text("utf-8")) == metrics
-    assert list(tmp_path.iterdir()) == [out]  # no evidence unless asked for
 
 
-@pytest.mark.smoke
-def test_failed_gate_stops_the_stage_and_still_writes_metrics(
-    fixture_pdfs, tmp_path, monkeypatch
+@pytest.mark.unit
+def test_other_pdf_fails_the_gates_and_still_writes_metrics_and_evidence(
+    synthetic_pdf, tmp_path
 ):
-    monkeypatch.setattr(profile, "FONTS", ["Times-Roman"])
-    out = tmp_path / "source_profile.json"
+    out, evidence = tmp_path / "source_profile.json", tmp_path / "evidence"
 
-    with pytest.raises(ProfileGateError, match="G4"):
-        run_profile(fixture_pdfs["page_081"], out, first_page=81)
+    with pytest.raises(ProfileGateError, match="G1, G2, G4, G5, G6"):
+        run_profile(synthetic_pdf, out, evidence_dir=evidence)
 
-    assert json.loads(out.read_text("utf-8"))["gates"]["G4"] == "fail"
+    gates = json.loads(out.read_text("utf-8"))["gates"]
+    assert gates["G1"] == "fail"  # it has no .dvc file at all
+    assert gates["G3"] == "pass"  # every page is still one two-column table
+    assert (evidence / "summary.json").exists()
 
 
-@pytest.mark.smoke
-def test_evidence_comes_from_the_same_pass_with_source_page_numbers(
-    fixture_pdfs, tmp_path
-):
-    """Pages 46-47 hold `Section II`, the P25 sample, ending page 46 (P19)."""
+@pytest.mark.unit
+def test_evidence_comes_from_the_same_measuring_pass(synthetic_pdf, tmp_path):
     evidence = tmp_path / "evidence"
-    run_profile(
-        fixture_pdfs["pages_046_047"],
-        tmp_path / "source_profile.json",
-        first_page=46,
-        evidence_dir=evidence,
-    )
+    with pytest.raises(ProfileGateError):
+        run_profile(synthetic_pdf, tmp_path / "metrics.json", evidence_dir=evidence)
 
     summary = json.loads((evidence / "summary.json").read_text("utf-8"))
-    assert summary["P1_file"]["page_count"] == 2
-    assert summary["P18_keyword_only_heading_as_last_row"][0][0] == 46
+    assert summary["P4_rows"]["detected_lines_strict"] == 7
+    assert summary["P5_continuation_first_rows"]["pages"] == 1  # page 2
+    assert summary["P12_repeal_rows"] == [[2, 1, "3", "5"]]
+    assert summary["P18_keyword_only_heading_as_last_row"] == [[1, "SECTION II"]]
     pages_tsv = (evidence / "pages.tsv").read_text("utf-8").splitlines()
-    assert [line.split("\t")[0] for line in pages_tsv[1:]] == ["46", "47"]
-    assert "page 46" in (evidence / "extractor_comparison.txt").read_text("utf-8")
+    assert [line.split("\t")[0] for line in pages_tsv[1:]] == ["1", "2"]
+    assert "page 1, row 3" in (evidence / "extractor_comparison.txt").read_text("utf-8")
+
+
+@pytest.mark.unit
+def test_numeric_metrics_turn_gates_into_ones_and_zeros():
+    metrics = {
+        "pages_total": 2,
+        "font_set": ["x"],
+        "gates": {"G1": "pass", "G2": "fail"},
+    }
+
+    assert profile.numeric_metrics(metrics) == {
+        "pages_total": 2,
+        "gate_G1": 1.0,
+        "gate_G2": 0.0,
+    }
 
 
 # --- Profile gate: the full PDF (G1 to G6) ------------------------------------

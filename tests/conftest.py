@@ -1,12 +1,15 @@
+import hashlib
 import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import pymupdf
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -19,23 +22,9 @@ from raglaw.logging_conf import extra_fields
 from raglaw.logging_setup import close_logging, setup_logging
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 # Settings reads params.yaml from the working directory, so tests run from the
 # repo root, as `dvc repro` does.
 FULL_PDF = REPO_ROOT / Settings(_env_file=None).paths.raw_pdf
-FIXTURE_PDFS = {
-    "page_001": FIXTURES_DIR / "page_001.pdf",
-    "pages_007_009": FIXTURES_DIR / "pages_007_009.pdf",
-    "pages_046_047": FIXTURES_DIR / "pages_046_047.pdf",
-    "page_081": FIXTURES_DIR / "page_081.pdf",
-}
-# The source page number of each excerpt's first page, passed as --first-page.
-FIXTURE_FIRST_PAGES = {
-    "page_001": 1,
-    "pages_007_009": 7,
-    "pages_046_047": 46,
-    "page_081": 81,
-}
 METRICS_DIR = REPO_ROOT / Settings(_env_file=None).paths.metrics_dir
 NEEDS_FULL_PDF = ("profile", "corpus")
 
@@ -71,18 +60,6 @@ def full_pdf() -> Path:
 
 
 @pytest.fixture
-def fixture_pdfs() -> dict[str, Path]:
-    """The four committed excerpts of the source PDF, keyed by page range."""
-    return FIXTURE_PDFS
-
-
-@pytest.fixture(params=list(FIXTURE_PDFS))
-def excerpt(request: pytest.FixtureRequest) -> tuple[Path, int]:
-    """Each fixture excerpt in turn, with the source page number of its first page."""
-    return FIXTURE_PDFS[request.param], FIXTURE_FIRST_PAGES[request.param]
-
-
-@pytest.fixture
 def source_profile() -> dict[str, Any]:
     """The ``profile`` stage's metrics on the full PDF; run ``dvc repro profile``."""
     path = METRICS_DIR / "source_profile.json"
@@ -91,10 +68,65 @@ def source_profile() -> dict[str, Any]:
     return json.loads(path.read_text("utf-8"))
 
 
+# --- Synthetic PDF ----------------------------------------------------------
+
+# Rows of a synthetic page: (English cell, Arabic-side cell, English is bold).
+# The right column holds Latin text: the built-in font has no Arabic glyphs,
+# and the Arabic-specific measures are covered by the `profile` tests instead.
+SYNTHETIC_PAGES = [
+    [
+        ("SECTION I\nGeneral Provisions", "AL-FASL 1", True),
+        ("Article 1\nLegislative provisions govern.", "MADA 1\nBody one.", False),
+        ("Article 2 No provision may be repealed.", "MADA 2\nBody two.", False),
+        ("SECTION II", "AL-FASL 2", True),
+    ],
+    [
+        ("except by a later law.", "Body two, continued.", False),
+        ("Articles 3-5 repealed", "Repealed.", False),
+        ("Article 6\nAs provided in Article 2.", "MADA 6\nBody six.", False),
+    ],
+]
+
+
+def _draw_ruled_table(page: pymupdf.Page, rows: list[tuple[str, str, bool]]) -> None:
+    """Draw ``rows`` as a two-column table ruled with lines, as the source is (P3)."""
+    x0, mid, x1, row_height = 20, 200, 380, 60
+    tops = [20 + i * row_height for i in range(len(rows) + 1)]
+    for top in tops:
+        page.draw_line((x0, top), (x1, top))
+    for x in (x0, mid, x1):
+        page.draw_line((x, tops[0]), (x, tops[-1]))
+    for top, (en, ar, bold) in zip(tops, rows, strict=False):
+        page.insert_text((x0 + 5, top + 15), en, fontname="hebo" if bold else "helv")
+        page.insert_text((mid + 5, top + 15), ar, fontname="helv")
+
+
+@pytest.fixture(scope="session")
+def synthetic_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A two-page PDF laid out like the source: one ruled two-column table per page.
+
+    It holds a bold heading, articles (one with body text on its header line),
+    a repeal row, a continuation opening page 2, and a keyword-only heading
+    ending page 1. CI exercises the PDF-reading code on it without the source.
+    """
+    path = tmp_path_factory.mktemp("pdf") / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        for rows in SYNTHETIC_PAGES:
+            _draw_ruled_table(doc.new_page(width=400, height=300), rows)
+        doc.save(path)
+    return path
+
+
 @pytest.fixture
-def stub_path() -> Path:
-    """The committed 10-article stub (created from the gold set in Phase 4)."""
-    return FIXTURES_DIR / "articles_stub.json"
+def tracked_pdf(synthetic_pdf: Path, tmp_path: Path) -> Path:
+    """The synthetic PDF next to a `.dvc` file recording its md5, as DVC writes one."""
+    pdf = tmp_path / "source.pdf"
+    shutil.copy(synthetic_pdf, pdf)
+    md5 = hashlib.md5(pdf.read_bytes()).hexdigest()
+    pdf.with_name("source.pdf.dvc").write_text(
+        f"outs:\n- md5: {md5}\n  path: source.pdf\n", encoding="utf-8"
+    )
+    return pdf
 
 
 # --- Configuration ---------------------------------------------------------

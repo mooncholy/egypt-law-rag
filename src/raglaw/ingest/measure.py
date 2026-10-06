@@ -157,7 +157,7 @@ def _element_pages(node: pikepdf.Dictionary, pageidx: dict, cur: int | None) -> 
     return pages
 
 
-def struct_tree_counts(path: Path, first_page: int = 1) -> dict:
+def struct_tree_counts(path: Path) -> dict:
     """
     Count the PDF's structure tags, and the pages each table row (``TR``) sits on.
 
@@ -166,7 +166,7 @@ def struct_tree_counts(path: Path, first_page: int = 1) -> dict:
       name), ``tr_per_page`` and ``multi_page_trs`` (rows on more than one page)
     """
     with pikepdf.open(path) as pdf:
-        pageidx = {pg.objgen: i for i, pg in enumerate(pdf.pages, start=first_page)}
+        pageidx = {pg.objgen: i for i, pg in enumerate(pdf.pages, start=1)}
         tr_pages: collections.Counter = collections.Counter()
         multi_page_trs = 0
         root = pdf.Root
@@ -257,7 +257,6 @@ class SourceFacts:
     """Everything ``measure_document`` read from one PDF."""
 
     path: Path
-    first_page: int
     metadata: dict[str, Any]
     page_count: int
     pages: list[PageFacts]
@@ -332,29 +331,22 @@ def measure_page(page: pymupdf.Page, number: int) -> PageFacts:
     )
 
 
-def measure_document(path: Path, first_page: int = 1) -> SourceFacts:
+def measure_document(path: Path) -> SourceFacts:
     """
-    Read every page of a PDF into facts.
-
-    ``first_page`` is the source page number of the file's first page, so an
-    excerpt's facts carry the same page numbers as the full document.
+    Read every page of a PDF into facts, numbering pages from 1.
 
     returns:
     - facts (SourceFacts): per-page facts plus the file's metadata and tag tree
     """
     with pymupdf.open(path) as doc:
-        pages = [
-            measure_page(page, number)
-            for number, page in enumerate(doc, start=first_page)
-        ]
+        pages = [measure_page(page, number) for number, page in enumerate(doc, start=1)]
         metadata, page_count = doc.metadata, doc.page_count
     return SourceFacts(
         path=path,
-        first_page=first_page,
         metadata=metadata,
         page_count=page_count,
         pages=pages,
-        struct=struct_tree_counts(path, first_page),
+        struct=struct_tree_counts(path),
     )
 
 
@@ -626,7 +618,7 @@ def extractor_comparison(facts: SourceFacts, sample: RowFacts | None) -> str:
     lines = ["P25: one Arabic heading cell through three extraction paths\n"]
     if sample is None:
         return "\n".join(lines)
-    path, index = facts.path, sample.page - facts.first_page
+    path, index = facts.path, sample.page - 1
     with pymupdf.open(path) as doc:
         page = doc[index]
         lines.append(f"page {sample.page}, row {sample.index}")

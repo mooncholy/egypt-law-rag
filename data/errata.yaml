@@ -1,7 +1,7 @@
 # Owner-approved fixes for known one-off errors in data/raw/civil_code.pdf.
 # Rules and reasons: docs/reports/0_source_pdf_analysis.md, section 6.
 #
-# - page: source page number (1-based), also for fixture excerpts.
+# - page: source page number (1-based).
 # - row:  0-based index of the row in that page's `lines_strict` table.
 # - side: en or ar.
 # - expect: a whole line of that cell, after the extract-stage glyph repairs.
