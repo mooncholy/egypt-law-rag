@@ -15,3 +15,38 @@ stages:
     metrics:
       - ${paths.metrics_dir}/source_profile.json:
           cache: false
+
+  extract:
+    cmd: python -m raglaw.ingest.extract
+    deps:
+      - ${paths.raw_pdf}
+      - ${paths.metrics_dir}/source_profile.json
+      - src/raglaw/ingest/extract.py
+      - src/raglaw/ingest/glyphs.py
+      - src/raglaw/ingest/table.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/profile.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    outs:
+      - ${paths.interim_dir}/rows.jsonl
+    metrics:
+      - ${paths.metrics_dir}/extract.json:
+          cache: false
+
+  repair:
+    cmd: python -m raglaw.ingest.repair
+    deps:
+      - ${paths.interim_dir}/rows.jsonl
+      - ${paths.errata}
+      - src/raglaw/ingest/repair.py
+      - src/raglaw/ingest/errata.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/profile.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    outs:
+      - ${paths.interim_dir}/rows_repaired.jsonl
+    metrics:
+      - ${paths.metrics_dir}/repair.json:
+          cache: false

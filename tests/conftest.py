@@ -60,16 +60,28 @@ def full_pdf() -> Path:
 
 
 @pytest.fixture
-def source_profile() -> dict[str, Any]:
-    """The ``profile`` stage's metrics on the full PDF; run ``dvc repro profile``."""
-    path = METRICS_DIR / "source_profile.json"
-    if not path.exists():
-        pytest.fail(f"{path} is missing: run `dvc repro profile` first")
-    return json.loads(path.read_text("utf-8"))
+def stage_metrics() -> Callable[[str], dict[str, Any]]:
+    """Load a stage's metrics file from ``docs/metrics``, written by ``dvc repro``."""
+
+    def _load(name: str) -> dict[str, Any]:
+        path = METRICS_DIR / f"{name}.json"
+        if not path.exists():
+            pytest.fail(f"{path} is missing: run `dvc repro` first")
+        return json.loads(path.read_text("utf-8"))
+
+    return _load
+
+
+@pytest.fixture
+def source_profile(stage_metrics: Callable[[str], dict[str, Any]]) -> dict[str, Any]:
+    """The ``profile`` stage's metrics on the full PDF."""
+    return stage_metrics("source_profile")
 
 
 # --- Synthetic PDF ----------------------------------------------------------
 
+# Printed above page 1's table, like the source's promulgation law (P7).
+OUTSIDE_TABLE_TEXT = "PROMULGATION LAW"
 # Rows of a synthetic page: (English cell, Arabic-side cell, English is bold).
 # The right column holds Latin text: the built-in font has no Arabic glyphs,
 # and the Arabic-specific measures are covered by the `profile` tests instead.
@@ -91,7 +103,7 @@ SYNTHETIC_PAGES = [
 def _draw_ruled_table(page: pymupdf.Page, rows: list[tuple[str, str, bool]]) -> None:
     """Draw ``rows`` as a two-column table ruled with lines, as the source is (P3)."""
     x0, mid, x1, row_height = 20, 200, 380, 60
-    tops = [20 + i * row_height for i in range(len(rows) + 1)]
+    tops = [30 + i * row_height for i in range(len(rows) + 1)]
     for top in tops:
         page.draw_line((x0, top), (x1, top))
     for x in (x0, mid, x1):
@@ -106,15 +118,23 @@ def synthetic_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A two-page PDF laid out like the source: one ruled two-column table per page.
 
     It holds a bold heading, articles (one with body text on its header line),
-    a repeal row, a continuation opening page 2, and a keyword-only heading
-    ending page 1. CI exercises the PDF-reading code on it without the source.
+    a repeal row, a continuation opening page 2, a keyword-only heading ending
+    page 1, and a line printed above page 1's table. CI exercises the
+    PDF-reading code on it without the source.
     """
     path = tmp_path_factory.mktemp("pdf") / "synthetic.pdf"
     with pymupdf.open() as doc:
         for rows in SYNTHETIC_PAGES:
             _draw_ruled_table(doc.new_page(width=400, height=300), rows)
+        doc[0].insert_text((20, 18), OUTSIDE_TABLE_TEXT, fontname="helv")
         doc.save(path)
     return path
+
+
+@pytest.fixture
+def outside_table_text() -> str:
+    """The line printed above page 1's table in ``synthetic_pdf``."""
+    return OUTSIDE_TABLE_TEXT
 
 
 @pytest.fixture

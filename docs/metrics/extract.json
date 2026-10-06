@@ -1,0 +1,13 @@
+{
+  "pages": 170,
+  "rows": 1463,
+  "rows_missing_a_side": 0,
+  "rows_empty_en": 1,
+  "rows_empty_ar": 58,
+  "line_pieces_merged_en": 7,
+  "line_pieces_merged_ar": 5051,
+  "lam_alef_swaps": 3500,
+  "stray_zero_width_alefs": 26,
+  "rtl_digit_runs_reordered": 1167,
+  "private_use_glyphs": 25
+}
