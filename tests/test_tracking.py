@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from raglaw import tracking
-from raglaw.schema import SCHEMA_VERSION, LogEvent
+from raglaw.schema import Article, LogEvent
 from raglaw.tracking import TrackingConfigError, git_state, sha256_file, stage_run
 
 pytestmark = pytest.mark.unit
@@ -34,7 +34,6 @@ def test_run_records_inputs_metrics_and_log(tracking_settings, mlflow_client):
     assert recorded.data.params == {
         "stage": "profile",
         "git_sha": git_state()[0],
-        "schema_version": SCHEMA_VERSION,
         "input_hash": "abc123",
     }
     assert recorded.data.tags["stage"] == "profile"
@@ -44,6 +43,19 @@ def test_run_records_inputs_metrics_and_log(tracking_settings, mlflow_client):
         LogEvent.STAGE_START,
         LogEvent.STAGE_COMPLETED,
     ]
+
+
+def test_run_records_the_schema_of_what_it_writes(tracking_settings, mlflow_client):
+    with stage_run(
+        "assemble",
+        input_hash="x",
+        output_model=Article,
+        settings=tracking_settings,
+    ) as run:
+        pass
+
+    params = mlflow_client.get_run(run.run_id).data.params
+    assert params["output_schema"] == Article.schema_id()
 
 
 def test_failure_marks_run_failed_and_still_attaches_log(

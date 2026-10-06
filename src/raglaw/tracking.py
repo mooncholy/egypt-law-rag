@@ -1,8 +1,8 @@
 """One MLflow run per pipeline stage execution.
 
 A stage wraps its work in ``stage_run``; the run then ties what went in (git
-SHA, schema version, input hash) to what came out (metrics, the stage's full
-JSONL log). Runs of one ``dvc repro`` share a git SHA, which groups them.
+SHA, input hash, the schema of the records it writes) to what came out
+(metrics, the stage's full JSONL log). Runs of one ``dvc repro`` share a git SHA, which groups them.
 Stage code records numbers through the yielded handle and never imports
 MLflow itself.
 """
@@ -26,7 +26,7 @@ from mlflow.tracking import MlflowClient
 
 from raglaw.config import Settings
 from raglaw.logging_setup import close_logging, setup_logging
-from raglaw.schema import SCHEMA_VERSION, LogEvent
+from raglaw.schema import LogEvent, Record
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,11 @@ def _experiment_id(client: MlflowClient, settings: Settings, name: str) -> str:
 
 @contextmanager
 def stage_run(
-    stage: str, *, input_hash: str, settings: Settings | None = None
+    stage: str,
+    *,
+    input_hash: str,
+    output_model: type[Record] | None = None,
+    settings: Settings | None = None,
 ) -> Generator[StageRun]:
     """
     Run one pipeline stage inside its own MLflow run.
@@ -142,6 +146,8 @@ def stage_run(
     exit attaches the stage's log file, even when the stage fails, since a
     failed run is when the log matters most. An exception marks the run
     FAILED (an interrupt, KILLED) and is re-raised, never swallowed.
+    ``output_model`` names the record type the stage writes, logged as the
+    ``output_schema`` param; a stage that writes only metrics passes none.
 
     returns:
     - run (StageRun): the run's id, its log file, and ``log_metrics``
@@ -168,12 +174,9 @@ def stage_run(
         },
     )
     run_id = run.info.run_id
-    params = {
-        "stage": stage,
-        "git_sha": sha,
-        "schema_version": SCHEMA_VERSION,
-        "input_hash": input_hash,
-    }
+    params = {"stage": stage, "git_sha": sha, "input_hash": input_hash}
+    if output_model is not None:
+        params["output_schema"] = output_model.schema_id()
     client.log_batch(run_id, params=[Param(k, v) for k, v in params.items()])
 
     stage_fields = {"stage": stage, "run_id": run_id}
