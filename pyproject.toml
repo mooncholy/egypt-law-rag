@@ -72,8 +72,3 @@ skip_covered = true
 [tool.ruff.lint]
 # Ruff's defaults plus flake8-print: the pipeline and the API log, never print.
 extend-select = ["T20"]
-
-[tool.ruff.lint.per-file-ignores]
-# Owner-provided and committed as-is; Phase 1 turns it into a thin wrapper
-# around raglaw.ingest.measure, which logs.
-"scripts/analyze_source_pdf.py" = ["T201"]

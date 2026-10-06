@@ -45,6 +45,10 @@ class Paths(BaseModel):
     reports_dir: RepoPath = Field(
         description="Generated and hand-written reports (git-tracked)."
     )
+    analysis_dir: RepoPath = Field(
+        description="Evidence behind the source analysis report, written by "
+        "`profile` (gitignored; pinned by its `.sha256` file)."
+    )
     logs_dir: RepoPath = Field(
         description="One JSONL log per stage run (gitignored; attached to MLflow)."
     )

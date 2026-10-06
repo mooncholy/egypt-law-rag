@@ -91,6 +91,7 @@ VALID_PATHS = {
     "gold_dir": "data/gold",
     "metrics_dir": "docs/metrics",
     "reports_dir": "docs/reports",
+    "analysis_dir": "docs/analysis/source_pdf",
     "logs_dir": "logs",
 }
 

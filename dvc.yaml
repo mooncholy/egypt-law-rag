@@ -1,0 +1,17 @@
+# The corpus build: profile -> extract -> repair -> assemble -> validate -> chunk.
+# Paths come from params.yaml through ${...}; each stage lists the code that
+# defines what it computes, so a code change reruns it.
+stages:
+  profile:
+    cmd: python -m raglaw.ingest.profile
+    deps:
+      - ${paths.raw_pdf}
+      - src/raglaw/ingest/profile.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/table.py
+    outs:
+      - ${paths.analysis_dir}:
+          cache: false
+    metrics:
+      - ${paths.metrics_dir}/source_profile.json:
+          cache: false

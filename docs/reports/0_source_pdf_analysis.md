@@ -1,18 +1,18 @@
 
 # Source Document Analysis
 
-Every decision taken in writing the unittests and ingestion pipeline is based on the following facts observed on `data/raw/civil_code.pdf`. `scripts/analyze_source_pdf.py` measures them over all 170 pages and writes the evidence to `docs/analysis/source_pdf/`.
-- **Measured** means the script computes it; the Evidence column names the field in `summary.json` or the output file.
+Every decision taken in writing the unittests and ingestion pipeline is based on the following facts observed on `data/raw/civil_code.pdf`. The `profile` stage (`src/raglaw/ingest/profile.py`, with the measurements in `measure.py`) measures them over all 170 pages and writes the evidence to `docs/analysis/source_pdf/`.
+- **Measured** means the code computes it; the Evidence column names the field in `summary.json` or the output file.
 - **Judgment** means a person decided it; the gate that confirms it is named.
 
 The evidence files are not committed. Regenerate them (needs `dvc pull` for the PDF) and check they match the analyzed version:
 
 ```bash
-uv run python scripts/analyze_source_pdf.py data/raw/civil_code.pdf
+uv run dvc repro profile
 sha256sum -c docs/reports/0_source_pdf_analysis.sha256
 ```
 
-Every line must read `OK`. A mismatch means the PDF or the script changed since this report was written, and the facts below must be re-checked.
+Every line must read `OK`. A mismatch means the PDF or the measurement code changed since this report was written, and the facts below must be re-checked.
 
 ## 1. File and layout
 

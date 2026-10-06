@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -28,6 +29,14 @@ FIXTURE_PDFS = {
     "pages_046_047": FIXTURES_DIR / "pages_046_047.pdf",
     "page_081": FIXTURES_DIR / "page_081.pdf",
 }
+# The source page number of each excerpt's first page, passed as --first-page.
+FIXTURE_FIRST_PAGES = {
+    "page_001": 1,
+    "pages_007_009": 7,
+    "pages_046_047": 46,
+    "page_081": 81,
+}
+METRICS_DIR = REPO_ROOT / Settings(_env_file=None).paths.metrics_dir
 NEEDS_FULL_PDF = ("profile", "corpus")
 
 
@@ -65,6 +74,21 @@ def full_pdf() -> Path:
 def fixture_pdfs() -> dict[str, Path]:
     """The four committed excerpts of the source PDF, keyed by page range."""
     return FIXTURE_PDFS
+
+
+@pytest.fixture(params=list(FIXTURE_PDFS))
+def excerpt(request: pytest.FixtureRequest) -> tuple[Path, int]:
+    """Each fixture excerpt in turn, with the source page number of its first page."""
+    return FIXTURE_PDFS[request.param], FIXTURE_FIRST_PAGES[request.param]
+
+
+@pytest.fixture
+def source_profile() -> dict[str, Any]:
+    """The ``profile`` stage's metrics on the full PDF; run ``dvc repro profile``."""
+    path = METRICS_DIR / "source_profile.json"
+    if not path.exists():
+        pytest.fail(f"{path} is missing: run `dvc repro profile` first")
+    return json.loads(path.read_text("utf-8"))
 
 
 @pytest.fixture

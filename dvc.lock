@@ -1,0 +1,31 @@
+schema: '2.0'
+stages:
+  profile:
+    cmd: python -m raglaw.ingest.profile
+    deps:
+    - path: data/raw/civil_code.pdf
+      hash: md5
+      md5: 5086ef5f16f15d856278db943e58e948
+      size: 2599703
+    - path: src/raglaw/ingest/measure.py
+      hash: md5
+      md5: b5e8307eb3beeb8d83cb25221263b108
+      size: 26445
+    - path: src/raglaw/ingest/profile.py
+      hash: md5
+      md5: 6aee1e2e04d493af06d2bc0ce65ced60
+      size: 9186
+    - path: src/raglaw/ingest/table.py
+      hash: md5
+      md5: 043c5d0c735bbe3d9325792ebb8a5dbf
+      size: 3279
+    outs:
+    - path: docs/analysis/source_pdf
+      hash: md5
+      md5: ab97943993e87ed647ea51558546477c.dir
+      size: 74128
+      nfiles: 9
+    - path: docs/metrics/source_profile.json
+      hash: md5
+      md5: 22cd96bdadc5ca4c6c791968fe98af59
+      size: 657
