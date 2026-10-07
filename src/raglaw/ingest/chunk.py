@@ -225,9 +225,17 @@ def huggingface_embeddings(chunking: Chunking) -> Embeddings:
     """
     from langchain_huggingface import HuggingFaceEmbeddings  # semantic group only
 
+    # BAAI's revision ships only pytorch_model.bin. Without this flag,
+    # transformers fetches model.safetensors from an unmerged bot pull request
+    # (refs/pr/130) instead of the pinned revision (D12). torch loads the .bin
+    # with weights_only=True, which refuses pickled code.
     return HuggingFaceEmbeddings(
         model_name=chunking.semantic.model,
-        model_kwargs={"device": "cpu", "revision": chunking.semantic.revision},
+        model_kwargs={
+            "device": "cpu",
+            "revision": chunking.semantic.revision,
+            "model_kwargs": {"use_safetensors": False},
+        },
         encode_kwargs={"normalize_embeddings": True},
     )
 
@@ -484,18 +492,18 @@ def run_params(chunking: Chunking) -> dict[str, object]:
     """
     The chunking config a run is compared by, under the names used across runs.
 
-    ``embedding_model`` is ``none`` for the structural strategy, which embeds
-    nothing; the semantic variant records the model and its pinned revision.
+    Only the semantic variant uses an embedding model, so only its runs record
+    one; the index stage records the model it embeds chunks with.
 
     returns:
-    - params (dict[str, object]): strategy, chunk size, overlap and embedding
-      model, plus the breakpoint percentile for the semantic variant
+    - params (dict[str, object]): strategy, chunk size and overlap, plus the
+      embedding model, its revision and the breakpoint percentile for the
+      semantic variant
     """
     params: dict[str, object] = {
         "strategy": chunking.strategy,
         "chunk_size": chunking.max_chars,
         "chunk_overlap": CHUNK_OVERLAP,
-        "embedding_model": "none",
     }
     if chunking.strategy == "structural_semantic":
         params |= {

@@ -317,12 +317,11 @@ def test_the_stage_writes_chunks_and_metrics(tmp_path):
 
 
 @pytest.mark.unit
-def test_structural_run_records_size_overlap_and_no_embedding_model():
+def test_structural_run_records_size_and_overlap_but_no_embedding_model():
     assert run_params(chunking(max_chars=800)) == {
         "strategy": "structural",
         "chunk_size": 800,
         "chunk_overlap": 0,
-        "embedding_model": "none",
     }
 
 

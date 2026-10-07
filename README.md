@@ -4,9 +4,10 @@ A retrieval-augmented generation (RAG) chatbot that answers questions about the 
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
 
-**Status:** Phase 1 (corpus build) is in progress.
-- Done: the `profile` stage checks the raw PDF against the analyzed baselines.
-- Next: `extract`, `repair`, `assemble`, `validate`, then `chunk`.
+**Status:** the corpus is built; retrieval is next.
+- Done: `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
+- Not built yet: `validate`, which checks the corpus against the gold sample.
+- Next: embeddings, hybrid retrieval and its evaluation, then `/ask`.
 - `/ask` answers 501 until retrieval is built.
 
 ## Quickstart
