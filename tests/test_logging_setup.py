@@ -93,3 +93,25 @@ def test_anomaly_without_article_still_carries_the_key(log_records):
     [record] = log_records(level=logging.WARNING, event_type=LogEvent.ANOMALY)
     assert record["article_number"] is None
     assert record["row_class"] == "continuation"
+
+
+def test_an_exception_is_written_into_the_log_line(pipeline_log):
+    """A failure's log line explains itself: type, message and traceback."""
+    try:
+        raise ValueError("counts differ from their baselines")
+    except ValueError:
+        logger.exception("Stage failed")
+    close_logging()
+
+    [line] = [json.loads(x) for x in pipeline_log.read_text("utf-8").splitlines()]
+    assert line["exception"]["type"] == "ValueError"
+    assert line["exception"]["message"] == "counts differ from their baselines"
+    assert "Traceback (most recent call last)" in line["exception"]["traceback"]
+
+
+def test_a_line_without_an_exception_has_no_exception_key(pipeline_log):
+    logger.info("Stage completed")
+    close_logging()
+
+    [line] = [json.loads(x) for x in pipeline_log.read_text("utf-8").splitlines()]
+    assert "exception" not in line

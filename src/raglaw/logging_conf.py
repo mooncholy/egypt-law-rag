@@ -37,7 +37,9 @@ class JsonFormatter(logging.Formatter):
 
     Every line carries the current correlation ID, so one request can be traced
     across the log even when requests interleave. Any extra field passed through
-    ``logger.info(..., extra={...})`` is promoted to a top-level key.
+    ``logger.info(..., extra={...})`` is promoted to a top-level key. A record
+    logged with an exception (``logger.exception``) carries it under
+    ``exception``, so the log file alone explains a failure.
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -46,7 +48,8 @@ class JsonFormatter(logging.Formatter):
 
         returns:
         - line (str): the record as JSON, carrying the timestamp, level, logger
-          name, correlation ID, message, and any extra fields the caller passed
+          name, correlation ID, message, any extra fields the caller passed,
+          and the exception's type, message and traceback when there is one
         """
         corr_id = correlation_id_var.get() or "N/A"
         payload: dict[str, Any] = {
@@ -58,6 +61,13 @@ class JsonFormatter(logging.Formatter):
             "correlation_id": corr_id,
             "message": record.getMessage(),
         }
+        if record.exc_info and record.exc_info[1] is not None:
+            exc_type, exc, _ = record.exc_info
+            payload["exception"] = {
+                "type": exc_type.__name__,
+                "message": str(exc),
+                "traceback": self.formatException(record.exc_info),
+            }
         for key, value in extra_fields(record).items():
             payload.setdefault(key, value)
         return json.dumps(payload, default=str)

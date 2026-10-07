@@ -137,6 +137,24 @@ def _experiment_id(client: MlflowClient, settings: Settings, name: str) -> str:
     return experiment.experiment_id
 
 
+# MLflow caps a tag value at 5,000 characters; the reason fits well within it.
+ERROR_TAG_CHARS = 1_000
+
+
+def _tag_error(client: MlflowClient, run_id: str, exc: BaseException) -> None:
+    """
+    Tag a failed run with ``error: <type>: <message>``, shown on its Overview.
+
+    The full traceback is in the run's log artifact. Tagging never masks the
+    stage's own exception: a tracking failure here is only logged.
+    """
+    reason = f"{type(exc).__name__}: {exc}"[:ERROR_TAG_CHARS]
+    try:
+        client.set_tag(run_id, "error", reason)
+    except Exception:
+        logger.warning("Could not tag the failed run with its error", exc_info=True)
+
+
 @contextmanager
 def stage_run(
     stage: str,
@@ -151,7 +169,8 @@ def stage_run(
     Sets up the stage's logging, records params and tags up front, and on
     exit attaches the stage's log file, even when the stage fails, since a
     failed run is when the log matters most. An exception marks the run
-    FAILED (an interrupt, KILLED) and is re-raised, never swallowed.
+    FAILED (an interrupt, KILLED) and is re-raised, never swallowed; a failed
+    run is also tagged ``error`` with the exception's type and message.
     ``output_model`` names the record type the stage writes, logged as the
     ``output_schema`` param; a stage that writes only metrics passes none.
 
@@ -203,6 +222,7 @@ def stage_run(
         logger.exception(
             "Stage failed", extra={**stage_fields, "event_type": LogEvent.STAGE_FAILED}
         )
+        _tag_error(client, run_id, exc)
         raise
     except BaseException as exc:
         status, stage_exc = "KILLED", exc

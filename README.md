@@ -34,7 +34,9 @@ uv run pytest -m unit --cov              # what CI runs; no data needed
 uv run pytest -m "profile or corpus"     # needs `dvc pull` and `dvc repro`
 uv run dvc repro                         # run the pipeline
 uv run dvc metrics show                  # each stage's checks and counts
-uv run mlflow ui --backend-store-uri sqlite:///mlflow.db   # one run per stage execution
+# One MLflow run per stage execution. Log artifacts live in S3, so the UI needs
+# the same profile as RAGLAW_AWS_PROFILE in .env (it doesn't read .env itself):
+AWS_PROFILE=<your profile> uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
 uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0.0.1:8000/docs
 ```
 

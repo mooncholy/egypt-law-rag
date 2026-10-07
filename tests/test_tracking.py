@@ -67,11 +67,12 @@ def test_failure_marks_run_failed_and_still_attaches_log(
     ):
         raise RuntimeError("boom")
 
-    assert mlflow_client.get_run(run.run_id).info.status == "FAILED"
-    assert events(artifact_log(mlflow_client, run.run_id)) == [
-        LogEvent.STAGE_START,
-        LogEvent.STAGE_FAILED,
-    ]
+    recorded = mlflow_client.get_run(run.run_id)
+    assert recorded.info.status == "FAILED"
+    assert recorded.data.tags["error"] == "RuntimeError: boom"  # shown on the Overview
+    log = artifact_log(mlflow_client, run.run_id)
+    assert events(log) == [LogEvent.STAGE_START, LogEvent.STAGE_FAILED]
+    assert log[-1]["exception"]["type"] == "RuntimeError"  # and the log explains it
 
 
 def test_interrupt_marks_run_killed(tracking_settings, mlflow_client):
