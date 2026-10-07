@@ -18,7 +18,14 @@ from raglaw.schema import LogEvent, Row
 
 
 def row(en: str, ar: str = "", index: int = 0, bold: bool = False) -> Row:
-    return Row(page=10, row_index=index, en_text=en, ar_text=ar, en_all_bold=bold)
+    return Row(
+        page=10,
+        row_index=index,
+        en_text=en,
+        ar_text=ar,
+        en_all_bold=bold,
+        ar_all_bold=bold,
+    )
 
 
 # --- Same-line headers (U6) -----------------------------------------------------

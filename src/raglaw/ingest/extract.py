@@ -23,7 +23,7 @@ import pymupdf
 from raglaw.config import Settings
 from raglaw.ingest import profile
 from raglaw.ingest.glyphs import read_cell
-from raglaw.ingest.measure import is_bold, spans_in
+from raglaw.ingest.measure import YELLOW, is_bold, spans_in
 from raglaw.ingest.table import TableRow, iter_rows
 from raglaw.logging_setup import log_anomaly
 from raglaw.records import write_records
@@ -41,7 +41,26 @@ class ExtractCountError(RuntimeError):
     """A glyph repair count differs from its raw baseline."""
 
 
-def extract_row(page: pymupdf.Page, row: TableRow, counts: Counter) -> Row:
+def highlight_fills(page: pymupdf.Page) -> list[pymupdf.Rect]:
+    """
+    Find the page's yellow fills (P6), which mark untranslated text (P32).
+
+    returns:
+    - fills (list[Rect]): one rectangle per filled area
+    """
+    return [
+        d["rect"]
+        for d in page.get_drawings()
+        if d.get("fill") and tuple(round(c, 2) for c in d["fill"]) == YELLOW
+    ]
+
+
+def extract_row(
+    page: pymupdf.Page,
+    row: TableRow,
+    counts: Counter,
+    highlights: list[pymupdf.Rect] = (),
+) -> Row:
     """
     Read one table row into a ``Row``, adding its repair counts to ``counts``.
 
@@ -50,8 +69,10 @@ def extract_row(page: pymupdf.Page, row: TableRow, counts: Counter) -> Row:
     returns:
     - row (Row): the row's repaired English and Arabic text
     """
-    en = read_cell(page, row.en_rect, rtl=False)
-    ar = read_cell(page, row.ar_rect, rtl=True)
+    en = read_cell(page, row.en_rect, rtl=False, highlights=highlights)
+    ar = read_cell(page, row.ar_rect, rtl=True, highlights=highlights)
+    counts["highlighted_lines_en"] += len(en.highlighted)
+    counts["highlighted_lines_ar"] += len(ar.highlighted)
     for side, cell in (("en", en), ("ar", ar)):
         counts[f"line_pieces_merged_{side}"] += cell.pieces_merged
         counts["piece_spaces_moved"] += cell.spaces_moved
@@ -80,14 +101,27 @@ def extract_row(page: pymupdf.Page, row: TableRow, counts: Counter) -> Row:
                 "glyphs": [f"U+{ord(g):04X}" for g in glyphs],
             },
         )
-    en_spans = spans_in(page, row.en_rect) if row.en_rect is not None else []
     return Row(
         page=row.page,
         row_index=row.index,
         en_text=en.text,
         ar_text=ar.text,
-        en_all_bold=bool(en_spans) and all(is_bold(s) for s in en_spans),
+        en_all_bold=all_bold(page, row.en_rect),
+        ar_all_bold=all_bold(page, row.ar_rect),
+        en_highlighted=en.highlighted,
+        ar_highlighted=ar.highlighted,
     )
+
+
+def all_bold(page: pymupdf.Page, rect: pymupdf.Rect | None) -> bool | None:
+    """
+    Tell whether every text span inside ``rect`` is bold.
+
+    returns:
+    - bold (bool | None): True or False, or None when the side has no text
+    """
+    spans = spans_in(page, rect) if rect is not None else []
+    return all(is_bold(s) for s in spans) if spans else None
 
 
 def extract_document(pdf: Path) -> tuple[list[Row], dict[str, int]]:
@@ -102,7 +136,10 @@ def extract_document(pdf: Path) -> tuple[list[Row], dict[str, int]]:
     rows: list[Row] = []
     with pymupdf.open(pdf) as doc:
         for number, page in enumerate(doc, start=1):
-            rows += [extract_row(page, r, counts) for r in iter_rows(page, number)]
+            fills = highlight_fills(page)
+            rows += [
+                extract_row(page, r, counts, fills) for r in iter_rows(page, number)
+            ]
         counts["pages"] = doc.page_count
     counts["rows"] = len(rows)
     counts["rows_empty_en"] = sum(not r.en_text for r in rows)
@@ -120,6 +157,8 @@ def extract_document(pdf: Path) -> tuple[list[Row], dict[str, int]]:
         "stray_zero_width_alefs",
         "rtl_digit_runs_reordered",
         "private_use_glyphs",
+        "highlighted_lines_en",
+        "highlighted_lines_ar",
     )
     return rows, {k: counts[k] for k in keys}
 

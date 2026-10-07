@@ -82,6 +82,8 @@ def source_profile(stage_metrics: Callable[[str], dict[str, Any]]) -> dict[str, 
 
 # Printed above page 1's table, like the source's promulgation law (P7).
 OUTSIDE_TABLE_TEXT = "PROMULGATION LAW"
+# Highlighted on page 2, like the source's untranslated passages (P32).
+HIGHLIGHTED_TEXT = "As provided in Article 2."
 # Rows of a synthetic page: (English cell, Arabic-side cell, English is bold).
 # The right column holds Latin text: the built-in font has no Arabic glyphs,
 # and the Arabic-specific measures are covered by the `profile` tests instead.
@@ -119,7 +121,8 @@ def synthetic_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     It holds a bold heading, articles (one with body text on its header line),
     a repeal row, a continuation opening page 2, a keyword-only heading ending
-    page 1, and a line printed above page 1's table. CI exercises the
+    page 1, a line printed above page 1's table, and a yellow fill under one
+    English line on page 2. CI exercises the
     PDF-reading code on it without the source.
     """
     path = tmp_path_factory.mktemp("pdf") / "synthetic.pdf"
@@ -127,8 +130,17 @@ def synthetic_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
         for rows in SYNTHETIC_PAGES:
             _draw_ruled_table(doc.new_page(width=400, height=300), rows)
         doc[0].insert_text((20, 18), OUTSIDE_TABLE_TEXT, fontname="helv")
+        page = doc[1]
+        [where] = page.search_for(HIGHLIGHTED_TEXT)
+        page.draw_rect(where, color=None, fill=(1, 1, 0), overlay=False)
         doc.save(path)
     return path
+
+
+@pytest.fixture
+def highlighted_text() -> str:
+    """The English line under a yellow fill on page 2 of ``synthetic_pdf``."""
+    return HIGHLIGHTED_TEXT
 
 
 @pytest.fixture

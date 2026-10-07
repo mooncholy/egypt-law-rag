@@ -115,7 +115,15 @@ def test_file_of_another_model_fails_loudly(tmp_path):
 
 def test_unknown_field_is_rejected():
     with pytest.raises(ValidationError, match="Extra inputs"):
-        Row(page=1, row_index=0, en_text="", ar_text="", en_all_bold=False, bold=True)
+        Row(
+            page=1,
+            row_index=0,
+            en_text="",
+            ar_text="",
+            en_all_bold=False,
+            ar_all_bold=False,
+            bold=True,
+        )
 
 
 def test_article_needs_a_source_row():

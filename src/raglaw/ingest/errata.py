@@ -3,7 +3,8 @@
 An erratum fixes one known error at one place, where a rule would be unsafe.
 It names the row (page and row index), the side, and the **whole lines** to
 replace: usually one, or several consecutive lines joined by ``\n`` when the
-PDF split a word across a line break. Matching whole lines keeps an entry from
+PDF split a word across a line break; ``""`` names an empty cell, so an entry
+can fill a side the PDF left blank. Matching whole lines keeps an entry from
 re-applying to its own fix (``rticle 452`` is a substring of ``Article 452``).
 An entry whose lines aren't there fails the stage: a changed source is
 stopped, never patched in the wrong place.
@@ -32,9 +33,8 @@ class Erratum(BaseModel):
     row: int = Field(ge=0, description="0-based row index in the page's table.")
     side: Literal["en", "ar"]
     expect: str = Field(
-        min_length=1,
-        description="A whole line of that cell, or consecutive whole lines "
-        "joined by `\\n`.",
+        description="A whole line of that cell, consecutive whole lines joined "
+        'by `\\n`, or `""` for an empty cell.',
     )
     replace: str = Field(description="The line or lines that take their place.")
     reason: str = Field(min_length=1, description="Why, naming its fact (P).")

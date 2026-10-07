@@ -6,8 +6,11 @@
   "rows_empty_ar": 58,
   "line_pieces_merged_en": 7,
   "line_pieces_merged_ar": 5051,
+  "piece_spaces_moved": 7144,
   "lam_alef_swaps": 3500,
   "stray_zero_width_alefs": 26,
   "rtl_digit_runs_reordered": 1167,
-  "private_use_glyphs": 25
+  "private_use_glyphs": 25,
+  "highlighted_lines_en": 26,
+  "highlighted_lines_ar": 14
 }

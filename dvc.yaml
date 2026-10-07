@@ -50,3 +50,22 @@ stages:
     metrics:
       - ${paths.metrics_dir}/repair.json:
           cache: false
+
+  assemble:
+    cmd: python -m raglaw.ingest.assemble
+    deps:
+      - ${paths.interim_dir}/rows_repaired.jsonl
+      - src/raglaw/ingest/assemble.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/text/normalize.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - root_heading
+    outs:
+      - ${paths.corpus_dir}/articles.json
+      - ${paths.reports_dir}/heading_tree.txt:
+          cache: false
+    metrics:
+      - ${paths.metrics_dir}/assemble.json:
+          cache: false

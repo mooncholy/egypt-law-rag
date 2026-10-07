@@ -54,6 +54,7 @@ class CellText:
     digit_runs_reordered: int = 0
     stray_zero_width_alefs: int = 0
     private_use_glyphs: list[str] = field(default_factory=list)
+    highlighted: list[str] = field(default_factory=list)
 
     @property
     def text(self) -> str:
@@ -212,18 +213,48 @@ def reorder_spaces(chars: list[dict]) -> tuple[list[dict], int]:
     return chars, moved
 
 
-def cell_text(raw: dict, rtl: bool = True) -> CellText:
+def _highlighted_text(line: list[dict], highlights: list[pymupdf.Rect]) -> str:
+    """
+    The characters of a line drawn under a highlight, in reading order.
+
+    A fill can start mid-line (page 140), so only the characters whose centre
+    lies inside a fill count. Zero-width characters are placed at their x.
+
+    returns:
+    - text (str): the highlighted characters, stripped; empty when none are
+    """
+    if not highlights:
+        return ""
+    under = []
+    for c in line:
+        x0, y0, x1, y1 = c["bbox"]
+        point = pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2)
+        under.append(any(f.contains(point) for f in highlights))
+    if not any(under):
+        return ""
+    # Spaces between highlighted characters belong to the passage too.
+    first = under.index(True)
+    last = len(under) - 1 - under[::-1].index(True)
+    # A fill can start on the previous sentence's full stop (page 140).
+    return "".join(c["c"] for c in line[first : last + 1]).strip().lstrip(". ")
+
+
+def cell_text(
+    raw: dict, rtl: bool = True, highlights: list[pymupdf.Rect] = ()
+) -> CellText:
     """
     Join a cell's ``rawdict`` characters into visual lines, repairing glyphs.
 
     Glyph repairs run per span. Pieces of one visual line are joined exactly as
     stored, with no space added, and only then stripped; empty lines are
-    dropped.
+    dropped. A line under one of ``highlights`` (the source's yellow fills,
+    P32) is also listed in ``highlighted``.
 
     returns:
     - cell (CellText): the repaired lines and the repair counts
     """
     lines: list[str] = []
+    highlighted: list[str] = []
     swaps = reordered = remaining = moved = 0
     private: list[str] = []
     groups, merged = visual_lines(raw, rtl)
@@ -249,18 +280,31 @@ def cell_text(raw: dict, rtl: bool = True) -> CellText:
         private += PRIVATE_USE.findall(text)
         if text.strip():
             lines.append(text.strip())
-    return CellText(lines, merged, moved, swaps, reordered, remaining, private)
+            marked = _highlighted_text(line, highlights)
+            if marked:
+                highlighted.append(marked)
+    return CellText(
+        lines, merged, moved, swaps, reordered, remaining, private, highlighted
+    )
 
 
-def read_cell(page: pymupdf.Page, rect: pymupdf.Rect | None, rtl: bool) -> CellText:
+def read_cell(
+    page: pymupdf.Page,
+    rect: pymupdf.Rect | None,
+    rtl: bool,
+    highlights: list[pymupdf.Rect] = (),
+) -> CellText:
     """
     Read one side of a row from its clipped ``rawdict``.
 
-    ``rtl`` is True for the Arabic side, so a line's pieces read right to left.
+    ``rtl`` is True for the Arabic side, so a line's pieces read right to left;
+    ``highlights`` are the page's yellow fills (P32).
 
     returns:
     - cell (CellText): the repaired text, or no lines when ``rect`` is None
     """
     if rect is None:
         return CellText([])
-    return cell_text(page.get_text("rawdict", clip=rect), rtl=rtl)
+    return cell_text(
+        page.get_text("rawdict", clip=rect), rtl=rtl, highlights=highlights
+    )

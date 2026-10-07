@@ -14,7 +14,14 @@ pytestmark = pytest.mark.unit
 
 
 def row(en: str = "", ar: str = "", page: int = 59, index: int = 2) -> Row:
-    return Row(page=page, row_index=index, en_text=en, ar_text=ar, en_all_bold=False)
+    return Row(
+        page=page,
+        row_index=index,
+        en_text=en,
+        ar_text=ar,
+        en_all_bold=False,
+        ar_all_bold=False,
+    )
 
 
 def erratum(**overrides) -> Erratum:
@@ -85,6 +92,21 @@ def test_consecutive_lines_must_all_be_whole_lines():
             row(ar="الدائن المر\n ن الحق", page=163, index=0),
             erratum(page=163, row=0, side="ar", expect="المر\n ن الحق"),
         )
+
+
+def test_an_empty_cell_can_be_filled():
+    """Page 81, row 5: an Arabic-only heading gets its English from an erratum."""
+    fixed = apply_erratum(
+        row(en="", ar="موت المستأجر أو إعساره", page=81, index=5),
+        erratum(page=81, row=5, expect="", replace="Death or insolvency of the lessee"),
+    )
+
+    assert fixed.en_text == "Death or insolvency of the lessee"
+
+
+def test_an_empty_expect_never_matches_a_cell_with_text():
+    with pytest.raises(ErratumNotFoundError, match="found 0"):
+        apply_erratum(row(en="Article 1\nBody"), erratum(expect=""))
 
 
 def test_errata_apply_to_their_own_rows_only():

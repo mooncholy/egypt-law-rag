@@ -64,6 +64,7 @@ Every line must read `OK`. A mismatch means the PDF or the measurement code chan
 | P29 | 58 rows have an empty Arabic cell and 1 an empty English cell (page 81, row 5). Article 1022's Arabic cell (page 147, row 6) is empty | Measured | `extract.json` (`rows_empty_ar`, `rows_empty_en`) |
 | P30 | PyMuPDF splits one visual line into several lines whenever a text run starts to the left of the previous one, which right-to-left text does constantly: 5,051 Arabic pieces (1,618 of them mid-word, e.g., `الثان` + `ي`) and 7 English pieces (stored right to left, e.g., Article 1022). `get_text("text")` splits the same way. Inside Arabic pieces, a space is often stored before characters drawn to its right (`' مصادر'` is drawn `'مصادر '`): 7,144 spaces, including the 13 spaced `مادة` (P10) and Article 601's split number (P24). `extract` joins the pieces of each visual line and moves those spaces (R24) | Measured | `extract.json` (`line_pieces_merged_ar`, `line_pieces_merged_en`, `piece_spaces_moved`) |
 | P31 | 2 ligatures are drawn with no character at all, so their letters are missing from the text layer: page 21 (`اداما`, reads as `انهداما`) and page 169 (`أما`, reads as `أنهما`). Found in Phase 2; errata entries await the owner | Measured (by the gap at the seam); the letters are Judgment | — |
+| P32 | The yellow fills (P6) mark text with no direct counterpart in the other language: English-only passages in Articles 84, 499, 1022 and 1060, and the heading `SECOND PART / REAL RIGHTS`; Arabic-only passages in Articles 970, 1021 (paragraphs ٢ and ٣) and 1085, and the heading `موت المستأجر أو إعساره`. Articles 1021 and 1022 are not treated as a misalignment: their paragraph numbers differ | Measured (location); the meaning is the owner's reading | `extract.json` (`highlighted_lines_en`, `highlighted_lines_ar`), `assemble.json` (`untranslated_passages`) |
 
 # Subsequent Decisions
 
@@ -113,6 +114,9 @@ The pipeline follows these rules; each rests on the facts above. **Decided** rul
 | R23 | The `profile` stage re-measures the raw baselines above on every build; any mismatch stops `dvc repro` before a repair runs | All measured Ps | Decided |
 | R24 | `extract` joins the pieces of each visual line (boxes overlapping vertically by at least half) in reading order, and moves each space of an Arabic piece past characters drawn to its right (never past a Latin letter or ASCII digit) | P30 | Decided (Phase 2) |
 | R25 | `extract` drops a zero-width alef that follows no `ل`, before spaces move. Exactly 26 | P28 | Decided by the owner (D11) |
+| R26 | A row with an empty English cell in the PDF is a heading when every Arabic span is bold; a row declaring a repealed range is a repeal, checked before headings | P12, P29 | Decided (Phase 3) |
+| R27 | Refines R16: in a heading cell, a plain line is a wrapped title (joined onto the line before) when the other language has fewer headings; and a heading listed after another in the same cell nests under it | P18 | Judgment, Gate 3 |
+| R28 | Highlighted text is kept, not corrected: each article carries its highlighted passages as `only_in_en` or `only_in_ar`, and a heading in one language keeps an empty label on the other side, marked in `heading_tree.txt`. Retrieval and answers surface them | P32 | Decided by the owner (Phase 3) |
 
 ## 5. Errata
 

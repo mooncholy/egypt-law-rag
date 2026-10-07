@@ -86,3 +86,16 @@ def test_extract_counts_equal_their_baselines(stage_metrics):
     assert counts["rows_missing_a_side"] == 0
     assert counts["lam_alef_swaps"] == profile.RAW_DEFECTS["lam_alef_signatures"]
     assert counts["rtl_digit_runs_reordered"] == profile.RAW_DEFECTS["rtl_digit_runs"]
+
+
+@pytest.mark.unit
+def test_highlighted_lines_are_recorded_on_their_side(synthetic_pdf, highlighted_text):
+    """P32: text under a yellow fill has no counterpart in the other language."""
+    rows, counts = extract_document(synthetic_pdf)
+
+    highlighted = {
+        (r.page, r.row_index): r.en_highlighted for r in rows if r.en_highlighted
+    }
+    assert highlighted == {(2, 2): [highlighted_text]}
+    assert all(not r.ar_highlighted for r in rows)
+    assert counts["highlighted_lines_en"] == 1

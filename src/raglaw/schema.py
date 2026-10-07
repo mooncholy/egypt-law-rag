@@ -97,8 +97,23 @@ class Row(Record):
     )
     en_text: str = Field(description="The English cell, lines joined with `\\n`.")
     ar_text: str = Field(description="The Arabic cell, lines joined with `\\n`.")
-    en_all_bold: bool = Field(
-        description="True when every English span is bold (the heading signal, P15)."
+    en_all_bold: bool | None = Field(
+        description="True when every English span is bold (the heading signal, "
+        "P15); None when the English cell holds no text in the PDF."
+    )
+    ar_all_bold: bool | None = Field(
+        description="True when every Arabic span is bold; None when the Arabic "
+        "cell holds no text in the PDF. The heading signal when English is empty."
+    )
+    en_highlighted: list[str] = Field(
+        default_factory=list,
+        description="English lines under a yellow fill: text with no counterpart "
+        "in the Arabic cell (P32).",
+    )
+    ar_highlighted: list[str] = Field(
+        default_factory=list,
+        description="Arabic lines under a yellow fill: text with no counterpart in "
+        "the English cell (P32).",
     )
 
 
@@ -125,6 +140,16 @@ class Article(Record):
     )
     is_repealed: bool = Field(
         default=False, description="True for 54-80 and 389-417; the text is the note."
+    )
+    only_in_en: list[str] = Field(
+        default_factory=list,
+        description="Passages of `text_en` that the source highlights as having no "
+        "counterpart in the Arabic text (P32).",
+    )
+    only_in_ar: list[str] = Field(
+        default_factory=list,
+        description="Passages of `text_ar` that the source highlights as having no "
+        "counterpart in the English text (P32).",
     )
 
 

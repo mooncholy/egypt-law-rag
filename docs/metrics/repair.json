@@ -1,8 +1,8 @@
 {
-  "errata_applied": 30,
+  "errata_applied": 29,
   "same_line_headers_split": 6,
   "ar_headers_normalized": 1092,
-  "spaced_mada_normalized": 13,
+  "spaced_mada_normalized": 0,
   "ar_headers_unparsed": 2,
   "header_typos_remaining": 0,
   "same_line_headers_remaining": 0,

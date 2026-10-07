@@ -1,3 +1,4 @@
+import pymupdf
 import pytest
 
 from raglaw.ingest.glyphs import (
@@ -259,3 +260,26 @@ def test_stray_alefs_are_dropped_before_spaces_move():
 
     assert cell.lines == ["العمل"]
     assert cell.stray_zero_width_alefs == 1
+
+
+# --- Highlights (P32) ---------------------------------------------------------
+
+
+def test_only_characters_under_a_fill_are_highlighted():
+    """A fill can start mid-line (page 140): the line's start isn't highlighted."""
+    line = word("سنة. ولا يجوز", x0=560.0)
+    # word() draws right to left from x0 in 5 pt steps; the fill covers `ولا يجوز`.
+    fill = pymupdf.Rect(490.0, -1.0, 535.0, 11.0)
+
+    cell = cell_text(raw(line), highlights=[fill])
+
+    assert cell.lines == ["سنة. ولا يجوز"]
+    assert cell.highlighted == ["ولا يجوز"]
+
+
+def test_a_line_with_no_fill_is_not_highlighted():
+    cell = cell_text(
+        raw(word("حق الملكية")), highlights=[pymupdf.Rect(0, 100, 50, 120)]
+    )
+
+    assert cell.highlighted == []
