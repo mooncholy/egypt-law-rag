@@ -8,8 +8,10 @@ from raglaw.ingest.chunk import (
     ChunkError,
     ParagraphSemanticSplitter,
     chunk_documents,
+    opening_connective,
     paragraph_numbers,
     run_chunk,
+    split_articles_report,
     split_paragraphs,
 )
 from raglaw.ingest.loader import CivilCodeArticleLoader
@@ -213,6 +215,75 @@ def test_the_structural_strategy_never_imports_the_model(tmp_path):
     assert "langchain_huggingface" not in sys.modules
 
 
+# --- Quality, recorded per run --------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("paragraph", "connective"),
+    [
+        ("(٢( ومع ذلك فحقوق الحمل المستكن يعينها القانون.", "ومع ذلك"),
+        (") ٢( على أنه إذا اشترط الدفع مقدماً", "على أن"),
+        (")٣( فإذا كان الحائز شخصا معنويا", "فإذا"),
+        ("(١( تبدأ شخصية الإنسان بتمام ولادته حيا", None),
+    ],
+)
+def test_a_paragraph_tied_to_the_one_before_is_recognized(paragraph, connective):
+    assert opening_connective(paragraph) == connective
+
+
+@pytest.mark.unit
+def test_quality_metrics_measure_split_parts_and_their_ties(tmp_path, stub_embeddings):
+    """Article 29: its second paragraph is an exception to the first."""
+    rule = "(١( تبدأ شخصية الإنسان بتمام ولادته حيا، وتنتهي بموته."
+    exception = "(٢( ومع ذلك فحقوق الحمل المستكن يعينها القانون."
+    # Article 31's two paragraphs are close in meaning, so the corpus threshold
+    # sits below the distance between Article 29's rule and its exception.
+    docs = documents(
+        tmp_path, article(29, f"{rule}\n{exception}"), article(31, "(١( أ\n(٢( ب")
+    )
+    embeddings = stub_embeddings({exception: [0.0, 1.0]}, default=[1.0, 0.0])
+
+    _, metrics = chunk_documents(docs, chunking("structural_semantic"), embeddings)
+
+    assert metrics["split_parts"] == 2
+    assert metrics["split_parts_with_connective"] == 1
+    assert metrics["split_parts_with_connective_share"] == 1.0
+    assert metrics["split_parts_under_100_chars"] == 2
+    assert (
+        metrics["paragraphs_with_connective_share"] == 0.5
+    )  # 1 of the 2 later paragraphs
+
+
+@pytest.mark.unit
+def test_structural_chunks_record_no_split_parts(tmp_path):
+    _, metrics = chunk_documents(
+        documents(tmp_path, article(1, "نص قصير.")), chunking()
+    )
+
+    assert metrics["split_parts"] == 0
+    assert metrics["split_parts_with_connective_share"] == 0.0
+    assert metrics["median_chunk_chars"] == len("نص قصير.")
+
+
+@pytest.mark.unit
+def test_split_articles_report_lists_each_part(tmp_path, stub_embeddings):
+    exception = "(٢( ومع ذلك فحقوق الحمل المستكن يعينها القانون."
+    docs = documents(
+        tmp_path,
+        article(29, f"(١( تبدأ شخصية الإنسان.\n{exception}"),
+        article(31, "(١( أ\n(٢( ب"),
+    )
+    embeddings = stub_embeddings({exception: [0.0, 1.0]}, default=[1.0, 0.0])
+    chunks, _ = chunk_documents(docs, chunking("structural_semantic"), embeddings)
+
+    report = split_articles_report(chunks)
+
+    assert "# Split articles (structural_semantic): 1" in report
+    assert "## Article 29" in report
+    assert "opens with ومع ذلك" in report
+
+
 # --- The stage ---------------------------------------------------------------------------
 
 
@@ -222,7 +293,11 @@ def test_the_stage_writes_chunks_and_metrics(tmp_path):
     write_records(articles, Article, [article(1, "نص."), article(2, "نص آخر.")])
 
     metrics = run_chunk(
-        articles, tmp_path / "chunks.json", tmp_path / "m.json", chunking()
+        articles,
+        tmp_path / "chunks.json",
+        tmp_path / "m.json",
+        chunking(),
+        report_out=tmp_path / "split_articles.md",
     )
 
     assert [c.chunk_id for c in read_records(tmp_path / "chunks.json", Chunk)] == [
@@ -231,6 +306,7 @@ def test_the_stage_writes_chunks_and_metrics(tmp_path):
     ]
     assert metrics["articles_covered"] == 2
     assert len(metrics["chunks_sha256"]) == 64
+    assert (tmp_path / "split_articles.md").read_text().startswith("# Split articles")
 
 
 # --- Corpus: the real articles (C15) -------------------------------------------------------

@@ -244,3 +244,13 @@ def test_a_stage_can_record_its_choices(tracking_settings, mlflow_client):
 
     params = mlflow_client.get_run(run.run_id).data.params
     assert (params["strategy"], params["max_chars"]) == ("structural", "1000")
+
+
+def test_a_stage_can_attach_a_file(tracking_settings, mlflow_client, tmp_path):
+    report = tmp_path / "split_articles.md"
+    report.write_text("# Split articles\n")
+    with stage_run("chunk", input_hash="x", settings=tracking_settings) as run:
+        run.log_artifact(report, artifact_path="reports")
+
+    paths = [a.path for a in mlflow_client.list_artifacts(run.run_id, "reports")]
+    assert paths == ["reports/split_articles.md"]

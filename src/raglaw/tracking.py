@@ -55,6 +55,10 @@ class StageRun:
             metrics=[Metric(k, float(v), timestamp, 0) for k, v in metrics.items()],
         )
 
+    def log_artifact(self, path: Path, artifact_path: str | None = None) -> None:
+        """Attach a file to the run (e.g., a report), under ``artifact_path``."""
+        self._client.log_artifact(self.run_id, str(path), artifact_path=artifact_path)
+
     def log_params(self, params: Mapping[str, object]) -> None:
         """Record the choices a stage ran with (e.g., a strategy), to compare runs by."""
         self._client.log_batch(

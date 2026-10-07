@@ -18,6 +18,13 @@ Two strategies, chosen in ``params.yaml``:
 Every part carries the article's full English text (D4), its heading paths, and
 its untranslated passages (R28).
 
+Besides counts, the stage records the *quality* of a chunking, so two runs can be
+compared in MLflow: chunk sizes, how small the parts of split articles are, and
+how many parts open with a word tying them to the paragraph before (an exception
+or a condition, e.g. ``ومع ذلك``), against how often paragraphs do in the corpus.
+Each split article is listed, with its parts, in a ``split_articles.md``
+artifact on the run.
+
 Run as ``python -m raglaw.ingest.chunk``.
 """
 
@@ -26,6 +33,8 @@ import json
 import logging
 import math
 import re
+import statistics
+import tempfile
 from collections import Counter
 from itertools import pairwise
 from pathlib import Path
@@ -50,6 +59,15 @@ MARKER = r"[()]\s*([١-٩][٠-٩]*)\s*[().]?\s*[()]"
 # The same pattern without a capturing group: LangChain wraps its separator in
 # a group of its own before calling re.split, so a second group would misalign.
 PARAGRAPH_START = r"\n(?=[()]\s*[١-٩][٠-٩]*\s*[().]?\s*[()])"
+# A marker opening a paragraph, as a prefix to strip before reading its words.
+MARKER_PREFIX = re.compile(r"^[()\s]*[١-٩][٠-٩]*\s*[().]?\s*[()]\s*،?\s*")
+# Opening words that tie a paragraph to the one before it: a condition, an
+# exception or a permission qualifying the previous paragraph's rule.
+CONNECTIVE = re.compile(
+    r"^(ومع ذلك|ومع هذا|غير أن|إلا أن|على أن|ولكن|فإذا|وإذا|فإن|"
+    r"وفي هذه الحالة|وفى هذه الحالة|ويجوز|ولا يجوز)"
+)
+SHORT_CHUNK_CHARS = 100  # a chunk this short carries little context on its own
 AR_DIGITS = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
 EN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 
@@ -284,6 +302,90 @@ def chunk_document(
     return chunks, oversize
 
 
+def opening_connective(paragraph: str) -> str | None:
+    """
+    The connective a paragraph opens with, after its marker.
+
+    returns:
+    - connective (str | None): e.g. ``ومع ذلك``; None when it opens otherwise
+    """
+    m = CONNECTIVE.match(MARKER_PREFIX.sub("", paragraph))
+    return m.group(1) if m else None
+
+
+def _median(values: list[int]) -> float:
+    return float(statistics.median(values)) if values else 0.0
+
+
+def quality_metrics(chunks: list[Chunk], documents: list[Document]) -> dict[str, float]:
+    """
+    Measure a chunking's shape and how often a split separates dependent text.
+
+    returns:
+    - metrics (dict[str, float]): chunk-size distribution; the size of split
+      articles' parts; how many parts after a split open with a connective, and
+      the share; and the corpus base rate of paragraphs opening with one
+    """
+    lengths = sorted(len(c.text_ar) for c in chunks)
+    split = {c.article_number for c in chunks if c.part_count > 1}
+    parts = [c for c in chunks if c.article_number in split]
+    later = [c for c in parts if c.part_index > 1]
+    tied = sum(opening_connective(c.text_ar) is not None for c in later)
+    paragraphs = [
+        p
+        for d in documents
+        if not d.metadata["is_repealed"]
+        for p in split_paragraphs(d.page_content)[1:]
+    ]
+    base = sum(opening_connective(p) is not None for p in paragraphs)
+    return {
+        "median_chunk_chars": _median(lengths),
+        "p10_chunk_chars": float(lengths[len(lengths) // 10]) if lengths else 0.0,
+        "chunks_under_100_chars": sum(n < SHORT_CHUNK_CHARS for n in lengths),
+        "split_parts": len(parts),
+        "split_part_median_chars": _median([len(c.text_ar) for c in parts]),
+        "split_parts_under_100_chars": sum(
+            len(c.text_ar) < SHORT_CHUNK_CHARS for c in parts
+        ),
+        "split_parts_with_connective": tied,
+        "split_parts_with_connective_share": round(tied / len(later), 6)
+        if later
+        else 0.0,
+        "paragraphs_with_connective_share": round(base / len(paragraphs), 6)
+        if paragraphs
+        else 0.0,
+    }
+
+
+def split_articles_report(chunks: list[Chunk]) -> str:
+    """
+    List every split article with its parts, for the run's artifact.
+
+    returns:
+    - text (str): Markdown, one section per split article: its size, heading,
+      and each part's size, paragraphs, opening connective and start
+    """
+    by_article: dict[int, list[Chunk]] = {}
+    for c in chunks:
+        by_article.setdefault(c.article_number, []).append(c)
+    split = {n: cs for n, cs in by_article.items() if len(cs) > 1}
+    strategy = chunks[0].strategy if chunks else ""
+    lines = [f"# Split articles ({strategy}): {len(split)}", ""]
+    for n, cs in sorted(split.items()):
+        whole = sum(len(c.text_ar) for c in cs)
+        heading = cs[0].heading_path_ar[-1] if cs[0].heading_path_ar else ""
+        lines += [f"## Article {n} ({whole} chars, {len(cs)} parts; {heading})", ""]
+        for c in cs:
+            tie = opening_connective(c.text_ar) if c.part_index > 1 else None
+            start = c.text_ar.replace("\n", " ")[:100]
+            lines.append(
+                f"- part {c.part_index}: {len(c.text_ar)} chars, paragraphs "
+                f"{c.paragraphs}{f', opens with {tie}' if tie else ''}: {start}"
+            )
+        lines.append("")
+    return "\n".join(lines)
+
+
 def chunk_documents(
     documents: list[Document], chunking: Chunking, embeddings: Embeddings | None = None
 ) -> tuple[list[Chunk], dict[str, Any]]:
@@ -330,6 +432,7 @@ def chunk_documents(
             bool(c.only_in_en or c.only_in_ar) for c in chunks
         ),
     }
+    metrics |= quality_metrics(chunks, documents)
     if isinstance(splitter, ParagraphSemanticSplitter):
         metrics["semantic_threshold"] = splitter.threshold
         metrics["semantic_breakpoints"] = splitter.breakpoints
@@ -342,9 +445,12 @@ def run_chunk(
     metrics_out: Path,
     chunking: Chunking,
     embeddings: Embeddings | None = None,
+    report_out: Path | None = None,
 ) -> dict[str, Any]:
     """
     Chunk ``articles_in`` into ``out`` (``Chunk`` records), with metrics.
+
+    ``report_out``, when given, receives the split-articles report.
 
     returns:
     - metrics (dict[str, Any]): what was written to ``metrics_out``, including
@@ -354,6 +460,8 @@ def run_chunk(
     chunks, metrics = chunk_documents(documents, chunking, embeddings)
     write_records(out, Chunk, chunks)
     metrics["chunks_sha256"] = sha256_file(out)
+    if report_out is not None:
+        report_out.write_text(split_articles_report(chunks), encoding="utf-8")
     metrics_out.parent.mkdir(parents=True, exist_ok=True)
     metrics_out.write_text(
         json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -390,13 +498,14 @@ def main(argv: list[str] | None = None) -> None:
                 "breakpoint_percentile": chunking.semantic.breakpoint_percentile,
             }
         run.log_params(params)
-        metrics = run_chunk(args.articles, args.out, args.metrics, chunking)
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "split_articles.md"
+            metrics = run_chunk(
+                args.articles, args.out, args.metrics, chunking, report_out=report
+            )
+            run.log_artifact(report, artifact_path="reports")
         run.log_metrics(
-            {
-                k: v
-                for k, v in metrics.items()
-                if isinstance(v, int | float) and v is not None
-            }
+            {k: v for k, v in metrics.items() if isinstance(v, int | float)}
         )
 
 

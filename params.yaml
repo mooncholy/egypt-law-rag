@@ -28,7 +28,7 @@ tracking:
     corpus: corpus-build   # one run per `dvc repro` stage execution
 
 chunking:
-  strategy: structural_semantic
+  strategy: structural
   max_chars: 1000
   semantic:
     model: BAAI/bge-m3
