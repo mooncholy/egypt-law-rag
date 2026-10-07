@@ -36,6 +36,13 @@ AR_HEADER_LINE = re.compile(r"^[\s()]*(م\s*ا\s*د\s*ة)[\s()]*(?:([٠-٩]+)[\s
 AR_NUMBER_LINE = re.compile(r"^[\s()]*([٠-٩]+)[\s()]*$")
 AR_HEADER_WORD = "مادة"
 
+# The article rows whose Arabic header can't be read, and why. Any other
+# unreadable header fails the stage.
+EXPECTED_UNPARSED_AR_HEADERS = {
+    54: "the repeal note for 54-80 stands in for the header",
+    1022: "the Arabic cell is empty in the print",
+}
+
 
 class RepairCountError(RuntimeError):
     """A repair count differs from its baseline, or a targeted defect remains."""
@@ -152,15 +159,19 @@ def repair_rows(rows: list[Row], errata: list) -> tuple[list[Row], dict[str, int
                 counts["same_line_headers_split"] += 1
             normalized = normalize_ar_header(row)
             if normalized is None:
+                number = int(article_header(row).group(3))
+                expected = number in EXPECTED_UNPARSED_AR_HEADERS
                 counts["ar_headers_unparsed"] += 1
+                counts["ar_headers_unparsed_unexpected"] += not expected
                 log_anomaly(
                     logger,
                     "Arabic header can't be read; left as printed",
                     page=row.page,
                     row_index=row.row_index,
                     row_class="article",
-                    article_number=int(article_header(row).group(3)),
+                    article_number=number,
                     anomaly_type="unparsed_ar_header",
+                    expected=expected,
                     ar_first_line=row.ar_text.split("\n", 1)[0],
                 )
             else:
@@ -174,6 +185,7 @@ def repair_rows(rows: list[Row], errata: list) -> tuple[list[Row], dict[str, int
         "ar_headers_normalized",
         "spaced_mada_normalized",
         "ar_headers_unparsed",
+        "ar_headers_unparsed_unexpected",
     )
     return repaired, {k: counts[k] for k in keys} | remaining_defects(repaired)
 
@@ -182,9 +194,9 @@ def check_counts(counts: dict[str, int], n_errata: int) -> None:
     """
     Compare the repair counts with their baselines (G6, C10, C11).
 
-    The 13 spaced ``مادة`` headers (P10) are misplaced spaces, which ``extract``
-    already moves (P30), so R9 finds none left to join; only the remaining
-    count is checked.
+    R9 joins no spaced ``مادة``: ``extract`` already moves the misplaced spaces
+    (P30), so finding one here means that fix regressed. The only unreadable
+    Arabic headers are the ones named in ``EXPECTED_UNPARSED_AR_HEADERS``.
 
     exceptions:
     - RepairCountError: a count differs, or a targeted defect remains
@@ -192,6 +204,9 @@ def check_counts(counts: dict[str, int], n_errata: int) -> None:
     expected = {
         "errata_applied": n_errata,
         "same_line_headers_split": profile.RAW_DEFECTS["same_line_headers"],
+        "spaced_mada_normalized": 0,
+        "ar_headers_unparsed": len(EXPECTED_UNPARSED_AR_HEADERS),
+        "ar_headers_unparsed_unexpected": 0,
         "header_typos_remaining": 0,
         "same_line_headers_remaining": 0,
         "spaced_mada_remaining": 0,

@@ -221,9 +221,9 @@ def huggingface_embeddings(chunking: Chunking) -> Embeddings:
     - embeddings (Embeddings): ``HuggingFaceEmbeddings`` on CPU, normalized
 
     exceptions:
-    - ImportError: the ``semantic`` dependency group isn't installed
+    - ImportError: the ``embed`` dependency group isn't installed
     """
-    from langchain_huggingface import HuggingFaceEmbeddings  # semantic group only
+    from langchain_huggingface import HuggingFaceEmbeddings  # embed group only
 
     # BAAI's revision ships only pytorch_model.bin. Without this flag,
     # transformers fetches model.safetensors from an unmerged bot pull request

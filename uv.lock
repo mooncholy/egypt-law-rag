@@ -1041,14 +1041,18 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx2" },
-    { name = "langchain-huggingface" },
     { name = "pdfplumber" },
     { name = "pre-commit" },
     { name = "pylint" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+]
+embed = [
+    { name = "langchain-huggingface" },
     { name = "sentence-transformers" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
+    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
 ]
 ingest = [
     { name = "boto3" },
@@ -1058,12 +1062,6 @@ ingest = [
     { name = "mlflow" },
     { name = "pikepdf" },
     { name = "pymupdf" },
-]
-semantic = [
-    { name = "langchain-huggingface" },
-    { name = "sentence-transformers" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
-    { name = "torch", version = "2.14.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
 ]
 
 [package.metadata]
@@ -1078,14 +1076,17 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx2", specifier = ">=2.13.1" },
-    { name = "langchain-huggingface", specifier = ">=1.2.2" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pylint", specifier = ">=4.1.1" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.16.9" },
+]
+embed = [
+    { name = "langchain-huggingface", specifier = ">=1.2.2" },
     { name = "sentence-transformers", specifier = ">=6.1.0" },
+    { name = "torch", specifier = ">=2.14.1", index = "https://download.pytorch.org/whl/cpu" },
 ]
 ingest = [
     { name = "boto3", specifier = ">=1.43.75" },
@@ -1095,11 +1096,6 @@ ingest = [
     { name = "mlflow", specifier = ">=3.16.1" },
     { name = "pikepdf", specifier = ">=10.15.0" },
     { name = "pymupdf", specifier = ">=1.28.2" },
-]
-semantic = [
-    { name = "langchain-huggingface", specifier = ">=1.2.2" },
-    { name = "sentence-transformers", specifier = ">=6.1.0" },
-    { name = "torch", specifier = ">=2.14.1", index = "https://download.pytorch.org/whl/cpu" },
 ]
 
 [[package]]

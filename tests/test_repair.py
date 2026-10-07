@@ -16,6 +16,19 @@ from raglaw.ingest.repair import (
 from raglaw.records import read_records, write_records
 from raglaw.schema import LogEvent, Row
 
+# Counts that meet every repair baseline, with three errata.
+BASELINE_COUNTS = {
+    "errata_applied": 3,
+    "same_line_headers_split": profile.RAW_DEFECTS["same_line_headers"],
+    "ar_headers_normalized": 1_092,
+    "spaced_mada_normalized": 0,
+    "ar_headers_unparsed": 2,
+    "ar_headers_unparsed_unexpected": 0,
+    "header_typos_remaining": 0,
+    "same_line_headers_remaining": 0,
+    "spaced_mada_remaining": 0,
+}
+
 
 def row(en: str, ar: str = "", index: int = 0, bold: bool = False) -> Row:
     return Row(
@@ -117,6 +130,7 @@ def test_repairs_apply_in_order_to_article_rows_only():
         "ar_headers_normalized": 1,
         "spaced_mada_normalized": 0,
         "ar_headers_unparsed": 1,
+        "ar_headers_unparsed_unexpected": 1,  # Article 3 isn't a known case
         "header_typos_remaining": 0,
         "same_line_headers_remaining": 0,
         "spaced_mada_remaining": 0,
@@ -131,22 +145,38 @@ def test_unreadable_arabic_header_is_an_anomaly(log_records):
     assert anomaly["anomaly_type"] == "unparsed_ar_header"
     assert (anomaly["page"], anomaly["row_index"]) == (10, 3)
     assert (anomaly["row_class"], anomaly["article_number"]) == ("article", 54)
+    assert anomaly["expected"] is True  # still surfaced, though it's a known case
 
 
 @pytest.mark.unit
 def test_counts_off_their_baselines_fail_the_stage():
-    counts = {
-        "errata_applied": 3,
+    counts = BASELINE_COUNTS | {
         "same_line_headers_split": 5,
-        "spaced_mada_normalized": 0,
-        "header_typos_remaining": 0,
-        "same_line_headers_remaining": 0,
         "spaced_mada_remaining": 1,
     }
 
     with pytest.raises(RepairCountError, match="same_line_headers_split") as err:
         check_counts(counts, n_errata=3)
     assert "spaced_mada_remaining" in str(err.value)
+
+
+@pytest.mark.unit
+def test_baseline_counts_pass():
+    check_counts(BASELINE_COUNTS, n_errata=3)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "drift",
+    [
+        {"spaced_mada_normalized": 1},  # extract's space fix (P30) regressed
+        {"ar_headers_unparsed_unexpected": 1},  # a header other than 54 or 1022
+        {"ar_headers_unparsed": 3},
+    ],
+)
+def test_arabic_header_drift_fails_the_stage(drift):
+    with pytest.raises(RepairCountError, match=next(iter(drift))):
+        check_counts(BASELINE_COUNTS | drift, n_errata=3)
 
 
 @pytest.mark.unit
@@ -182,4 +212,5 @@ def test_repair_counts_equal_their_baselines(stage_metrics, repo_root):
     assert (
         counts["ar_headers_unparsed"] == 2
     )  # Article 54's repeal note, 1022's empty cell
+    assert counts["ar_headers_unparsed_unexpected"] == 0
     assert all(v == 0 for k, v in counts.items() if k.endswith("_remaining"))
