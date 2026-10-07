@@ -54,8 +54,16 @@ uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0
 | `src/raglaw/api/` | The FastAPI service |
 | `data/errata.yaml` | Owner-approved fixes for one-off source errors |
 | `docs/reports/0_source_pdf_analysis.md` | The source facts (P1 to P26) and the rules (R1 to R23) built on them |
+| `docs/reports/evaluation_data.md` | How the evaluation data was made, and its limits |
 | `docs/normalization.md` | Arabic normalization rules, shared by ingestion and query time |
 | `docs/metrics/` | Stage metrics read by `dvc metrics` |
+| `data/gold/` | The gold sample and the retrieval eval set (see [Evaluation data](#evaluation-data)) |
+
+## Evaluation data
+
+- **Gold sample** (`data/gold/articles_gold.json`): 12 articles transcribed from the printed pages, which `validate` compares the corpus against.
+- **Retrieval eval set** (`data/gold/retrieval_eval.jsonl`): 122 Arabic and English questions, each with the articles that govern the answer.
+- **Truth point:** both sets were made by an LLM, not a legal professional, and aren't spot-checked yet. Read [docs/reports/evaluation_data.md](docs/reports/evaluation_data.md) before relying on a score computed from them.
 
 ## Contributing
 
