@@ -175,8 +175,8 @@ stages:
       size: 1918535
     - path: src/raglaw/ingest/chunk.py
       hash: md5
-      md5: 1908423e478a64bb43990de2d743c0ea
-      size: 20060
+      md5: 7e1857262145988475dc90116d344da7
+      size: 20828
     - path: src/raglaw/ingest/loader.py
       hash: md5
       md5: 2d0f1c38040bd995b3ac2e5f91fc0302

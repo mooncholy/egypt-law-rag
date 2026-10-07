@@ -94,6 +94,11 @@ def split_paragraphs(text: str) -> list[str]:
     return [p for p in re.split(PARAGRAPH_START, text) if p.strip()]
 
 
+# Parts never repeat text: an article's parts rebuild it exactly, which the
+# reconstruction check relies on.
+CHUNK_OVERLAP = 0
+
+
 def structural_splitter(max_chars: int) -> RecursiveCharacterTextSplitter:
     """
     LangChain's recursive splitter, allowed to split at paragraph markers only.
@@ -111,7 +116,7 @@ def structural_splitter(max_chars: int) -> RecursiveCharacterTextSplitter:
         is_separator_regex=True,
         keep_separator="start",
         chunk_size=max_chars,
-        chunk_overlap=0,
+        chunk_overlap=CHUNK_OVERLAP,
         length_function=len,
         strip_whitespace=True,
     )
@@ -149,7 +154,7 @@ class ParagraphSemanticSplitter(TextSplitter):
         max_chars: int,
         batch_size: int = 32,
     ) -> None:
-        super().__init__(chunk_size=max_chars, chunk_overlap=0)
+        super().__init__(chunk_size=max_chars, chunk_overlap=CHUNK_OVERLAP)
         self.embeddings = embeddings
         self.breakpoint_percentile = breakpoint_percentile
         self.batch_size = batch_size
@@ -475,6 +480,32 @@ def run_chunk(
     return metrics
 
 
+def run_params(chunking: Chunking) -> dict[str, object]:
+    """
+    The chunking config a run is compared by, under the names used across runs.
+
+    ``embedding_model`` is ``none`` for the structural strategy, which embeds
+    nothing; the semantic variant records the model and its pinned revision.
+
+    returns:
+    - params (dict[str, object]): strategy, chunk size, overlap and embedding
+      model, plus the breakpoint percentile for the semantic variant
+    """
+    params: dict[str, object] = {
+        "strategy": chunking.strategy,
+        "chunk_size": chunking.max_chars,
+        "chunk_overlap": CHUNK_OVERLAP,
+        "embedding_model": "none",
+    }
+    if chunking.strategy == "structural_semantic":
+        params |= {
+            "embedding_model": chunking.semantic.model,
+            "embedding_revision": chunking.semantic.revision,
+            "breakpoint_percentile": chunking.semantic.breakpoint_percentile,
+        }
+    return params
+
+
 def main(argv: list[str] | None = None) -> None:
     settings = Settings()
     paths = settings.paths
@@ -490,14 +521,7 @@ def main(argv: list[str] | None = None) -> None:
         output_model=Chunk,
         settings=settings,
     ) as run:
-        params = {"strategy": chunking.strategy, "max_chars": chunking.max_chars}
-        if chunking.strategy == "structural_semantic":
-            params |= {
-                "model": chunking.semantic.model,
-                "revision": chunking.semantic.revision,
-                "breakpoint_percentile": chunking.semantic.breakpoint_percentile,
-            }
-        run.log_params(params)
+        run.log_params(run_params(chunking))
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "split_articles.md"
             metrics = run_chunk(

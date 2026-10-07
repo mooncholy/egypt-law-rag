@@ -11,6 +11,7 @@ from raglaw.ingest.chunk import (
     opening_connective,
     paragraph_numbers,
     run_chunk,
+    run_params,
     split_articles_report,
     split_paragraphs,
 )
@@ -310,6 +311,29 @@ def test_the_stage_writes_chunks_and_metrics(tmp_path):
 
 
 # --- Corpus: the real articles (C15) -------------------------------------------------------
+
+
+# --- Run params ------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_structural_run_records_size_overlap_and_no_embedding_model():
+    assert run_params(chunking(max_chars=800)) == {
+        "strategy": "structural",
+        "chunk_size": 800,
+        "chunk_overlap": 0,
+        "embedding_model": "none",
+    }
+
+
+@pytest.mark.unit
+def test_semantic_run_records_the_pinned_embedding_model():
+    params = run_params(chunking("structural_semantic"))
+
+    assert params["embedding_model"] == "BAAI/bge-m3"
+    assert params["embedding_revision"] == SEMANTIC.revision
+    assert params["breakpoint_percentile"] == 90
+    assert params["chunk_overlap"] == 0
 
 
 @pytest.mark.corpus
