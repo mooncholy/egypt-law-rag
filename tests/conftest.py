@@ -13,6 +13,7 @@ import pymupdf
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langchain_core.embeddings import Embeddings
 from mlflow.tracking import MlflowClient
 
 from raglaw.api.main import create_app
@@ -159,6 +160,33 @@ def tracked_pdf(synthetic_pdf: Path, tmp_path: Path) -> Path:
         f"outs:\n- md5: {md5}\n  path: source.pdf\n", encoding="utf-8"
     )
     return pdf
+
+
+# --- Embeddings ----------------------------------------------------------------
+
+
+class StubEmbeddings(Embeddings):
+    """Fixed vectors per text, so the semantic splitter is tested without a model.
+
+    A text not in ``vectors`` gets the ``default`` vector.
+    """
+
+    def __init__(self, vectors: dict[str, list[float]], default: list[float]) -> None:
+        self.vectors, self.default = vectors, default
+        self.calls = 0
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        return [self.vectors.get(t.strip(), self.default) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.vectors.get(text.strip(), self.default)
+
+
+@pytest.fixture
+def stub_embeddings() -> Callable[..., StubEmbeddings]:
+    """Build a ``StubEmbeddings`` from a {text: vector} map and a default vector."""
+    return StubEmbeddings
 
 
 # --- Configuration ---------------------------------------------------------

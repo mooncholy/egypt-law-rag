@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, SecretStr, StringConstraints
 from pydantic_settings import (
@@ -80,6 +80,35 @@ class Experiments(BaseModel):
     )
 
 
+class Semantic(BaseModel):
+    """The ``structural_semantic`` strategy's embedding model and threshold."""
+
+    model: NonEmptyStr = Field(description="Hugging Face model id.")
+    revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] = Field(
+        description="The model's pinned commit, so a rebuild embeds the same way."
+    )
+    breakpoint_percentile: float = Field(
+        gt=0,
+        lt=100,
+        description="Neighbouring paragraphs split where their distance is above "
+        "this percentile of all such distances in the corpus.",
+    )
+    batch_size: int = Field(gt=0, description="Paragraphs embedded per batch.")
+
+
+class Chunking(BaseModel):
+    """How articles become retrievable chunks (Phase 5)."""
+
+    strategy: Literal["structural", "structural_semantic"] = Field(
+        description="`structural` splits at paragraph markers only; "
+        "`structural_semantic` also splits where meaning shifts."
+    )
+    max_chars: int = Field(
+        gt=0, description="Longest Arabic text in one chunk; a paragraph is never cut."
+    )
+    semantic: Semantic = Field(description="Settings for `structural_semantic`.")
+
+
 class Tracking(BaseModel):
     """How MLflow groups the project's runs."""
 
@@ -116,6 +145,7 @@ class Settings(BaseSettings):
     paths: Paths = Field(description="Pipeline inputs and outputs.")
     root_heading: RootHeading = Field(description="The fixed root of heading paths.")
     tracking: Tracking = Field(description="MLflow run grouping.")
+    chunking: Chunking = Field(description="Chunking strategy and limits.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(

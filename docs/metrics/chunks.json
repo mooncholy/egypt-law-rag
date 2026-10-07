@@ -1,0 +1,14 @@
+{
+  "articles_covered": 1149,
+  "chunks": 1211,
+  "chunks_sha256": "9b6c4768a7fac1cbb03dd3810340d0071947ff555dbb522953b78997493534db",
+  "chunks_with_article_number": 1211,
+  "chunks_with_untranslated_text": 7,
+  "max_chunk_chars": 910,
+  "oversize_paragraph_anomalies": 0,
+  "semantic_breakpoints": 61,
+  "semantic_threshold": 0.438927,
+  "split_article_share": 0.049608,
+  "split_articles": 57,
+  "strategy": "structural_semantic"
+}

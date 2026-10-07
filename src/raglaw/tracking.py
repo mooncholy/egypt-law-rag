@@ -55,6 +55,12 @@ class StageRun:
             metrics=[Metric(k, float(v), timestamp, 0) for k, v in metrics.items()],
         )
 
+    def log_params(self, params: Mapping[str, object]) -> None:
+        """Record the choices a stage ran with (e.g., a strategy), to compare runs by."""
+        self._client.log_batch(
+            self.run_id, params=[Param(k, str(v)) for k, v in params.items()]
+        )
+
 
 def sha256_file(path: Path) -> str:
     """

@@ -165,7 +165,9 @@ class Chunk(Record):
 
     chunk_id: str = Field(description="`art-{article_number}-p{part_index}`.")
     article_number: int = Field(ge=1)
-    citation: str = Field(description="How an answer cites the article.")
+    citation: str = Field(
+        description="How an answer cites it: `Article 147 | المادة ١٤٧`."
+    )
     heading_path: list[str]
     heading_path_ar: list[str]
     source_pages: list[int] = Field(min_length=1)
@@ -178,4 +180,12 @@ class Chunk(Record):
     )
     text_ar: str
     text_en: str = Field(description="The article's full English text (D4).")
+    only_in_en: list[str] = Field(
+        default_factory=list,
+        description="The article's English passages with no Arabic counterpart (R28).",
+    )
+    only_in_ar: list[str] = Field(
+        default_factory=list,
+        description="This part's Arabic passages with no English counterpart (R28).",
+    )
     strategy: str = Field(description="The chunking strategy that produced it.")

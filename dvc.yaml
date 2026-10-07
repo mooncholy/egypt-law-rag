@@ -69,3 +69,19 @@ stages:
     metrics:
       - ${paths.metrics_dir}/assemble.json:
           cache: false
+
+  chunk:
+    cmd: python -m raglaw.ingest.chunk
+    deps:
+      - ${paths.corpus_dir}/articles.json
+      - src/raglaw/ingest/chunk.py
+      - src/raglaw/ingest/loader.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - chunking
+    outs:
+      - ${paths.corpus_dir}/chunks.json
+    metrics:
+      - ${paths.metrics_dir}/chunks.json:
+          cache: false

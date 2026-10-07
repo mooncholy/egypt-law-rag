@@ -117,6 +117,7 @@ The pipeline follows these rules; each rests on the facts above. **Decided** rul
 | R26 | A row with an empty English cell in the PDF is a heading when every Arabic span is bold; a row declaring a repealed range is a repeal, checked before headings | P12, P29 | Decided (Phase 3) |
 | R27 | Refines R16: in a heading cell, a plain line is a wrapped title (joined onto the line before) when the other language has fewer headings; and a heading listed after another in the same cell nests under it | P18 | Judgment, Gate 3 |
 | R28 | Highlighted text is kept, not corrected: each article carries its highlighted passages as `only_in_en` or `only_in_ar`, and a heading in one language keeps an empty label on the other side, marked in `heading_tree.txt`. Retrieval and answers surface them | P32 | Decided by the owner (Phase 3) |
+| R29 | `chunk` never crosses an article and splits only before a line that opens with a paragraph marker. The `structural_semantic` variant also splits where neighbouring paragraphs drift apart, against one percentile threshold over the whole corpus. Every part carries the full English text (D4), both heading paths, a bilingual citation and its untranslated passages (R28) | R22, P14, P32 | Decided (Phase 5) |
 
 ## 5. Errata
 

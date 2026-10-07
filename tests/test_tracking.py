@@ -235,3 +235,11 @@ def test_changes_outside_code_are_not_dirty(git_repo, change):
     change(git_repo)
 
     assert git_state()[1] is False
+
+
+def test_a_stage_can_record_its_choices(tracking_settings, mlflow_client):
+    with stage_run("chunk", input_hash="x", settings=tracking_settings) as run:
+        run.log_params({"strategy": "structural", "max_chars": 1000})
+
+    params = mlflow_client.get_run(run.run_id).data.params
+    assert (params["strategy"], params["max_chars"]) == ("structural", "1000")

@@ -66,8 +66,8 @@ stages:
       size: 2991
     - path: src/raglaw/schema.py
       hash: md5
-      md5: 3230d99416e6b9e8da8e488de6d9459c
-      size: 6592
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
     outs:
     - path: data/interim/rows.jsonl
       hash: md5
@@ -110,8 +110,8 @@ stages:
       size: 2991
     - path: src/raglaw/schema.py
       hash: md5
-      md5: 3230d99416e6b9e8da8e488de6d9459c
-      size: 6592
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
     outs:
     - path: data/interim/rows_repaired.jsonl
       hash: md5
@@ -142,8 +142,8 @@ stages:
       size: 2991
     - path: src/raglaw/schema.py
       hash: md5
-      md5: 3230d99416e6b9e8da8e488de6d9459c
-      size: 6592
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
     - path: src/raglaw/text/normalize.py
       hash: md5
       md5: a939c9592ed1cc3d8eb0d84e68e51363
@@ -166,3 +166,45 @@ stages:
       hash: md5
       md5: 7cd8598f33970b40cc444a85215b931b
       size: 26435
+  chunk:
+    cmd: python -m raglaw.ingest.chunk
+    deps:
+    - path: data/corpus/articles.json
+      hash: md5
+      md5: 2d161eb4ab87ce1dddea194f25d8129b
+      size: 1918535
+    - path: src/raglaw/ingest/chunk.py
+      hash: md5
+      md5: 9593fa2285ac2ad8be2f50d843504229
+      size: 15195
+    - path: src/raglaw/ingest/loader.py
+      hash: md5
+      md5: 2d0f1c38040bd995b3ac2e5f91fc0302
+      size: 1839
+    - path: src/raglaw/records.py
+      hash: md5
+      md5: b470051d287b2c26fc47e23ff0baf566
+      size: 2991
+    - path: src/raglaw/schema.py
+      hash: md5
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
+    params:
+      params.yaml:
+        chunking:
+          strategy: structural_semantic
+          max_chars: 1000
+          semantic:
+            model: BAAI/bge-m3
+            revision: 5617a9f61b028005a4858fdac845db406aefb181
+            breakpoint_percentile: 90
+            batch_size: 32
+    outs:
+    - path: data/corpus/chunks.json
+      hash: md5
+      md5: f3aa683b18790cc62f5ac658e44d8281
+      size: 2160575
+    - path: docs/metrics/chunks.json
+      hash: md5
+      md5: c6d5dfa2beafbd2991b5c89dc4224c4f
+      size: 435
