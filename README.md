@@ -61,7 +61,7 @@ uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0
 
 ## Evaluation data
 
-- **Gold sample** (`data/gold/articles_gold.json`): 12 articles transcribed from the printed pages, which `validate` compares the corpus against.
+- **Gold sample** (`data/gold/articles_gold.json`): 20 articles transcribed from the printed pages, which `validate` compares the corpus against.
 - **Retrieval eval set** (`data/gold/retrieval_eval.jsonl`): 122 Arabic and English questions, each with the articles that govern the answer.
 - **Truth point:** both sets were made by an LLM, not a legal professional, and aren't spot-checked yet. Read [docs/reports/evaluation_data.md](docs/reports/evaluation_data.md) before relying on a score computed from them.
 
