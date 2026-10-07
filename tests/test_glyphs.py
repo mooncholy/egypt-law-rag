@@ -3,6 +3,7 @@ import pytest
 from raglaw.ingest.glyphs import (
     cell_text,
     order_digit_runs,
+    reorder_spaces,
     swap_lam_alef,
     vertical_overlap,
 )
@@ -14,10 +15,16 @@ def char(c: str, x0: float, width: float = 5.0) -> dict:
     return {"c": c, "bbox": (x0, 0.0, x0 + width, 10.0)}
 
 
-def word(text: str, zero_width: set[int] = frozenset(), x0: float = 0.0) -> list[dict]:
-    """Characters in stream order; positions in ``zero_width`` get no width."""
+def word(
+    text: str, zero_width: set[int] = frozenset(), x0: float = 500.0
+) -> list[dict]:
+    """Characters in stream order, drawn right to left from ``x0`` as Arabic is.
+
+    Positions in ``zero_width`` get no width.
+    """
     return [
-        char(c, x0 + 5 * i, 0.0 if i in zero_width else 5.0) for i, c in enumerate(text)
+        char(c, x0 - 5 * (i + 1), 0.0 if i in zero_width else 5.0)
+        for i, c in enumerate(text)
     ]
 
 
@@ -70,10 +77,11 @@ def test_repaired_lal_is_not_counted_as_a_stray_alef():
     assert (cell.lam_alef_swaps, cell.stray_zero_width_alefs) == (1, 0)
 
 
-def test_trailing_zero_width_alef_is_counted_and_kept():
+def test_trailing_zero_width_alef_is_dropped_and_counted():
+    """D11: an invisible alef that follows no lam (P28) is dropped."""
     cell = cell_text(raw(word("حق الملكية أ", zero_width={11})))
 
-    assert cell.lines == ["حق الملكية أ"]
+    assert cell.lines == ["حق الملكية"]
     assert cell.stray_zero_width_alefs == 1
 
 
@@ -111,10 +119,10 @@ def test_runs_are_ordered_independently():
 
 
 def test_cell_lines_are_stripped_and_empty_lines_dropped():
-    cell = cell_text(raw(word(" مادة "), word("   "), word("١٤٧")))
+    cell = cell_text(raw(word(" مادة "), word("   "), word("نص")))
 
-    assert cell.lines == ["مادة", "١٤٧"]
-    assert cell.text == "مادة\n١٤٧"
+    assert cell.lines == ["مادة", "نص"]
+    assert cell.text == "مادة\nنص"
 
 
 def test_private_use_glyphs_are_counted_and_kept():
@@ -212,3 +220,42 @@ def test_english_pieces_are_put_in_left_to_right_order():
 )
 def test_vertical_overlap_is_a_share_of_the_shorter_box(a, b, share):
     assert vertical_overlap(a, b) == pytest.approx(share)
+
+
+# --- Misplaced spaces (P30) ---------------------------------------------------
+
+
+def test_a_space_moves_past_letters_drawn_to_its_right():
+    """`' مصادر'` stores the space first but draws it at its left end."""
+    chars = [char(" ", 530.0, 2.5)] + word("مصادر", x0=560.0)
+
+    fixed, moved = reorder_spaces(chars)
+
+    assert text(fixed) == "مصادر "
+    assert moved == 1
+
+
+def test_a_marker_space_moves_past_the_closing_parenthesis():
+    """`)١ (` stores the space before `(` but draws it after (page 1)."""
+    chars = [char(")", 556.2, 3.3), char("١", 550.4, 5.8), char(" ", 542.0, 2.5)]
+    chars += [char("(", 547.1, 3.3)]
+
+    assert text(reorder_spaces(chars)[0]) == ")١( "
+
+
+def test_spaces_between_words_and_in_latin_runs_stay():
+    arabic = word("حق الملكية")
+    latin = [char(c, 300.0 + 5 * i) for i, c in enumerate("MADA 1")]
+
+    assert reorder_spaces(arabic) == (arabic, 0)
+    assert reorder_spaces(latin) == (latin, 0)
+
+
+def test_stray_alefs_are_dropped_before_spaces_move():
+    """Page 88: moving the space first would glue the stray alef to `العمل`."""
+    line = word("العمل", x0=560.0) + [char(" ", 520.0, 2.5), char("أ", 530.0, 0.0)]
+
+    cell = cell_text(raw(line))
+
+    assert cell.lines == ["العمل"]
+    assert cell.stray_zero_width_alefs == 1

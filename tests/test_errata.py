@@ -119,11 +119,15 @@ def test_an_empty_errata_file_has_no_entries(tmp_path):
 
 
 def test_the_project_errata_load(repo_root):
-    """Every active entry is complete, and E1 to E3 come first (report section 5)."""
+    """Every active entry is complete, and E1 and E2 come first (report section 5).
+
+    E3 (Article 601's split number) was retired: the misplaced-space rule in
+    extract now joins the number (P30).
+    """
     errata = load_errata(repo_root / "data" / "errata.yaml")
 
-    assert [(e.page, e.row, e.side) for e in errata[:3]] == [
+    assert [(e.page, e.row, e.side) for e in errata[:2]] == [
         (59, 2, "en"),
         (147, 6, "en"),
-        (81, 6, "ar"),
     ]
+    assert (81, 6) not in {(e.page, e.row) for e in errata}

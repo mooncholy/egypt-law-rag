@@ -182,13 +182,16 @@ def check_counts(counts: dict[str, int], n_errata: int) -> None:
     """
     Compare the repair counts with their baselines (G6, C10, C11).
 
+    The 13 spaced ``مادة`` headers (P10) are misplaced spaces, which ``extract``
+    already moves (P30), so R9 finds none left to join; only the remaining
+    count is checked.
+
     exceptions:
     - RepairCountError: a count differs, or a targeted defect remains
     """
     expected = {
         "errata_applied": n_errata,
         "same_line_headers_split": profile.RAW_DEFECTS["same_line_headers"],
-        "spaced_mada_normalized": profile.RAW_DEFECTS["spaced_mada_headers"],
         "header_typos_remaining": 0,
         "same_line_headers_remaining": 0,
         "spaced_mada_remaining": 0,

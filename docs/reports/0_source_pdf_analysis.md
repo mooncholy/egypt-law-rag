@@ -32,7 +32,7 @@ Every line must read `OK`. A mismatch means the PDF or the measurement code chan
 | --- | --- | --- | --- |
 | P8 | 1,094 article rows. The English cell starts with `Article N`: alone on its first line in 1,088 rows, followed by body text on the same line in 6 (Articles 277, 714, 746, 898, 908, 1090) | Measured | `P6_article_rows` |
 | P9 | Two English headers have source typos: `rticle 452` (page 59) and `Article1022` (page 147) | Measured | `P6_article_rows.header_typos` |
-| P10 | The Arabic header holds `مادة` and its number, with stray parentheses. Text extraction showed the number on the next line, but all 1,093 sit on the same visual line (corrected in Phase 2, P30). 13 headers have spaces inside the word: `م ادة` (7), `ما دة` (5), `ماد ة` (1) | Measured | `ar_header_variants.tsv` |
+| P10 | The Arabic header holds `مادة` and its number, with stray parentheses. Text extraction showed the number on the next line, but all 1,093 sit on the same visual line (corrected in Phase 2, P30). 13 headers have spaces inside the word: `م ادة` (7), `ما دة` (5), `ماد ة` (1). Those spaces are misplaced (P30): `extract` moves them and all 13 read `مادة` | Measured | `ar_header_variants.tsv` |
 | P11 | English numbers run to 1,149 with no duplicates. 1,094 article rows plus 56 repealed articles, minus Article 54 (counted in both), gives exactly 1,149, with no other gaps | Measured | `P13_article_numbers` |
 | P12 | Repealed ranges take two formats. Page 7: an `Article 54` row whose body reads `* Articles 54-80 have been repealed by Presidential Decree.` Page 53: a row reading `Articles 389-417 repealed`, with no header | Measured | `repeal_rows.tsv` |
 | P13 | Bodies cite other articles inline, e.g., `paragraph 2 of Article 717.` (Article 194, page 23). An inline citation never starts a new article | Measured (116 samples) | `inline_citations.tsv` |
@@ -56,13 +56,13 @@ Every line must read `OK`. A mismatch means the PDF or the measurement code chan
 | ID | Fact | Status | Evidence |
 | --- | --- | --- | --- |
 | P23 | Lam-alef is broken in every extractor because the PDF's font mapping is wrong (`السجالت` for `السجلات`). Its signature in PyMuPDF `rawdict`: a zero-width alef variant directly before `ل`. 3,500 occurrences | Measured (count). The correct spelling is Judgment; the swap fix is confirmed by the gold set | `P22_P23_lam_alef_signature_count`, `lam_alef_samples.tsv` |
-| P24 | Every multi-digit Arabic-Indic run (1,167) is stored right to left. Sorting its digits by ascending `x0` restores the order, which explains 987 of 990 header mismatches. The other 3: the page 7 repeal row, the page 147 typo row, and Article 601 (page 81), whose number is split by a space (`٠٦ ١`) | Measured | `P24_header_number_mismatches`, `number_mismatches.tsv` |
+| P24 | Every multi-digit Arabic-Indic run (1,167) is stored right to left. Sorting its digits by ascending `x0` restores the order, which explains 987 of 990 header mismatches. The other 3: the page 7 repeal row, the page 147 typo row, and Article 601 (page 81), whose number is split by a misplaced space (`٠٦ ١`; P30 now joins it) | Measured | `P24_header_number_mismatches`, `number_mismatches.tsv` |
 | P25 | `find_tables().extract()` returns Arabic in reversed visual order; `get_text(clip=cell_bbox)` returns logical order | Measured | `extractor_comparison.txt` |
 | P26 | Spurious spaces also occur inside ordinary Arabic words (`قان ون`, page 4). Not measured, and no safe rule exists to repair them, so they are left as they are | Judgment | — |
 | P27 | 25 private-use glyphs stand for a letter plus `ه`: U+E812 = `به` (×7, e.g., `بهذا`), U+E814 = `ته` (×13, e.g., `المرتهن`), U+E815 = `نه` (×4, e.g., `نهائي`), U+E811 = `لمج` (×1, `المجدد`, the owner's reading). Each is zero-width and begins its own text piece; in 17 of them a space stored right after the glyph belongs, visually, at the end of the piece (the word gap). `rawdict` keeps all 25; `get_text("text")` duplicates some. Fixed by errata E4–E28 | Measured (count); the letters are Judgment | `extract.json` (`private_use_glyphs`) |
-| P28 | 26 zero-width alefs end a line with no lam to pair with, mostly in headings (`حق الملكية أ`). They are invisible when printed. Found in Phase 2; no rule yet, pending the owner's decision | Measured | `extract.json` (`stray_zero_width_alefs`) |
+| P28 | 26 zero-width alefs follow no lam after the swap, mostly at the end of headings (`حق الملكية أ`). They are invisible when printed, and each duplicates a lam-alef placeholder at the start of the next row. Dropped by R25 | Measured | `extract.json` (`stray_zero_width_alefs`) |
 | P29 | 58 rows have an empty Arabic cell and 1 an empty English cell (page 81, row 5). Article 1022's Arabic cell (page 147, row 6) is empty | Measured | `extract.json` (`rows_empty_ar`, `rows_empty_en`) |
-| P30 | PyMuPDF splits one visual line into several lines whenever a text run starts to the left of the previous one, which right-to-left text does constantly: 5,051 Arabic pieces (1,618 of them mid-word, e.g., `الثان` + `ي`) and 7 English pieces (stored right to left, e.g., Article 1022). `get_text("text")` splits the same way. `extract` joins pieces whose boxes overlap vertically by at least half, in reading order, before stripping | Measured | `extract.json` (`line_pieces_merged_ar`, `line_pieces_merged_en`) |
+| P30 | PyMuPDF splits one visual line into several lines whenever a text run starts to the left of the previous one, which right-to-left text does constantly: 5,051 Arabic pieces (1,618 of them mid-word, e.g., `الثان` + `ي`) and 7 English pieces (stored right to left, e.g., Article 1022). `get_text("text")` splits the same way. Inside Arabic pieces, a space is often stored before characters drawn to its right (`' مصادر'` is drawn `'مصادر '`): 7,144 spaces, including the 13 spaced `مادة` (P10) and Article 601's split number (P24). `extract` joins the pieces of each visual line and moves those spaces (R24) | Measured | `extract.json` (`line_pieces_merged_ar`, `line_pieces_merged_en`, `piece_spaces_moved`) |
 | P31 | 2 ligatures are drawn with no character at all, so their letters are missing from the text layer: page 21 (`اداما`, reads as `انهداما`) and page 169 (`أما`, reads as `أنهما`). Found in Phase 2; errata entries await the owner | Measured (by the gap at the seam); the letters are Judgment | — |
 
 # Subsequent Decisions
@@ -111,6 +111,8 @@ The pipeline follows these rules; each rests on the facts above. **Decided** rul
 | R21 | Article numbers run exactly 1 to 1,149, with no duplicates and no gaps | P11 | Decided |
 | R22 | An article longer than `max_chars` splits only at Arabic paragraph markers (`(١)`, `(٢)`, …). A single paragraph longer than `max_chars` is an anomaly, not cut. The full English text goes on every part | P14, D4 | Decided |
 | R23 | The `profile` stage re-measures the raw baselines above on every build; any mismatch stops `dvc repro` before a repair runs | All measured Ps | Decided |
+| R24 | `extract` joins the pieces of each visual line (boxes overlapping vertically by at least half) in reading order, and moves each space of an Arabic piece past characters drawn to its right (never past a Latin letter or ASCII digit) | P30 | Decided (Phase 2) |
+| R25 | `extract` drops a zero-width alef that follows no `ل`, before spaces move. Exactly 26 | P28 | Decided by the owner (D11) |
 
 ## 5. Errata
 
@@ -131,7 +133,7 @@ Errata fix **one known error at one place** in the source, where a rule would be
 | --- | --- | --- | --- | --- |
 | E1 | 59, 2, en | `rticle 452` → `Article 452` | Header typo: missing `A` (P9) | Proposed |
 | E2 | 147, 6, en | `Article1022` → `Article 1022` | Header typo: missing space (P9) | Proposed |
-| E3 | 81, 6, ar | `مادة٦٠ ١` → `مادة٦٠١` | Article 601's number split by a space (`٠٦ ١` in the raw text, `٦٠ ١` after R6) (P24) | Proposed |
+| E3 | 81, 6, ar | — | Article 601's split number (P24) | Retired: R24 joins the number |
 | E4–E28 | 25 rows, ar | Each visual line holding a private-use glyph, with the glyph mapped to its letters and its stored space moved back to the end of the word (listed in `data/errata.yaml`) | Private-use ligature glyphs (P27) | Proposed (pages 102 and 115 keep the owner's wording) |
 
 E1 and E2 were re-checked against the PDF: the first English line at those rows is exactly `rticle 452` and `Article1022`.

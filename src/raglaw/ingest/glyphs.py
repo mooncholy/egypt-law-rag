@@ -13,15 +13,17 @@ PyMuPDF also splits one visual line into several "lines" whenever a text run
 starts to the left of the previous one, which right-to-left text does
 constantly (P30): ``الفصل الثان`` and ``ي`` on the same baseline. Pieces whose
 boxes overlap vertically are joined back into one line in reading order, as
-stored, before the line is stripped, so the spaces at each seam survive.
+stored, before the line is stripped, so the spaces at each seam survive. An
+Arabic piece often stores a space before characters drawn to its right
+(``' مصادر'`` is drawn ``'مصادر '``); each space is moved to where it is drawn.
 
-Two artifacts are counted, not changed, because no approved rule covers them
-yet (R10):
+- **Stray zero-width alefs (D11, P28):** after the swap, a zero-width alef that
+  follows no ``ل`` belongs to no letter. It is invisible on the page and
+  duplicates a lam-alef placeholder of the next row, so it is dropped.
 
-- **Private-use glyphs** (U+E000 to U+F8FF): ligatures of a letter plus ``ه``
-  (e.g., U+E812 for ``به``) that the font maps to no Unicode letter.
-- **Stray zero-width alefs:** invisible alef glyphs with no lam, at the end of
-  a line (mostly headings).
+Private-use glyphs (U+E000 to U+F8FF, P27) are counted, not changed: they are
+ligatures of a letter plus ``ه`` that the font maps to no Unicode letter, and
+errata fix them in ``repair``.
 """
 
 import re
@@ -36,6 +38,8 @@ ZERO_WIDTH = 0.01  # a glyph narrower than this (in points) is drawn with no adv
 # least this share of the shorter box. A ligature glyph's origin can sit 2.9 pt
 # lower than its line (P27), so equal baselines are too strict a test.
 SAME_LINE_OVERLAP = 0.5
+# Characters of left-to-right runs inside right-to-left text.
+LEFT_TO_RIGHT = re.compile(r"[A-Za-z0-9]")
 PRIVATE_USE = re.compile(r"[-]")
 
 
@@ -45,6 +49,7 @@ class CellText:
 
     lines: list[str]
     pieces_merged: int = 0
+    spaces_moved: int = 0
     lam_alef_swaps: int = 0
     digit_runs_reordered: int = 0
     stray_zero_width_alefs: int = 0
@@ -63,20 +68,33 @@ def _is_broken_lam_alef(char: dict, following: dict) -> bool:
     return _is_zero_width_alef(char) and following["c"] == "ل"
 
 
-def stray_zero_width_alefs(chars: list[dict]) -> int:
+def drop_stray_zero_width_alefs(
+    chars: list[dict], previous: dict | None = None
+) -> tuple[list[dict], int]:
     """
-    Count zero-width alefs that don't directly follow ``ل``.
+    Drop zero-width alefs that don't directly follow ``ل`` (D11).
 
-    After the swap, every zero-width alef should sit right after its lam. A
-    plain "before ``ل``" check can't tell: a repaired ``لال`` still has one.
+    After the swap, every zero-width alef that belongs to a lam-alef sits right
+    after its lam. A plain "before ``ل``" check can't tell the two apart: a
+    repaired ``لال`` still has a zero-width alef before a lam.
+
+    It runs before spaces are moved (``reorder_spaces``): moving a space can
+    put a stray alef right after a lam (``العمل أ`` would become ``العملأ``).
+    ``previous`` is the character before ``chars`` on the same line.
 
     returns:
-    - count (int): zero-width alefs not preceded by ``ل``
+    - chars (list[dict]): the characters without the stray alefs
+    - dropped (int): how many were dropped
     """
-    return sum(
-        _is_zero_width_alef(c) and (i == 0 or chars[i - 1]["c"] != "ل")
+    context = [previous, *chars]
+    kept = [
+        c
         for i, c in enumerate(chars)
-    )
+        if not (
+            _is_zero_width_alef(c) and (context[i] is None or context[i]["c"] != "ل")
+        )
+    ]
+    return kept, len(chars) - len(kept)
 
 
 def swap_lam_alef(chars: list[dict]) -> tuple[list[dict], int]:
@@ -162,6 +180,38 @@ def visual_lines(raw: dict, rtl: bool) -> tuple[list[list[dict]], int]:
     return ordered, sum(len(g) - 1 for g in groups)
 
 
+def reorder_spaces(chars: list[dict]) -> tuple[list[dict], int]:
+    """
+    Move each space of a right-to-left piece to where it is drawn (P30).
+
+    In right-to-left text the next character is drawn to the *left*. A space
+    stored before characters drawn to its right (e.g., ``' مصادر'``, drawn
+    ``'مصادر '``) is moved past them. Only spaces move: letters keep their
+    stored order, which the lam-alef and digit repairs rely on. A space never
+    moves past a Latin letter or an ASCII digit: those runs read left to right,
+    so their next character is *meant* to be on the right.
+
+    returns:
+    - chars (list[dict]): the piece's characters, spaces where they're drawn
+    - moved (int): how many spaces moved
+    """
+    chars, moved = list(chars), 0
+    i = len(chars) - 1
+    while i >= 0:
+        if chars[i]["c"].isspace():
+            j = i
+            while (
+                j + 1 < len(chars)
+                and not LEFT_TO_RIGHT.match(chars[j + 1]["c"])
+                and chars[j + 1]["bbox"][0] > chars[j]["bbox"][0] + 0.5
+            ):
+                chars[j], chars[j + 1] = chars[j + 1], chars[j]
+                j += 1
+            moved += j != i
+        i -= 1
+    return chars, moved
+
+
 def cell_text(raw: dict, rtl: bool = True) -> CellText:
     """
     Join a cell's ``rawdict`` characters into visual lines, repairing glyphs.
@@ -174,22 +224,32 @@ def cell_text(raw: dict, rtl: bool = True) -> CellText:
     - cell (CellText): the repaired lines and the repair counts
     """
     lines: list[str] = []
-    swaps = reordered = remaining = 0
+    swaps = reordered = remaining = moved = 0
     private: list[str] = []
     groups, merged = visual_lines(raw, rtl)
     for pieces in groups:
-        text = ""
-        for span in (s for piece in pieces for s in piece["spans"]):
-            chars, n_swaps = swap_lam_alef(span["chars"])
-            chars, n_runs = order_digit_runs(chars)
-            swaps += n_swaps
-            reordered += n_runs
-            remaining += stray_zero_width_alefs(chars)
-            text += "".join(c["c"] for c in chars)
+        line: list[dict] = []
+        for piece in pieces:
+            piece_chars: list[dict] = []
+            for span in piece["spans"]:
+                chars, n_swaps = swap_lam_alef(span["chars"])
+                chars, n_runs = order_digit_runs(chars)
+                swaps += n_swaps
+                reordered += n_runs
+                piece_chars += chars
+            piece_chars, n_dropped = drop_stray_zero_width_alefs(
+                piece_chars, line[-1] if line else None
+            )
+            remaining += n_dropped
+            if rtl:
+                piece_chars, n_moved = reorder_spaces(piece_chars)
+                moved += n_moved
+            line += piece_chars
+        text = "".join(c["c"] for c in line)
         private += PRIVATE_USE.findall(text)
         if text.strip():
             lines.append(text.strip())
-    return CellText(lines, merged, swaps, reordered, remaining, private)
+    return CellText(lines, merged, moved, swaps, reordered, remaining, private)
 
 
 def read_cell(page: pymupdf.Page, rect: pymupdf.Rect | None, rtl: bool) -> CellText:

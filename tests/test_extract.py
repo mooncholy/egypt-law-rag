@@ -54,7 +54,13 @@ def test_text_outside_the_table_is_never_read(synthetic_pdf, outside_table_text)
 @pytest.mark.unit
 def test_counts_off_their_baselines_fail_the_stage():
     with pytest.raises(ExtractCountError, match="lam_alef_swaps"):
-        check_counts({"lam_alef_swaps": 3_499, "rtl_digit_runs_reordered": 1_167})
+        check_counts(
+            {
+                "lam_alef_swaps": 3_499,
+                "rtl_digit_runs_reordered": 1_167,
+                "stray_zero_width_alefs": 26,
+            }
+        )
 
 
 @pytest.mark.unit

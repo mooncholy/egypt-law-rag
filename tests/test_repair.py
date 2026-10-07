@@ -130,14 +130,14 @@ def test_unreadable_arabic_header_is_an_anomaly(log_records):
 def test_counts_off_their_baselines_fail_the_stage():
     counts = {
         "errata_applied": 3,
-        "same_line_headers_split": profile.RAW_DEFECTS["same_line_headers"],
-        "spaced_mada_normalized": 12,
+        "same_line_headers_split": 5,
+        "spaced_mada_normalized": 0,
         "header_typos_remaining": 0,
         "same_line_headers_remaining": 0,
         "spaced_mada_remaining": 1,
     }
 
-    with pytest.raises(RepairCountError, match="spaced_mada_normalized") as err:
+    with pytest.raises(RepairCountError, match="same_line_headers_split") as err:
         check_counts(counts, n_errata=3)
     assert "spaced_mada_remaining" in str(err.value)
 
@@ -170,9 +170,7 @@ def test_repair_counts_equal_their_baselines(stage_metrics, repo_root):
 
     assert counts["errata_applied"] == len(load_errata(repo_root / "data/errata.yaml"))
     assert counts["same_line_headers_split"] == profile.RAW_DEFECTS["same_line_headers"]
-    assert (
-        counts["spaced_mada_normalized"] == profile.RAW_DEFECTS["spaced_mada_headers"]
-    )
+    assert counts["spaced_mada_normalized"] == 0  # extract joined all 13 (P30)
     assert counts["ar_headers_normalized"] + counts["ar_headers_unparsed"] == 1_094
     assert (
         counts["ar_headers_unparsed"] == 2

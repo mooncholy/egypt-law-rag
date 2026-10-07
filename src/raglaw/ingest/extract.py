@@ -33,6 +33,10 @@ from raglaw.tracking import sha256_file, stage_run
 logger = logging.getLogger(__name__)
 
 
+# Stray zero-width alefs dropped by D11; extract measured them (P28).
+STRAY_ZERO_WIDTH_ALEFS = 26
+
+
 class ExtractCountError(RuntimeError):
     """A glyph repair count differs from its raw baseline."""
 
@@ -50,6 +54,7 @@ def extract_row(page: pymupdf.Page, row: TableRow, counts: Counter) -> Row:
     ar = read_cell(page, row.ar_rect, rtl=True)
     for side, cell in (("en", en), ("ar", ar)):
         counts[f"line_pieces_merged_{side}"] += cell.pieces_merged
+        counts["piece_spaces_moved"] += cell.spaces_moved
         counts["lam_alef_swaps"] += cell.lam_alef_swaps
         counts["rtl_digit_runs_reordered"] += cell.digit_runs_reordered
         counts["stray_zero_width_alefs"] += cell.stray_zero_width_alefs
@@ -65,29 +70,15 @@ def extract_row(page: pymupdf.Page, row: TableRow, counts: Counter) -> Row:
             article_number=None,
             anomaly_type="missing_side",
         )
-    strays = en.stray_zero_width_alefs + ar.stray_zero_width_alefs
-    if strays:
-        log_anomaly(
-            logger,
-            "Cell holds zero-width alefs with no lam, kept as printed",
-            page=row.page,
-            row_index=row.index,
-            row_class="unclassified",
-            article_number=None,
-            anomaly_type="stray_zero_width_alef",
-            count=strays,
-        )
     glyphs = en.private_use_glyphs + ar.private_use_glyphs
     if glyphs:
-        log_anomaly(
-            logger,
-            "Cell holds private-use glyphs that no rule maps yet",
-            page=row.page,
-            row_index=row.index,
-            row_class="unclassified",
-            article_number=None,
-            anomaly_type="private_use_glyph",
-            glyphs=[f"U+{ord(g):04X}" for g in glyphs],
+        logger.info(
+            "Cell holds private-use ligature glyphs; errata replace them in repair",
+            extra={
+                "page": row.page,
+                "row_index": row.index,
+                "glyphs": [f"U+{ord(g):04X}" for g in glyphs],
+            },
         )
     en_spans = spans_in(page, row.en_rect) if row.en_rect is not None else []
     return Row(
@@ -124,6 +115,7 @@ def extract_document(pdf: Path) -> tuple[list[Row], dict[str, int]]:
         "rows_empty_ar",
         "line_pieces_merged_en",
         "line_pieces_merged_ar",
+        "piece_spaces_moved",
         "lam_alef_swaps",
         "stray_zero_width_alefs",
         "rtl_digit_runs_reordered",
@@ -142,6 +134,7 @@ def check_counts(counts: dict[str, int]) -> None:
     expected = {
         "lam_alef_swaps": profile.RAW_DEFECTS["lam_alef_signatures"],
         "rtl_digit_runs_reordered": profile.RAW_DEFECTS["rtl_digit_runs"],
+        "stray_zero_width_alefs": STRAY_ZERO_WIDTH_ALEFS,
     }
     wrong = {k: (v, counts[k]) for k, v in expected.items() if counts[k] != v}
     if wrong:
