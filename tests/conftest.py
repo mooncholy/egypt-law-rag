@@ -26,6 +26,7 @@ from raglaw.records import write_records
 from raglaw.retrieval.dense import build_dense
 from raglaw.retrieval.document_text import document_text
 from raglaw.retrieval.lexical import build_bm25
+from raglaw.retrieval.scoring import EvalQuestion
 from raglaw.retrieval.tokenize import bm25_tokenizer
 from raglaw.schema import Chunk
 
@@ -390,6 +391,32 @@ def search_index(
     return SearchIndex(
         tmp_path / "dense", tmp_path / "bm25", chunks, embeddings, retrieval
     )
+
+
+# --- Evaluation --------------------------------------------------------------
+
+
+@pytest.fixture
+def make_question() -> Callable[..., EvalQuestion]:
+    """Build an in-scope English ``rule`` question expecting ``articles``; any
+    field can be overridden (an out-of-scope one needs ``expected_articles=[]``)."""
+
+    def _make(qid: str, articles: list[int] | None = None, **overrides: Any):
+        fields = {
+            "id": qid,
+            "question": f"Question {qid}?",
+            "language": "en",
+            "register": "english",
+            "kind": "rule",
+            "expected_articles": [1] if articles is None else articles,
+            "supporting_articles": [],
+            "match": "all",
+            "legal_basis": "A test question.",
+            "difficulty": "easy",
+        }
+        return EvalQuestion(**(fields | overrides))
+
+    return _make
 
 
 # --- Configuration ---------------------------------------------------------
