@@ -4,10 +4,9 @@ import pytest
 
 from raglaw.config import Embedding, Retrieval
 from raglaw.ingest.embed import EmbedError, run_embed, run_params
-from raglaw.records import write_records
 from raglaw.retrieval.dense import DenseManifest
 from raglaw.retrieval.manifest import read_manifest
-from raglaw.schema import Chunk, LogEvent
+from raglaw.schema import LogEvent
 from raglaw.tracking import sha256_file
 
 EMBEDDING = Embedding(
@@ -16,15 +15,6 @@ EMBEDDING = Embedding(
     batch_size=2,
 )
 RETRIEVAL = Retrieval(document_text="both_with_headings", bm25_tokenizer="words")
-
-
-@pytest.fixture
-def chunks_file(tmp_path, make_chunk):
-    path = tmp_path / "chunks.json"
-    write_records(
-        path, Chunk, [make_chunk(1, "نص قصير"), make_chunk(2, "نص أطول قليلا من الأول")]
-    )
-    return path
 
 
 def run(tmp_path, chunks_file, embeddings, tokenizer):
@@ -41,10 +31,10 @@ def run(tmp_path, chunks_file, embeddings, tokenizer):
 
 @pytest.mark.unit
 def test_the_stage_embeds_every_chunk_and_writes_its_metrics(
-    tmp_path, chunks_file, stub_embeddings, stub_tokenizer
+    tmp_path, embed_chunks_file, stub_embeddings, stub_tokenizer
 ):
     metrics = run(
-        tmp_path, chunks_file, stub_embeddings({}, [1.0, 0.0]), stub_tokenizer()
+        tmp_path, embed_chunks_file, stub_embeddings({}, [1.0, 0.0]), stub_tokenizer()
     )
 
     assert json.loads((tmp_path / "embed.json").read_text("utf-8")) == metrics
@@ -57,18 +47,18 @@ def test_the_stage_embeds_every_chunk_and_writes_its_metrics(
     # The longest document text: 12 whitespace pieces, plus <s> and </s>
     assert metrics["max_chunk_tokens"] == 14
     manifest = read_manifest(tmp_path / "dense", DenseManifest)
-    assert manifest.chunks_sha256 == sha256_file(chunks_file)
+    assert manifest.chunks_sha256 == sha256_file(embed_chunks_file)
 
 
 @pytest.mark.unit
 def test_a_chunk_the_model_would_truncate_stops_the_stage_before_embedding(
-    tmp_path, chunks_file, stub_embeddings, stub_tokenizer, log_records
+    tmp_path, embed_chunks_file, stub_embeddings, stub_tokenizer, log_records
 ):
     embeddings = stub_embeddings({}, [1.0, 0.0])
 
     with pytest.raises(EmbedError, match="truncate"):
         run(
-            tmp_path, chunks_file, embeddings, stub_tokenizer(model_max_length=12)
+            tmp_path, embed_chunks_file, embeddings, stub_tokenizer(model_max_length=12)
         )  # 11 and 14 tokens
 
     assert embeddings.calls == 0

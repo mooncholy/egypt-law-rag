@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,9 +19,14 @@ from mlflow.tracking import MlflowClient
 
 from raglaw.api.main import create_app
 from raglaw.api.schemas import ComponentStatus
-from raglaw.config import Settings
+from raglaw.config import Embedding, Retrieval, Settings
 from raglaw.logging_conf import extra_fields
 from raglaw.logging_setup import close_logging, setup_logging
+from raglaw.records import write_records
+from raglaw.retrieval.dense import build_dense
+from raglaw.retrieval.document_text import document_text
+from raglaw.retrieval.lexical import build_bm25
+from raglaw.retrieval.tokenize import bm25_tokenizer
 from raglaw.schema import Chunk
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -236,6 +242,154 @@ def make_chunk() -> Callable[..., Chunk]:
         return Chunk(**(fields | overrides))
 
     return _make
+
+
+@pytest.fixture
+def embed_chunks_file(tmp_path: Path, make_chunk: Callable[..., Chunk]) -> Path:
+    """A ``chunks.json`` of two chunks; article 2's document text is the longer."""
+    path = tmp_path / "chunks.json"
+    write_records(
+        path, Chunk, [make_chunk(1, "نص قصير"), make_chunk(2, "نص أطول قليلا من الأول")]
+    )
+    return path
+
+
+@pytest.fixture
+def lexical_chunks(make_chunk: Callable[..., Chunk]) -> list[Chunk]:
+    """Two chunks sharing one Arabic word (سنة), each with one English word."""
+    return [
+        make_chunk(1, "التقادم خمس عشرة سنة", text_en="Prescription."),
+        make_chunk(2, "الأهلية إحدى وعشرون سنة", text_en="Majority."),
+    ]
+
+
+# --- Search index ------------------------------------------------------------
+
+# The pinned model, as params.yaml names it; tests never load it.
+EMBEDDING = Embedding(
+    model="BAAI/bge-m3",
+    revision="5617a9f61b028005a4858fdac845db406aefb181",
+    batch_size=2,
+)
+DENSE_VARIANT = "both_without_headings"
+
+
+@pytest.fixture
+def embedding_config() -> Embedding:
+    """The pinned embedding model's config, for building and checking stub indexes."""
+    return EMBEDDING
+
+
+@pytest.fixture
+def dense_chunks(make_chunk: Callable[..., Chunk]) -> list[Chunk]:
+    """Three chunks; the third has an English-only passage (R28)."""
+    return [
+        make_chunk(1, "التقادم خمس عشرة سنة"),
+        make_chunk(2, "الأهلية إحدى وعشرون سنة"),
+        make_chunk(3, "الفوائد سبعة في المائة", only_in_en=["Only English."]),
+    ]
+
+
+@pytest.fixture
+def built_dense(
+    tmp_path: Path,
+    dense_chunks: list[Chunk],
+    stub_embeddings: Callable[..., StubEmbeddings],
+) -> tuple[Path, Any, StubEmbeddings, list[str]]:
+    """``dense_chunks`` embedded into ``tmp_path/dense``.
+
+    Chunk 2's text has its own direction in the stub space; the rest share one.
+    Returns the directory, the manifest, the embeddings and the document texts.
+    """
+    texts = [document_text(c, DENSE_VARIANT) for c in dense_chunks]
+    embeddings = stub_embeddings({texts[1]: [0.0, 1.0, 0.0]}, default=[1.0, 0.0, 0.0])
+    manifest = build_dense(
+        dense_chunks,
+        tmp_path / "dense",
+        embeddings=embeddings,
+        embedding=EMBEDDING,
+        document_text=DENSE_VARIANT,
+        chunks_sha256="0" * 64,
+    )
+    return tmp_path / "dense", manifest, embeddings, texts
+
+
+# Every query embeds to this vector, so any wording ranks the same by cosine:
+# art-3 (0.995), art-1 (0.100), art-4-p2 (0.080), art-4-p1 (0.060), art-2 (0).
+QUERY_VECTOR = [0.1, 0.0, 1.0]
+SEARCH_VECTORS = {
+    "art-1-p1": [1.0, 0.0, 0.0],
+    "art-2-p1": [0.0, 1.0, 0.0],
+    "art-3-p1": [0.0, 0.0, 1.0],
+    "art-4-p1": [0.6, 0.8, 0.0],
+    "art-4-p2": [0.8, 0.6, 0.0],
+}
+
+
+@dataclass(frozen=True)
+class SearchIndex:
+    """A built two-half index over ``chunks``, as ``embed`` and ``bm25`` write it."""
+
+    dense_dir: Path
+    bm25_dir: Path
+    chunks: list[Chunk]
+    embeddings: StubEmbeddings
+    retrieval: Retrieval
+
+
+@pytest.fixture
+def search_index(
+    tmp_path: Path,
+    make_chunk: Callable[..., Chunk],
+    stub_embeddings: Callable[..., StubEmbeddings],
+) -> SearchIndex:
+    """Five chunks indexed in both halves; article 4 has two parts.
+
+    Dense order is fixed by ``SEARCH_VECTORS`` (any query: 3, 1, 4-p2, 4-p1, 2).
+    Only article 2's English holds "majority", so BM25 for it finds article 2
+    alone. Nothing holds "4" as a term.
+    """
+    chunks = [
+        make_chunk(1, "التقادم خمس عشرة سنة", text_en="Prescription is fifteen years."),
+        make_chunk(
+            2, "الأهلية إحدى وعشرون سنة", text_en="Majority is twenty-one years."
+        ),
+        make_chunk(3, "الفوائد سبعة في المائة", text_en="Interest is seven percent."),
+        make_chunk(4, "(١( الوديعة عقد", text_en="Deposit.", part_count=2),
+        make_chunk(
+            4,
+            "(٢( يلتزم المودع لديه",
+            text_en="Deposit.",
+            chunk_id="art-4-p2",
+            part_index=2,
+            part_count=2,
+        ),
+    ]
+    retrieval = Retrieval(document_text=DENSE_VARIANT, bm25_tokenizer="words")
+    texts = [document_text(c, DENSE_VARIANT) for c in chunks]
+    embeddings = stub_embeddings(
+        {t: SEARCH_VECTORS[c.chunk_id] for c, t in zip(chunks, texts, strict=True)},
+        default=QUERY_VECTOR,
+    )
+    common = {"retrieval": retrieval, "chunks_sha256": "0" * 64}
+    build_dense(
+        chunks,
+        tmp_path / "dense",
+        embeddings=embeddings,
+        embedding=EMBEDDING,
+        document_text=DENSE_VARIANT,
+        chunks_sha256="0" * 64,
+    )
+    build_bm25(
+        chunks,
+        tmp_path / "bm25",
+        tokenize=bm25_tokenizer("words"),
+        embedding=EMBEDDING,
+        **common,
+    )
+    return SearchIndex(
+        tmp_path / "dense", tmp_path / "bm25", chunks, embeddings, retrieval
+    )
 
 
 # --- Configuration ---------------------------------------------------------

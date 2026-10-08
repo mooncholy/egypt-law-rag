@@ -5,7 +5,14 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from raglaw.config import Embedding, Experiments, Paths, RootHeading, Settings
+from raglaw.config import (
+    Embedding,
+    Experiments,
+    Paths,
+    RootHeading,
+    Search,
+    Settings,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -142,3 +149,8 @@ def test_one_embedding_block_serves_chunking_and_index(clean_env):
 def test_embedding_revision_must_be_a_full_commit_sha(bad):
     with pytest.raises(ValidationError, match="revision"):
         Embedding(model="BAAI/bge-m3", revision=bad, batch_size=32)
+
+
+def test_search_needs_at_least_top_k_candidates():
+    with pytest.raises(ValidationError, match="candidates"):
+        Search(mode="hybrid", article_lookup=True, candidates=5, rrf_k=60, top_k=10)

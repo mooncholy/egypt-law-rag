@@ -15,14 +15,6 @@ EMBEDDING = Embedding(
 WORDS = Retrieval(document_text="both_without_headings", bm25_tokenizer="words")
 
 
-@pytest.fixture
-def chunks(make_chunk):
-    return [
-        make_chunk(1, "التقادم خمس عشرة سنة", text_en="Prescription."),
-        make_chunk(2, "الأهلية إحدى وعشرون سنة", text_en="Majority."),
-    ]
-
-
 def build(tmp_path, chunks, retrieval=WORDS, tokenize=None):
     return build_bm25(
         chunks,
@@ -34,9 +26,9 @@ def build(tmp_path, chunks, retrieval=WORDS, tokenize=None):
     )
 
 
-def test_bm25_finds_the_chunk_holding_a_folded_term(tmp_path, chunks):
+def test_bm25_finds_the_chunk_holding_a_folded_term(tmp_path, lexical_chunks):
     """`الاهليه` (no hamza, ha for ta marbuta) matches `الأهلية` once folded."""
-    manifest = build(tmp_path, chunks)
+    manifest = build(tmp_path, lexical_chunks)
 
     ids, scores = load_bm25(tmp_path / "bm25").retrieve(
         [bm25_tokenizer("words")("الاهليه")], k=1, show_progress=False
@@ -46,8 +38,8 @@ def test_bm25_finds_the_chunk_holding_a_folded_term(tmp_path, chunks):
     assert scores[0][0] > 0
 
 
-def test_the_manifest_records_the_tokenizer_and_vocabulary(tmp_path, chunks):
-    manifest = build(tmp_path, chunks)
+def test_the_manifest_records_the_tokenizer_and_vocabulary(tmp_path, lexical_chunks):
+    manifest = build(tmp_path, lexical_chunks)
 
     assert read_manifest(tmp_path / "bm25", Bm25Manifest) == manifest
     assert manifest.bm25_tokenizer == "words"
@@ -62,7 +54,7 @@ def test_the_manifest_records_the_tokenizer_and_vocabulary(tmp_path, chunks):
 
 
 def test_model_subwords_records_the_model_whose_tokenizer_made_the_terms(
-    tmp_path, chunks, stub_tokenizer
+    tmp_path, lexical_chunks, stub_tokenizer
 ):
     subwords = Retrieval(
         document_text="both_without_headings", bm25_tokenizer="model_subwords"
@@ -70,7 +62,7 @@ def test_model_subwords_records_the_model_whose_tokenizer_made_the_terms(
 
     manifest = build(
         tmp_path,
-        chunks,
+        lexical_chunks,
         subwords,
         bm25_tokenizer("model_subwords", stub_tokenizer()),
     )
@@ -81,10 +73,10 @@ def test_model_subwords_records_the_model_whose_tokenizer_made_the_terms(
     )
 
 
-def test_rebuilding_replaces_the_index(tmp_path, chunks):
-    build(tmp_path, chunks)
+def test_rebuilding_replaces_the_index(tmp_path, lexical_chunks):
+    build(tmp_path, lexical_chunks)
 
-    manifest = build(tmp_path, chunks[:1])
+    manifest = build(tmp_path, lexical_chunks[:1])
 
     assert read_manifest(tmp_path / "bm25", Bm25Manifest) == manifest
     assert manifest.chunk_ids == ["art-1-p1"]

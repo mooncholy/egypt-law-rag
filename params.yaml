@@ -46,3 +46,12 @@ embedding:
 retrieval:
   document_text: both_with_headings   # D14, the owner's default
   bm25_tokenizer: words               # | words_light_stem | model_subwords
+
+# How a question searches the index, at query time: changing these never
+# rebuilds the index. Each is a measured choice (D17 after the baseline).
+search:
+  mode: hybrid          # | dense | bm25
+  article_lookup: true  # a named article is fetched directly and ranked first
+  candidates: 50        # hits each retriever returns before fusion
+  rrf_k: 60             # Cormack et al. (2009)
+  top_k: 10             # chunks returned per question

@@ -1,7 +1,14 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, BaseModel, Field, SecretStr, StringConstraints
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    Field,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -143,6 +150,34 @@ class Retrieval(BaseModel):
     )
 
 
+class Search(BaseModel):
+    """How a question searches the index (query time; the index never rebuilds for it)."""
+
+    mode: Literal["hybrid", "dense", "bm25"] = Field(
+        description="`hybrid` fuses the dense and BM25 rankings by RRF; `dense` "
+        "and `bm25` use one retriever alone, to measure what fusion adds."
+    )
+    article_lookup: bool = Field(
+        description="When a question names an article (`المادة ٢٢٢`, `Article "
+        "147`), fetch it directly and rank it first."
+    )
+    candidates: int = Field(
+        gt=0, description="Hits each retriever returns before fusion."
+    )
+    rrf_k: int = Field(
+        ge=0,
+        description="RRF's rank offset: a hit scores `1 / (rrf_k + rank)` per "
+        "list. Larger values flatten the weight of the top ranks.",
+    )
+    top_k: int = Field(gt=0, description="Chunks returned per question.")
+
+    @model_validator(mode="after")
+    def _enough_candidates(self) -> Self:
+        if self.candidates < self.top_k:
+            raise ValueError("candidates must be at least top_k")
+        return self
+
+
 class Tracking(BaseModel):
     """How MLflow groups the project's runs."""
 
@@ -181,7 +216,8 @@ class Settings(BaseSettings):
     tracking: Tracking = Field(description="MLflow run grouping.")
     chunking: Chunking = Field(description="Chunking strategy and limits.")
     embedding: Embedding = Field(description="The pinned embedding model.")
-    retrieval: Retrieval = Field(description="Indexing and search choices.")
+    retrieval: Retrieval = Field(description="What the index holds per chunk.")
+    search: Search = Field(description="How a question searches the index.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(
