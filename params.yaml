@@ -27,6 +27,7 @@ root_heading:
 tracking:
   experiments:
     corpus: corpus-build   # one run per `dvc repro` stage execution
+    retrieval: retrieval   # one run per retrieval config evaluated
 
 chunking:
   strategy: structural
@@ -55,3 +56,8 @@ search:
   candidates: 50        # hits each retriever returns before fusion
   rrf_k: 60             # Cormack et al. (2009)
   top_k: 10             # chunks returned per question
+
+# How retrieval is scored (D15): configs are chosen on the tuning half; the
+# chosen one is reported once on the held-out half.
+evaluation:
+  split: tuning   # | heldout

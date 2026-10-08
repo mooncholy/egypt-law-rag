@@ -83,12 +83,16 @@ ExperimentName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9._-]
 class Experiments(BaseModel):
     """One MLflow experiment per kind of work, since runs are compared within one.
 
-    Later kinds (retrieval and answer evaluation) add a field each here.
+    Later kinds (answer evaluation) add a field each here; ``stage_run`` takes
+    the field's name.
     """
 
     corpus: ExperimentName = Field(
         description="Every `dvc repro` stage run (`stage_run`). Lowercase "
         "letters, digits, `.`, `_` and `-` only."
+    )
+    retrieval: ExperimentName = Field(
+        description="Every `evaluate_retrieval` run, one per retrieval config compared."
     )
 
 
@@ -178,6 +182,15 @@ class Search(BaseModel):
         return self
 
 
+class Evaluation(BaseModel):
+    """How retrieval is scored on the eval set (Phase 6)."""
+
+    split: Literal["tuning", "heldout"] = Field(
+        description="Which half of the eval set to score (D15): `tuning` while "
+        "choosing a config; `heldout` once, for the chosen one."
+    )
+
+
 class Tracking(BaseModel):
     """How MLflow groups the project's runs."""
 
@@ -218,6 +231,7 @@ class Settings(BaseSettings):
     embedding: Embedding = Field(description="The pinned embedding model.")
     retrieval: Retrieval = Field(description="What the index holds per chunk.")
     search: Search = Field(description="How a question searches the index.")
+    evaluation: Evaluation = Field(description="How retrieval is scored.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(

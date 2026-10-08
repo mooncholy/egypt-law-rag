@@ -254,3 +254,20 @@ def test_a_stage_can_attach_a_file(tracking_settings, mlflow_client, tmp_path):
 
     paths = [a.path for a in mlflow_client.list_artifacts(run.run_id, "reports")]
     assert paths == ["reports/split_articles.md"]
+
+
+def test_a_stage_can_run_in_another_experiment(tracking_settings, mlflow_client):
+    """Retrieval runs are compared with each other, never with corpus builds."""
+    with stage_run(
+        "evaluate_retrieval",
+        input_hash="x",
+        settings=tracking_settings,
+        experiment="retrieval",
+    ) as run:
+        pass
+
+    experiments = tracking_settings.tracking.experiments
+    recorded = mlflow_client.get_run(run.run_id)
+    retrieval = mlflow_client.get_experiment_by_name(experiments.retrieval)
+    assert recorded.info.experiment_id == retrieval.experiment_id
+    assert retrieval.artifact_location.endswith(f"/{experiments.retrieval}")

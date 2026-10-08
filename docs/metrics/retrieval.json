@@ -1,0 +1,196 @@
+{
+  "bilingual": {
+    "by_kind": {
+      "article_lookup": {
+        "pairs": 1,
+        "same_top1": 1.0
+      },
+      "cross_reference": {
+        "pairs": 1,
+        "same_top1": 0.0
+      },
+      "multi_article": {
+        "pairs": 2,
+        "same_top1": 0.0
+      },
+      "one_language_only": {
+        "pairs": 2,
+        "same_top1": 0.5
+      },
+      "repealed": {
+        "pairs": 1,
+        "same_top1": 0.0
+      },
+      "rule": {
+        "pairs": 3,
+        "same_top1": 0.333333
+      },
+      "rule_with_exception": {
+        "pairs": 1,
+        "same_top1": 0.0
+      }
+    },
+    "pairs": 11,
+    "same_top1": 0.272727
+  },
+  "bm25_tokenizer": "words",
+  "by_kind": {
+    "article_lookup": {
+      "mrr": 1.0,
+      "questions": 4,
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_3": 1.0,
+      "recall_at_5": 1.0
+    },
+    "cross_reference": {
+      "mrr": 0.777778,
+      "questions": 6,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.5,
+      "recall_at_3": 0.333333,
+      "recall_at_5": 0.5
+    },
+    "lay_term": {
+      "mrr": 0.388889,
+      "questions": 6,
+      "recall_at_1": 0.333333,
+      "recall_at_10": 0.5,
+      "recall_at_3": 0.5,
+      "recall_at_5": 0.5
+    },
+    "multi_article": {
+      "mrr": 0.135119,
+      "questions": 10,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.3,
+      "recall_at_3": 0.0,
+      "recall_at_5": 0.2
+    },
+    "one_language_only": {
+      "mrr": 0.666667,
+      "questions": 6,
+      "recall_at_1": 0.666667,
+      "recall_at_10": 0.666667,
+      "recall_at_3": 0.666667,
+      "recall_at_5": 0.666667
+    },
+    "repealed": {
+      "mrr": 0.0,
+      "questions": 3,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.0,
+      "recall_at_3": 0.0,
+      "recall_at_5": 0.0
+    },
+    "rule": {
+      "mrr": 0.512917,
+      "questions": 20,
+      "recall_at_1": 0.4,
+      "recall_at_10": 0.8,
+      "recall_at_3": 0.6,
+      "recall_at_5": 0.65
+    },
+    "rule_with_exception": {
+      "mrr": 0.579167,
+      "questions": 10,
+      "recall_at_1": 0.4,
+      "recall_at_10": 0.9,
+      "recall_at_3": 0.8,
+      "recall_at_5": 0.8
+    }
+  },
+  "by_language": {
+    "ar": {
+      "mrr": 0.493856,
+      "questions": 31,
+      "recall_at_1": 0.322581,
+      "recall_at_10": 0.677419,
+      "recall_at_3": 0.516129,
+      "recall_at_5": 0.612903
+    },
+    "en": {
+      "mrr": 0.502696,
+      "questions": 34,
+      "recall_at_1": 0.352941,
+      "recall_at_10": 0.617647,
+      "recall_at_3": 0.5,
+      "recall_at_5": 0.529412
+    }
+  },
+  "by_register": {
+    "colloquial": {
+      "mrr": 0.126984,
+      "questions": 9,
+      "recall_at_1": 0.0,
+      "recall_at_10": 0.444444,
+      "recall_at_3": 0.111111,
+      "recall_at_5": 0.222222
+    },
+    "english": {
+      "mrr": 0.502696,
+      "questions": 34,
+      "recall_at_1": 0.352941,
+      "recall_at_10": 0.617647,
+      "recall_at_3": 0.5,
+      "recall_at_5": 0.529412
+    },
+    "msa": {
+      "mrr": 0.643939,
+      "questions": 22,
+      "recall_at_1": 0.454545,
+      "recall_at_10": 0.772727,
+      "recall_at_3": 0.681818,
+      "recall_at_5": 0.772727
+    }
+  },
+  "document_text": "both_with_headings",
+  "mode": "hybrid",
+  "out_of_scope_questions": 5,
+  "overall": {
+    "mrr": 0.49848,
+    "questions": 65,
+    "recall_at_1": 0.338462,
+    "recall_at_10": 0.646154,
+    "recall_at_3": 0.507692,
+    "recall_at_5": 0.569231
+  },
+  "questions": 70,
+  "split": "tuning",
+  "top1_scores": {
+    "in_scope": {
+      "bm25_score": {
+        "max": 12.907157,
+        "median": 5.972171,
+        "min": 1.833917
+      },
+      "dense_score": {
+        "max": 0.758017,
+        "median": 0.594607,
+        "min": 0.416595
+      },
+      "rrf_score": {
+        "max": 0.032787,
+        "median": 0.031754,
+        "min": 0.009524
+      }
+    },
+    "out_of_scope": {
+      "bm25_score": {
+        "max": 4.505525,
+        "median": 3.701072,
+        "min": 2.542568
+      },
+      "dense_score": {
+        "max": 0.565127,
+        "median": 0.500619,
+        "min": 0.453173
+      },
+      "rrf_score": {
+        "max": 0.032522,
+        "median": 0.031778,
+        "min": 0.030092
+      }
+    }
+  }
+}

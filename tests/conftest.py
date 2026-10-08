@@ -19,14 +19,16 @@ from mlflow.tracking import MlflowClient
 
 from raglaw.api.main import create_app
 from raglaw.api.schemas import ComponentStatus
-from raglaw.config import Embedding, Retrieval, Settings
+from raglaw.config import Embedding, Retrieval, Search, Settings
+from raglaw.ingest.evaluate_retrieval import evaluate
 from raglaw.logging_conf import extra_fields
 from raglaw.logging_setup import close_logging, setup_logging
 from raglaw.records import write_records
 from raglaw.retrieval.dense import build_dense
 from raglaw.retrieval.document_text import document_text
 from raglaw.retrieval.lexical import build_bm25
-from raglaw.retrieval.scoring import EvalQuestion
+from raglaw.retrieval.retriever import HybridRetriever
+from raglaw.retrieval.scoring import EvalQuestion, QuestionScore
 from raglaw.retrieval.tokenize import bm25_tokenizer
 from raglaw.schema import Chunk
 
@@ -419,6 +421,51 @@ def make_question() -> Callable[..., EvalQuestion]:
     return _make
 
 
+@pytest.fixture
+def search_questions(make_question: Callable[..., EvalQuestion]) -> list[EvalQuestion]:
+    """Questions over ``search_index``, with outcomes worked out by hand.
+
+    q001 and its Arabic twin q005 find article 2 first (BM25: majority,
+    الاهليه); q002 finds article 3 first (interest); q003 expects article 99,
+    which is never returned; q004 is out of scope.
+    """
+    return [
+        make_question("q001", [2], question="majority", pair_id="p1"),
+        make_question("q002", [3], question="interest"),
+        make_question("q003", [99], question="majority"),
+        make_question("q004", [], question="theft penalty?", kind="out_of_scope"),
+        make_question(
+            "q005",
+            [2],
+            question="الأهلية",
+            language="ar",
+            register="msa",
+            pair_id="p1",
+            translated_from="q001",
+        ),
+    ]
+
+
+@pytest.fixture
+def search_scores(
+    search_index: SearchIndex,
+    search_questions: list[EvalQuestion],
+) -> list[QuestionScore]:
+    """``search_questions`` scored by a hybrid retriever over ``search_index``."""
+    search = Search(
+        mode="hybrid", article_lookup=True, candidates=50, rrf_k=60, top_k=10
+    )
+    with HybridRetriever.from_index(
+        search_index.dense_dir,
+        search_index.bm25_dir,
+        embedding=EMBEDDING,
+        retrieval=search_index.retrieval,
+        search=search,
+        embeddings=search_index.embeddings,
+    ) as retriever:
+        return evaluate(search_questions, retriever)
+
+
 # --- Configuration ---------------------------------------------------------
 
 
@@ -479,9 +526,11 @@ def tracking_settings(
 ) -> Settings:
     """Settings for a tracked stage, isolated per test.
 
-    The session database, but an experiment named after this test, with its
-    artifacts and logs under ``tmp_path``. No AWS profile, so nothing reaches S3.
+    The session database, but experiments named after this test (``<test>``
+    for corpus runs, ``<test>-retrieval`` for retrieval runs), with artifacts
+    and logs under ``tmp_path``. No AWS profile, so nothing reaches S3.
     """
+    name = re.sub(r"[^a-z0-9._-]+", "-", request.node.name.lower())
     settings = Settings(
         _env_file=None,
         mlflow_tracking_uri=tracking_db,
@@ -496,11 +545,7 @@ def tracking_settings(
             "tracking": settings.tracking.model_copy(
                 update={
                     "experiments": settings.tracking.experiments.model_copy(
-                        update={
-                            "corpus": re.sub(
-                                r"[^a-z0-9._-]+", "-", request.node.name.lower()
-                            )
-                        }
+                        update={"corpus": name, "retrieval": f"{name}-retrieval"}
                     )
                 }
             ),

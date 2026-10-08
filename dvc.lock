@@ -326,3 +326,95 @@ stages:
       hash: md5
       md5: 77a7e1b9d1e6f22bb94f603020baa632
       size: 208
+  evaluate_retrieval:
+    cmd: python -m raglaw.ingest.evaluate_retrieval
+    deps:
+    - path: data/gold/retrieval_eval.jsonl
+      hash: md5
+      md5: e240a785db77f06e5a97a7f02385bfba
+      size: 58262
+    - path: data/index/bm25
+      hash: md5
+      md5: f49dce354f542650257c14cec66537b0.dir
+      size: 1263327
+      nfiles: 6
+    - path: data/index/dense
+      hash: md5
+      md5: 7e61d6dd22ea7eaf92a2ef9280a82ee4.dir
+      size: 15168619
+      nfiles: 4
+    - path: src/raglaw/ingest/evaluate_retrieval.py
+      hash: md5
+      md5: 3569a374a1d5c29a0772346d10cc32dc
+      size: 11683
+    - path: src/raglaw/retrieval/dense.py
+      hash: md5
+      md5: b28981d6899a9ff2d9c333cec3262539
+      size: 3693
+    - path: src/raglaw/retrieval/embeddings.py
+      hash: md5
+      md5: 298b0153f49a4f8b3b5293850b97a66d
+      size: 2806
+    - path: src/raglaw/retrieval/fusion.py
+      hash: md5
+      md5: 5e91f15a95a0c53f4de5d687452e9fbd
+      size: 1344
+    - path: src/raglaw/retrieval/lexical.py
+      hash: md5
+      md5: 14bad3ba68893e8be967977b7e819620
+      size: 3520
+    - path: src/raglaw/retrieval/lookup.py
+      hash: md5
+      md5: 8014f69bed9183f115566277fd9f14bb
+      size: 1339
+    - path: src/raglaw/retrieval/manifest.py
+      hash: md5
+      md5: 070370706b2d9b6aa72f1cd78cfb4127
+      size: 2032
+    - path: src/raglaw/retrieval/retriever.py
+      hash: md5
+      md5: 6fa306dd16cb9bd19513a83c09c0b15d
+      size: 10152
+    - path: src/raglaw/retrieval/scoring.py
+      hash: md5
+      md5: e6e5fa2d76a026afc6a07cffaa54aa75
+      size: 13784
+    - path: src/raglaw/retrieval/tokenize.py
+      hash: md5
+      md5: f804dd5f1ca3c35a25840ebfa29d3c2b
+      size: 3320
+    - path: src/raglaw/text/normalize.py
+      hash: md5
+      md5: a939c9592ed1cc3d8eb0d84e68e51363
+      size: 2457
+    params:
+      params.yaml:
+        chunking:
+          strategy: structural
+          max_chars: 1000
+          semantic:
+            breakpoint_percentile: 90
+        embedding:
+          model: BAAI/bge-m3
+          revision: 5617a9f61b028005a4858fdac845db406aefb181
+          batch_size: 32
+        evaluation:
+          split: tuning
+        retrieval:
+          document_text: both_with_headings
+          bm25_tokenizer: words
+        search:
+          mode: hybrid
+          article_lookup: true
+          candidates: 50
+          rrf_k: 60
+          top_k: 10
+    outs:
+    - path: docs/metrics/retrieval.json
+      hash: md5
+      md5: a39bcbfdd2b95dd22daeb7f724372ead
+      size: 4168
+    - path: docs/reports/retrieval_misses.md
+      hash: md5
+      md5: 3bdeb4f203134a7bda80d728cb53a0eb
+      size: 14301

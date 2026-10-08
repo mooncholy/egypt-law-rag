@@ -16,6 +16,7 @@ from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 # MLflow logs a hint about its tracing tools on import; this pipeline doesn't
 # trace, and the line would land in every stage's console and log file.
@@ -166,6 +167,7 @@ def stage_run(
     input_hash: str,
     output_model: type[Record] | None = None,
     settings: Settings | None = None,
+    experiment: Literal["corpus", "retrieval"] = "corpus",
 ) -> Generator[StageRun]:
     """
     Run one pipeline stage inside its own MLflow run.
@@ -177,6 +179,8 @@ def stage_run(
     run is also tagged ``error`` with the exception's type and message.
     ``output_model`` names the record type the stage writes, logged as the
     ``output_schema`` param; a stage that writes only metrics passes none.
+    ``experiment`` names the ``tracking.experiments`` field the run goes to:
+    ``corpus`` for the corpus build, ``retrieval`` for retrieval evaluation.
 
     returns:
     - run (StageRun): the run's id, its log file, and ``log_metrics``
@@ -192,7 +196,7 @@ def stage_run(
     client = MlflowClient(tracking_uri=settings.mlflow_tracking_uri)
     sha, dirty = git_state()
     experiment_id = _experiment_id(
-        client, settings, settings.tracking.experiments.corpus
+        client, settings, getattr(settings.tracking.experiments, experiment)
     )
     run = client.create_run(
         experiment_id,

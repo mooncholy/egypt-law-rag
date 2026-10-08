@@ -1,5 +1,5 @@
 # The corpus build: profile -> extract -> repair -> assemble -> validate -> chunk,
-# then the search index: embed and bm25.
+# then the search index: embed and bm25, scored by evaluate_retrieval.
 # Paths come from params.yaml through ${...}; each stage lists the code that
 # defines what it computes, so a code change reruns it.
 stages:
@@ -132,4 +132,36 @@ stages:
       - ${paths.index_dir}/bm25
     metrics:
       - ${paths.metrics_dir}/bm25.json:
+          cache: false
+
+  # Scores one half of the eval set (evaluation.split, D15) before any LLM is
+  # involved. One MLflow run per config, in the `retrieval` experiment.
+  evaluate_retrieval:
+    cmd: python -m raglaw.ingest.evaluate_retrieval
+    deps:
+      - ${paths.index_dir}/dense
+      - ${paths.index_dir}/bm25
+      - ${paths.gold_dir}/retrieval_eval.jsonl
+      - src/raglaw/ingest/evaluate_retrieval.py
+      - src/raglaw/retrieval/dense.py
+      - src/raglaw/retrieval/embeddings.py
+      - src/raglaw/retrieval/fusion.py
+      - src/raglaw/retrieval/lexical.py
+      - src/raglaw/retrieval/lookup.py
+      - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/retriever.py
+      - src/raglaw/retrieval/scoring.py
+      - src/raglaw/retrieval/tokenize.py
+      - src/raglaw/text/normalize.py
+    params:
+      - chunking   # logged with each run, so runs compare by it
+      - embedding
+      - retrieval
+      - search
+      - evaluation
+    metrics:
+      - ${paths.metrics_dir}/retrieval.json:
+          cache: false
+    outs:
+      - ${paths.reports_dir}/retrieval_misses.md:
           cache: false
