@@ -44,10 +44,11 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
 
-from raglaw.config import Chunking, Settings
+from raglaw.config import Chunking, Embedding, Settings
 from raglaw.ingest.loader import CivilCodeArticleLoader
 from raglaw.logging_setup import log_anomaly
 from raglaw.records import write_records
+from raglaw.retrieval.embeddings import huggingface_embeddings
 from raglaw.schema import Chunk, LogEvent
 from raglaw.tracking import sha256_file, stage_run
 
@@ -213,33 +214,6 @@ class ParagraphSemanticSplitter(TextSplitter):
         return parts
 
 
-def huggingface_embeddings(chunking: Chunking) -> Embeddings:
-    """
-    The pinned local embedding model, imported only when the strategy needs it.
-
-    returns:
-    - embeddings (Embeddings): ``HuggingFaceEmbeddings`` on CPU, normalized
-
-    exceptions:
-    - ImportError: the ``embed`` dependency group isn't installed
-    """
-    from langchain_huggingface import HuggingFaceEmbeddings  # embed group only
-
-    # BAAI's revision ships only pytorch_model.bin. Without this flag,
-    # transformers fetches model.safetensors from an unmerged bot pull request
-    # (refs/pr/130) instead of the pinned revision (D12). torch loads the .bin
-    # with weights_only=True, which refuses pickled code.
-    return HuggingFaceEmbeddings(
-        model_name=chunking.semantic.model,
-        model_kwargs={
-            "device": "cpu",
-            "revision": chunking.semantic.revision,
-            "model_kwargs": {"use_safetensors": False},
-        },
-        encode_kwargs={"normalize_embeddings": True},
-    )
-
-
 def build_splitter(
     chunking: Chunking, documents: list[Document], embeddings: Embeddings | None = None
 ) -> TextSplitter:
@@ -248,14 +222,18 @@ def build_splitter(
 
     returns:
     - splitter (TextSplitter): ready to split each article's Arabic text
+
+    exceptions:
+    - ValueError: the semantic strategy was asked for without embeddings
     """
     if chunking.strategy == "structural":
         return structural_splitter(chunking.max_chars)
+    if embeddings is None:
+        raise ValueError("structural_semantic needs embeddings to split by meaning")
     splitter = ParagraphSemanticSplitter(
-        embeddings or huggingface_embeddings(chunking),
+        embeddings,
         chunking.semantic.breakpoint_percentile,
         chunking.max_chars,
-        chunking.semantic.batch_size,
     )
     splitter.fit([d.page_content for d in documents if not d.metadata["is_repealed"]])
     return splitter
@@ -488,7 +466,7 @@ def run_chunk(
     return metrics
 
 
-def run_params(chunking: Chunking) -> dict[str, object]:
+def run_params(chunking: Chunking, embedding: Embedding) -> dict[str, object]:
     """
     The chunking config a run is compared by, under the names used across runs.
 
@@ -507,8 +485,8 @@ def run_params(chunking: Chunking) -> dict[str, object]:
     }
     if chunking.strategy == "structural_semantic":
         params |= {
-            "embedding_model": chunking.semantic.model,
-            "embedding_revision": chunking.semantic.revision,
+            "embedding_model": embedding.model,
+            "embedding_revision": embedding.revision,
             "breakpoint_percentile": chunking.semantic.breakpoint_percentile,
         }
     return params
@@ -529,11 +507,21 @@ def main(argv: list[str] | None = None) -> None:
         output_model=Chunk,
         settings=settings,
     ) as run:
-        run.log_params(run_params(chunking))
+        run.log_params(run_params(chunking, settings.embedding))
+        embeddings = (
+            huggingface_embeddings(settings.embedding)
+            if chunking.strategy == "structural_semantic"
+            else None
+        )
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "split_articles.md"
             metrics = run_chunk(
-                args.articles, args.out, args.metrics, chunking, report_out=report
+                args.articles,
+                args.out,
+                args.metrics,
+                chunking,
+                embeddings,
+                report_out=report,
             )
             run.log_artifact(report, artifact_path="reports")
         run.log_metrics(

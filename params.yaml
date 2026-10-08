@@ -31,7 +31,11 @@ chunking:
   strategy: structural
   max_chars: 1000
   semantic:
-    model: BAAI/bge-m3
-    revision: 5617a9f61b028005a4858fdac845db406aefb181
     breakpoint_percentile: 90   # A starting value, could be changed later based on retrieval evaluation
-    batch_size: 32
+
+# The one embedding model (D12): the semantic chunking variant and `index` both
+# read it, so the two can't drift apart.
+embedding:
+  model: BAAI/bge-m3
+  revision: 5617a9f61b028005a4858fdac845db406aefb181
+  batch_size: 32

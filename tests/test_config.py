@@ -5,7 +5,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from raglaw.config import Experiments, Paths, RootHeading, Settings
+from raglaw.config import Embedding, Experiments, Paths, RootHeading, Settings
 
 pytestmark = pytest.mark.unit
 
@@ -126,3 +126,18 @@ def test_experiment_name_must_be_safe_as_an_s3_prefix(bad):
 def test_root_heading_must_not_be_blank():
     with pytest.raises(ValidationError, match="en"):
         RootHeading(ar="باب تمهيدي / أحكام عامة", en="   ")
+
+
+def test_one_embedding_block_serves_chunking_and_index(clean_env):
+    settings = Settings(_env_file=None)
+
+    assert settings.embedding.model == "BAAI/bge-m3"
+    assert "model" not in settings.chunking.semantic.model_dump()
+
+
+@pytest.mark.parametrize(
+    "bad", ["main", "5617a9f", "5617A9F61B028005A4858FDAC845DB406AEFB181"]
+)
+def test_embedding_revision_must_be_a_full_commit_sha(bad):
+    with pytest.raises(ValidationError, match="revision"):
+        Embedding(model="BAAI/bge-m3", revision=bad, batch_size=32)

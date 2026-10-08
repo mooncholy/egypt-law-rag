@@ -76,10 +76,12 @@ stages:
       - ${paths.corpus_dir}/articles.json
       - src/raglaw/ingest/chunk.py
       - src/raglaw/ingest/loader.py
+      - src/raglaw/retrieval/embeddings.py
       - src/raglaw/schema.py
       - src/raglaw/records.py
     params:
       - chunking
+      - embedding
     outs:
       - ${paths.corpus_dir}/chunks.json
     metrics:

@@ -80,20 +80,28 @@ class Experiments(BaseModel):
     )
 
 
-class Semantic(BaseModel):
-    """The ``structural_semantic`` strategy's embedding model and threshold."""
+class Embedding(BaseModel):
+    """The one embedding model, shared by the semantic chunking variant and `index`.
+
+    Kept in one place so chunking and retrieval can't embed with different models.
+    """
 
     model: NonEmptyStr = Field(description="Hugging Face model id.")
     revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] = Field(
         description="The model's pinned commit, so a rebuild embeds the same way."
     )
+    batch_size: int = Field(gt=0, description="Texts embedded per batch.")
+
+
+class Semantic(BaseModel):
+    """The ``structural_semantic`` strategy's threshold; its model is ``embedding``."""
+
     breakpoint_percentile: float = Field(
         gt=0,
         lt=100,
         description="Neighbouring paragraphs split where their distance is above "
         "this percentile of all such distances in the corpus.",
     )
-    batch_size: int = Field(gt=0, description="Paragraphs embedded per batch.")
 
 
 class Chunking(BaseModel):
@@ -146,6 +154,7 @@ class Settings(BaseSettings):
     root_heading: RootHeading = Field(description="The fixed root of heading paths.")
     tracking: Tracking = Field(description="MLflow run grouping.")
     chunking: Chunking = Field(description="Chunking strategy and limits.")
+    embedding: Embedding = Field(description="The pinned embedding model.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(

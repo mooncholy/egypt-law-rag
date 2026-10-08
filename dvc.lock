@@ -175,8 +175,8 @@ stages:
       size: 1918524
     - path: src/raglaw/ingest/chunk.py
       hash: md5
-      md5: 560daa6f416508e5a617f6c096bd63c1
-      size: 21182
+      md5: 252f4716abbde28ec760a994eddb9d65
+      size: 20661
     - path: src/raglaw/ingest/loader.py
       hash: md5
       md5: 2d0f1c38040bd995b3ac2e5f91fc0302
@@ -185,6 +185,10 @@ stages:
       hash: md5
       md5: b470051d287b2c26fc47e23ff0baf566
       size: 2991
+    - path: src/raglaw/retrieval/embeddings.py
+      hash: md5
+      md5: 10090bddbc9188065226af9c9bae07a2
+      size: 1392
     - path: src/raglaw/schema.py
       hash: md5
       md5: 8c25f82a1d5a0abfe775058c70b6987c
@@ -195,10 +199,11 @@ stages:
           strategy: structural
           max_chars: 1000
           semantic:
-            model: BAAI/bge-m3
-            revision: 5617a9f61b028005a4858fdac845db406aefb181
             breakpoint_percentile: 90
-            batch_size: 32
+        embedding:
+          model: BAAI/bge-m3
+          revision: 5617a9f61b028005a4858fdac845db406aefb181
+          batch_size: 32
     outs:
     - path: data/corpus/chunks.json
       hash: md5

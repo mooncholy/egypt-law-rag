@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from raglaw.config import Chunking, Semantic
+from raglaw.config import Chunking, Embedding, Semantic
 from raglaw.ingest.chunk import (
     ChunkError,
     ParagraphSemanticSplitter,
@@ -19,10 +19,10 @@ from raglaw.ingest.loader import CivilCodeArticleLoader
 from raglaw.records import read_records, write_records
 from raglaw.schema import Article, Chunk, LogEvent
 
-SEMANTIC = Semantic(
+SEMANTIC = Semantic(breakpoint_percentile=90)
+EMBEDDING = Embedding(
     model="BAAI/bge-m3",
     revision="5617a9f61b028005a4858fdac845db406aefb181",
-    breakpoint_percentile=90,
     batch_size=8,
 )
 
@@ -210,6 +210,15 @@ def test_semantic_chunking_is_deterministic(tmp_path, stub_embeddings):
 
 
 @pytest.mark.unit
+def test_the_semantic_strategy_needs_embeddings(tmp_path):
+    with pytest.raises(ValueError, match="embeddings"):
+        chunk_documents(
+            documents(tmp_path, article(1, "(١( أ\n(٢( ب")),
+            chunking("structural_semantic"),
+        )
+
+
+@pytest.mark.unit
 def test_the_structural_strategy_never_imports_the_model(tmp_path):
     chunk_documents(documents(tmp_path, article(1, "نص.")), chunking())
 
@@ -318,7 +327,7 @@ def test_the_stage_writes_chunks_and_metrics(tmp_path):
 
 @pytest.mark.unit
 def test_structural_run_records_size_and_overlap_but_no_embedding_model():
-    assert run_params(chunking(max_chars=800)) == {
+    assert run_params(chunking(max_chars=800), EMBEDDING) == {
         "strategy": "structural",
         "chunk_size": 800,
         "chunk_overlap": 0,
@@ -327,10 +336,10 @@ def test_structural_run_records_size_and_overlap_but_no_embedding_model():
 
 @pytest.mark.unit
 def test_semantic_run_records_the_pinned_embedding_model():
-    params = run_params(chunking("structural_semantic"))
+    params = run_params(chunking("structural_semantic"), EMBEDDING)
 
     assert params["embedding_model"] == "BAAI/bge-m3"
-    assert params["embedding_revision"] == SEMANTIC.revision
+    assert params["embedding_revision"] == EMBEDDING.revision
     assert params["breakpoint_percentile"] == 90
     assert params["chunk_overlap"] == 0
 
