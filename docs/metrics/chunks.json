@@ -1,0 +1,21 @@
+{
+  "articles_covered": 1149,
+  "chunks": 1150,
+  "chunks_sha256": "a9b1137a7b26b8dd03fe5fd7a3a2f57e419b7495d55fdce651f4c1c6dc4f055b",
+  "chunks_under_100_chars": 200,
+  "chunks_with_article_number": 1150,
+  "chunks_with_untranslated_text": 7,
+  "max_chunk_chars": 910,
+  "median_chunk_chars": 204.5,
+  "oversize_paragraph_anomalies": 0,
+  "p10_chunk_chars": 78.0,
+  "paragraphs_with_connective_share": 0.448675,
+  "split_article_share": 0.00087,
+  "split_articles": 1,
+  "split_part_median_chars": 707.5,
+  "split_parts": 2,
+  "split_parts_under_100_chars": 0,
+  "split_parts_with_connective": 1,
+  "split_parts_with_connective_share": 1.0,
+  "strategy": "structural"
+}

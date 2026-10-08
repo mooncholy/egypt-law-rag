@@ -1,8 +1,8 @@
 """One MLflow run per pipeline stage execution.
 
 A stage wraps its work in ``stage_run``; the run then ties what went in (git
-SHA, schema version, input hash) to what came out (metrics, the stage's full
-JSONL log). Runs of one ``dvc repro`` share a git SHA, which groups them.
+SHA, input hash, the schema of the records it writes) to what came out
+(metrics, the stage's full JSONL log). Runs of one ``dvc repro`` share a git SHA, which groups them.
 Stage code records numbers through the yielded handle and never imports
 MLflow itself.
 """
@@ -26,7 +26,7 @@ from mlflow.tracking import MlflowClient
 
 from raglaw.config import Settings
 from raglaw.logging_setup import close_logging, setup_logging
-from raglaw.schema import SCHEMA_VERSION, LogEvent
+from raglaw.schema import LogEvent, Record
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,16 @@ class StageRun:
         self._client.log_batch(
             self.run_id,
             metrics=[Metric(k, float(v), timestamp, 0) for k, v in metrics.items()],
+        )
+
+    def log_artifact(self, path: Path, artifact_path: str | None = None) -> None:
+        """Attach a file to the run (e.g., a report), under ``artifact_path``."""
+        self._client.log_artifact(self.run_id, str(path), artifact_path=artifact_path)
+
+    def log_params(self, params: Mapping[str, object]) -> None:
+        """Record the choices a stage ran with (e.g., a strategy), to compare runs by."""
+        self._client.log_batch(
+            self.run_id, params=[Param(k, str(v)) for k, v in params.items()]
         )
 
 
@@ -131,9 +141,31 @@ def _experiment_id(client: MlflowClient, settings: Settings, name: str) -> str:
     return experiment.experiment_id
 
 
+# MLflow caps a tag value at 5,000 characters; the reason fits well within it.
+ERROR_TAG_CHARS = 1_000
+
+
+def _tag_error(client: MlflowClient, run_id: str, exc: BaseException) -> None:
+    """
+    Tag a failed run with ``error: <type>: <message>``, shown on its Overview.
+
+    The full traceback is in the run's log artifact. Tagging never masks the
+    stage's own exception: a tracking failure here is only logged.
+    """
+    reason = f"{type(exc).__name__}: {exc}"[:ERROR_TAG_CHARS]
+    try:
+        client.set_tag(run_id, "error", reason)
+    except Exception:
+        logger.warning("Could not tag the failed run with its error", exc_info=True)
+
+
 @contextmanager
 def stage_run(
-    stage: str, *, input_hash: str, settings: Settings | None = None
+    stage: str,
+    *,
+    input_hash: str,
+    output_model: type[Record] | None = None,
+    settings: Settings | None = None,
 ) -> Generator[StageRun]:
     """
     Run one pipeline stage inside its own MLflow run.
@@ -141,7 +173,10 @@ def stage_run(
     Sets up the stage's logging, records params and tags up front, and on
     exit attaches the stage's log file, even when the stage fails, since a
     failed run is when the log matters most. An exception marks the run
-    FAILED (an interrupt, KILLED) and is re-raised, never swallowed.
+    FAILED (an interrupt, KILLED) and is re-raised, never swallowed; a failed
+    run is also tagged ``error`` with the exception's type and message.
+    ``output_model`` names the record type the stage writes, logged as the
+    ``output_schema`` param; a stage that writes only metrics passes none.
 
     returns:
     - run (StageRun): the run's id, its log file, and ``log_metrics``
@@ -168,12 +203,9 @@ def stage_run(
         },
     )
     run_id = run.info.run_id
-    params = {
-        "stage": stage,
-        "git_sha": sha,
-        "schema_version": SCHEMA_VERSION,
-        "input_hash": input_hash,
-    }
+    params = {"stage": stage, "git_sha": sha, "input_hash": input_hash}
+    if output_model is not None:
+        params["output_schema"] = output_model.schema_id()
     client.log_batch(run_id, params=[Param(k, v) for k, v in params.items()])
 
     stage_fields = {"stage": stage, "run_id": run_id}
@@ -194,6 +226,7 @@ def stage_run(
         logger.exception(
             "Stage failed", extra={**stage_fields, "event_type": LogEvent.STAGE_FAILED}
         )
+        _tag_error(client, run_id, exc)
         raise
     except BaseException as exc:
         status, stage_exc = "KILLED", exc

@@ -1,14 +1,19 @@
+import hashlib
+import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import pymupdf
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langchain_core.embeddings import Embeddings
 from mlflow.tracking import MlflowClient
 
 from raglaw.api.main import create_app
@@ -18,16 +23,10 @@ from raglaw.logging_conf import extra_fields
 from raglaw.logging_setup import close_logging, setup_logging
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 # Settings reads params.yaml from the working directory, so tests run from the
 # repo root, as `dvc repro` does.
 FULL_PDF = REPO_ROOT / Settings(_env_file=None).paths.raw_pdf
-FIXTURE_PDFS = {
-    "page_001": FIXTURES_DIR / "page_001.pdf",
-    "pages_007_009": FIXTURES_DIR / "pages_007_009.pdf",
-    "pages_046_047": FIXTURES_DIR / "pages_046_047.pdf",
-    "page_081": FIXTURES_DIR / "page_081.pdf",
-}
+METRICS_DIR = REPO_ROOT / Settings(_env_file=None).paths.metrics_dir
 NEEDS_FULL_PDF = ("profile", "corpus")
 
 
@@ -62,15 +61,132 @@ def full_pdf() -> Path:
 
 
 @pytest.fixture
-def fixture_pdfs() -> dict[str, Path]:
-    """The four committed excerpts of the source PDF, keyed by page range."""
-    return FIXTURE_PDFS
+def stage_metrics() -> Callable[[str], dict[str, Any]]:
+    """Load a stage's metrics file from ``docs/metrics``, written by ``dvc repro``."""
+
+    def _load(name: str) -> dict[str, Any]:
+        path = METRICS_DIR / f"{name}.json"
+        if not path.exists():
+            pytest.fail(f"{path} is missing: run `dvc repro` first")
+        return json.loads(path.read_text("utf-8"))
+
+    return _load
 
 
 @pytest.fixture
-def stub_path() -> Path:
-    """The committed 10-article stub (created from the gold set in Phase 4)."""
-    return FIXTURES_DIR / "articles_stub.json"
+def source_profile(stage_metrics: Callable[[str], dict[str, Any]]) -> dict[str, Any]:
+    """The ``profile`` stage's metrics on the full PDF."""
+    return stage_metrics("source_profile")
+
+
+# --- Synthetic PDF ----------------------------------------------------------
+
+# Printed above page 1's table, like the source's promulgation law (P7).
+OUTSIDE_TABLE_TEXT = "PROMULGATION LAW"
+# Highlighted on page 2, like the source's untranslated passages (P32).
+HIGHLIGHTED_TEXT = "As provided in Article 2."
+# Rows of a synthetic page: (English cell, Arabic-side cell, English is bold).
+# The right column holds Latin text: the built-in font has no Arabic glyphs,
+# and the Arabic-specific measures are covered by the `profile` tests instead.
+SYNTHETIC_PAGES = [
+    [
+        ("SECTION I\nGeneral Provisions", "AL-FASL 1", True),
+        ("Article 1\nLegislative provisions govern.", "MADA 1\nBody one.", False),
+        ("Article 2 No provision may be repealed.", "MADA 2\nBody two.", False),
+        ("SECTION II", "AL-FASL 2", True),
+    ],
+    [
+        ("except by a later law.", "Body two, continued.", False),
+        ("Articles 3-5 repealed", "Repealed.", False),
+        ("Article 6\nAs provided in Article 2.", "MADA 6\nBody six.", False),
+    ],
+]
+
+
+def _draw_ruled_table(page: pymupdf.Page, rows: list[tuple[str, str, bool]]) -> None:
+    """Draw ``rows`` as a two-column table ruled with lines, as the source is (P3)."""
+    x0, mid, x1, row_height = 20, 200, 380, 60
+    tops = [30 + i * row_height for i in range(len(rows) + 1)]
+    for top in tops:
+        page.draw_line((x0, top), (x1, top))
+    for x in (x0, mid, x1):
+        page.draw_line((x, tops[0]), (x, tops[-1]))
+    for top, (en, ar, bold) in zip(tops, rows, strict=False):
+        page.insert_text((x0 + 5, top + 15), en, fontname="hebo" if bold else "helv")
+        page.insert_text((mid + 5, top + 15), ar, fontname="helv")
+
+
+@pytest.fixture(scope="session")
+def synthetic_pdf(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A two-page PDF laid out like the source: one ruled two-column table per page.
+
+    It holds a bold heading, articles (one with body text on its header line),
+    a repeal row, a continuation opening page 2, a keyword-only heading ending
+    page 1, a line printed above page 1's table, and a yellow fill under one
+    English line on page 2. CI exercises the
+    PDF-reading code on it without the source.
+    """
+    path = tmp_path_factory.mktemp("pdf") / "synthetic.pdf"
+    with pymupdf.open() as doc:
+        for rows in SYNTHETIC_PAGES:
+            _draw_ruled_table(doc.new_page(width=400, height=300), rows)
+        doc[0].insert_text((20, 18), OUTSIDE_TABLE_TEXT, fontname="helv")
+        page = doc[1]
+        [where] = page.search_for(HIGHLIGHTED_TEXT)
+        page.draw_rect(where, color=None, fill=(1, 1, 0), overlay=False)
+        doc.save(path)
+    return path
+
+
+@pytest.fixture
+def highlighted_text() -> str:
+    """The English line under a yellow fill on page 2 of ``synthetic_pdf``."""
+    return HIGHLIGHTED_TEXT
+
+
+@pytest.fixture
+def outside_table_text() -> str:
+    """The line printed above page 1's table in ``synthetic_pdf``."""
+    return OUTSIDE_TABLE_TEXT
+
+
+@pytest.fixture
+def tracked_pdf(synthetic_pdf: Path, tmp_path: Path) -> Path:
+    """The synthetic PDF next to a `.dvc` file recording its md5, as DVC writes one."""
+    pdf = tmp_path / "source.pdf"
+    shutil.copy(synthetic_pdf, pdf)
+    md5 = hashlib.md5(pdf.read_bytes()).hexdigest()
+    pdf.with_name("source.pdf.dvc").write_text(
+        f"outs:\n- md5: {md5}\n  path: source.pdf\n", encoding="utf-8"
+    )
+    return pdf
+
+
+# --- Embeddings ----------------------------------------------------------------
+
+
+class StubEmbeddings(Embeddings):
+    """Fixed vectors per text, so the semantic splitter is tested without a model.
+
+    A text not in ``vectors`` gets the ``default`` vector.
+    """
+
+    def __init__(self, vectors: dict[str, list[float]], default: list[float]) -> None:
+        self.vectors, self.default = vectors, default
+        self.calls = 0
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        return [self.vectors.get(t.strip(), self.default) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.vectors.get(text.strip(), self.default)
+
+
+@pytest.fixture
+def stub_embeddings() -> Callable[..., StubEmbeddings]:
+    """Build a ``StubEmbeddings`` from a {text: vector} map and a default vector."""
+    return StubEmbeddings
 
 
 # --- Configuration ---------------------------------------------------------

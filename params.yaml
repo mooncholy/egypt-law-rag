@@ -12,16 +12,26 @@ paths:
   gold_dir: data/gold
   metrics_dir: docs/metrics
   reports_dir: docs/reports
+  analysis_dir: docs/analysis/source_pdf
   logs_dir: logs
 
 # The page 1 heading that opens every heading path (P7). It has no English side
 # in the source; the owner supplies the label (D7).
 root_heading:
   ar: "باب تمهيدي / أحكام عامة"
-  en: TODO
+  en: "Preliminary Chapter / General Provisions"
 
 # MLflow: one experiment per kind of work, since runs are compared within one.
 # Not a stage input: never list these under a stage's `params:` in dvc.yaml.
 tracking:
   experiments:
     corpus: corpus-build   # one run per `dvc repro` stage execution
+
+chunking:
+  strategy: structural
+  max_chars: 1000
+  semantic:
+    model: BAAI/bge-m3
+    revision: 5617a9f61b028005a4858fdac845db406aefb181
+    breakpoint_percentile: 90   # A starting value, could be changed later based on retrieval evaluation
+    batch_size: 32

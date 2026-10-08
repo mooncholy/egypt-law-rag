@@ -1,0 +1,210 @@
+schema: '2.0'
+stages:
+  profile:
+    cmd: python -m raglaw.ingest.profile
+    deps:
+    - path: data/raw/civil_code.pdf
+      hash: md5
+      md5: 5086ef5f16f15d856278db943e58e948
+      size: 2599703
+    - path: src/raglaw/ingest/measure.py
+      hash: md5
+      md5: 230917a4998ec7b84552a75cf781b815
+      size: 26149
+    - path: src/raglaw/ingest/profile.py
+      hash: md5
+      md5: 77e4be8715b2d095796758a37ed05bff
+      size: 7982
+    - path: src/raglaw/ingest/table.py
+      hash: md5
+      md5: 05a4471486a1aaeb841df68eabcee045
+      size: 3269
+    outs:
+    - path: docs/analysis/source_pdf
+      hash: md5
+      md5: ab97943993e87ed647ea51558546477c.dir
+      size: 74128
+      nfiles: 9
+    - path: docs/metrics/source_profile.json
+      hash: md5
+      md5: 22cd96bdadc5ca4c6c791968fe98af59
+      size: 657
+  extract:
+    cmd: python -m raglaw.ingest.extract
+    deps:
+    - path: data/raw/civil_code.pdf
+      hash: md5
+      md5: 5086ef5f16f15d856278db943e58e948
+      size: 2599703
+    - path: docs/metrics/source_profile.json
+      hash: md5
+      md5: 22cd96bdadc5ca4c6c791968fe98af59
+      size: 657
+    - path: src/raglaw/ingest/extract.py
+      hash: md5
+      md5: 3dc78580a528f8d905b4236f7e0ec754
+      size: 8002
+    - path: src/raglaw/ingest/glyphs.py
+      hash: md5
+      md5: 75aeb661e989e89b4560febf50131345
+      size: 11334
+    - path: src/raglaw/ingest/measure.py
+      hash: md5
+      md5: 230917a4998ec7b84552a75cf781b815
+      size: 26149
+    - path: src/raglaw/ingest/profile.py
+      hash: md5
+      md5: 77e4be8715b2d095796758a37ed05bff
+      size: 7982
+    - path: src/raglaw/ingest/table.py
+      hash: md5
+      md5: 05a4471486a1aaeb841df68eabcee045
+      size: 3269
+    - path: src/raglaw/records.py
+      hash: md5
+      md5: b470051d287b2c26fc47e23ff0baf566
+      size: 2991
+    - path: src/raglaw/schema.py
+      hash: md5
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
+    outs:
+    - path: data/interim/rows.jsonl
+      hash: md5
+      md5: 3d6718c8f5dc97694754d7e7af4cafff
+      size: 1141283
+    - path: docs/metrics/extract.json
+      hash: md5
+      md5: 9dc835fed4f5e1b257e93fa54d152ea8
+      size: 383
+  repair:
+    cmd: python -m raglaw.ingest.repair
+    deps:
+    - path: data/errata.yaml
+      hash: md5
+      md5: 1f3a872b90ac5290bf4a5a4111cb471a
+      size: 10095
+    - path: data/interim/rows.jsonl
+      hash: md5
+      md5: 3d6718c8f5dc97694754d7e7af4cafff
+      size: 1141283
+    - path: src/raglaw/ingest/errata.py
+      hash: md5
+      md5: 452ef14cd35c5bf2a6db206ee673fbbe
+      size: 3494
+    - path: src/raglaw/ingest/measure.py
+      hash: md5
+      md5: 230917a4998ec7b84552a75cf781b815
+      size: 26149
+    - path: src/raglaw/ingest/profile.py
+      hash: md5
+      md5: 77e4be8715b2d095796758a37ed05bff
+      size: 7982
+    - path: src/raglaw/ingest/repair.py
+      hash: md5
+      md5: e2e59fe9107d3c1a58322b528ed8c325
+      size: 10144
+    - path: src/raglaw/records.py
+      hash: md5
+      md5: b470051d287b2c26fc47e23ff0baf566
+      size: 2991
+    - path: src/raglaw/schema.py
+      hash: md5
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
+    outs:
+    - path: data/interim/rows_repaired.jsonl
+      hash: md5
+      md5: 6cd116773bd3d6cbce4d2feae38a63ec
+      size: 1141095
+    - path: docs/metrics/repair.json
+      hash: md5
+      md5: 89106db30cc8509748d107d894523696
+      size: 287
+  assemble:
+    cmd: python -m raglaw.ingest.assemble
+    deps:
+    - path: data/interim/rows_repaired.jsonl
+      hash: md5
+      md5: 6cd116773bd3d6cbce4d2feae38a63ec
+      size: 1141095
+    - path: src/raglaw/ingest/assemble.py
+      hash: md5
+      md5: 72842d611737b216b6e554decee9e488
+      size: 22263
+    - path: src/raglaw/ingest/measure.py
+      hash: md5
+      md5: 230917a4998ec7b84552a75cf781b815
+      size: 26149
+    - path: src/raglaw/records.py
+      hash: md5
+      md5: b470051d287b2c26fc47e23ff0baf566
+      size: 2991
+    - path: src/raglaw/schema.py
+      hash: md5
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
+    - path: src/raglaw/text/normalize.py
+      hash: md5
+      md5: a939c9592ed1cc3d8eb0d84e68e51363
+      size: 2457
+    params:
+      params.yaml:
+        root_heading:
+          ar: باب تمهيدي / أحكام عامة
+          en: Preliminary Chapter / General Provisions
+    outs:
+    - path: data/corpus/articles.json
+      hash: md5
+      md5: f5a9010631fb0d008a7048d2bf9e2d00
+      size: 1918524
+    - path: docs/metrics/assemble.json
+      hash: md5
+      md5: 5e31832938c24ea26e62e579043dac8d
+      size: 278
+    - path: docs/reports/heading_tree.txt
+      hash: md5
+      md5: 7cd8598f33970b40cc444a85215b931b
+      size: 26435
+  chunk:
+    cmd: python -m raglaw.ingest.chunk
+    deps:
+    - path: data/corpus/articles.json
+      hash: md5
+      md5: f5a9010631fb0d008a7048d2bf9e2d00
+      size: 1918524
+    - path: src/raglaw/ingest/chunk.py
+      hash: md5
+      md5: 560daa6f416508e5a617f6c096bd63c1
+      size: 21182
+    - path: src/raglaw/ingest/loader.py
+      hash: md5
+      md5: 2d0f1c38040bd995b3ac2e5f91fc0302
+      size: 1839
+    - path: src/raglaw/records.py
+      hash: md5
+      md5: b470051d287b2c26fc47e23ff0baf566
+      size: 2991
+    - path: src/raglaw/schema.py
+      hash: md5
+      md5: 8c25f82a1d5a0abfe775058c70b6987c
+      size: 6950
+    params:
+      params.yaml:
+        chunking:
+          strategy: structural
+          max_chars: 1000
+          semantic:
+            model: BAAI/bge-m3
+            revision: 5617a9f61b028005a4858fdac845db406aefb181
+            breakpoint_percentile: 90
+            batch_size: 32
+    outs:
+    - path: data/corpus/chunks.json
+      hash: md5
+      md5: 5c53678196176315e71a4e693512c8d2
+      size: 2057460
+    - path: docs/metrics/chunks.json
+      hash: md5
+      md5: b47fe4e8c7c5111b617648a883c3e500
+      size: 671

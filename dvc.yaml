@@ -1,0 +1,87 @@
+# The corpus build: profile -> extract -> repair -> assemble -> validate -> chunk.
+# Paths come from params.yaml through ${...}; each stage lists the code that
+# defines what it computes, so a code change reruns it.
+stages:
+  profile:
+    cmd: python -m raglaw.ingest.profile
+    deps:
+      - ${paths.raw_pdf}
+      - src/raglaw/ingest/profile.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/table.py
+    outs:
+      - ${paths.analysis_dir}:
+          cache: false
+    metrics:
+      - ${paths.metrics_dir}/source_profile.json:
+          cache: false
+
+  extract:
+    cmd: python -m raglaw.ingest.extract
+    deps:
+      - ${paths.raw_pdf}
+      - ${paths.metrics_dir}/source_profile.json
+      - src/raglaw/ingest/extract.py
+      - src/raglaw/ingest/glyphs.py
+      - src/raglaw/ingest/table.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/profile.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    outs:
+      - ${paths.interim_dir}/rows.jsonl
+    metrics:
+      - ${paths.metrics_dir}/extract.json:
+          cache: false
+
+  repair:
+    cmd: python -m raglaw.ingest.repair
+    deps:
+      - ${paths.interim_dir}/rows.jsonl
+      - ${paths.errata}
+      - src/raglaw/ingest/repair.py
+      - src/raglaw/ingest/errata.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/profile.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    outs:
+      - ${paths.interim_dir}/rows_repaired.jsonl
+    metrics:
+      - ${paths.metrics_dir}/repair.json:
+          cache: false
+
+  assemble:
+    cmd: python -m raglaw.ingest.assemble
+    deps:
+      - ${paths.interim_dir}/rows_repaired.jsonl
+      - src/raglaw/ingest/assemble.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/text/normalize.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - root_heading
+    outs:
+      - ${paths.corpus_dir}/articles.json
+      - ${paths.reports_dir}/heading_tree.txt:
+          cache: false
+    metrics:
+      - ${paths.metrics_dir}/assemble.json:
+          cache: false
+
+  chunk:
+    cmd: python -m raglaw.ingest.chunk
+    deps:
+      - ${paths.corpus_dir}/articles.json
+      - src/raglaw/ingest/chunk.py
+      - src/raglaw/ingest/loader.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - chunking
+    outs:
+      - ${paths.corpus_dir}/chunks.json
+    metrics:
+      - ${paths.metrics_dir}/chunks.json:
+          cache: false

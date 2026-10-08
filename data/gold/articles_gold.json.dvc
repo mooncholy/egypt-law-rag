@@ -1,0 +1,5 @@
+outs:
+- md5: ced238216c1f2f2a34b6c5e05cd09349
+  size: 35938
+  hash: md5
+  path: articles_gold.json

@@ -1,0 +1,35 @@
+{
+  "pdf_md5": "5086ef5f16f15d856278db943e58e948",
+  "pages_total": 170,
+  "pages_with_text_layer": 170,
+  "pages_one_2col_table": 170,
+  "font_set": [
+    "Arial-BoldMT",
+    "ArialMT",
+    "Calibri",
+    "Calibri-Bold"
+  ],
+  "rows_detected": 1463,
+  "rows_tagged": 1464,
+  "pages_detected_ne_tagged": [
+    [
+      1,
+      9,
+      10
+    ]
+  ],
+  "rows_missing_a_side": 0,
+  "raw_lam_alef_signatures": 3500,
+  "raw_rtl_digit_runs": 1167,
+  "raw_header_typos": 2,
+  "raw_same_line_headers": 6,
+  "raw_spaced_mada_headers": 13,
+  "gates": {
+    "G1": "pass",
+    "G2": "pass",
+    "G3": "pass",
+    "G4": "pass",
+    "G5": "pass",
+    "G6": "pass"
+  }
+}

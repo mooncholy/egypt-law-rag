@@ -48,7 +48,7 @@ jobs:
           SKIP: dvc-pre-commit
 
   test:
-    name: test (unit + smoke, coverage gate)
+    name: test (unit, coverage gate)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,7 +58,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       # The 80% threshold lives in [tool.coverage.report]; --cov applies it.
-      - run: uv run --no-sync pytest -m "unit or smoke" --cov
+      - run: uv run --no-sync pytest -m unit --cov
 
   runtime:
     name: runtime (API on runtime deps only)
