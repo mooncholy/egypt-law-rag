@@ -1,0 +1,10 @@
+{
+  "chunks_indexed": 1150,
+  "device": "cpu",
+  "document_text": "both_with_headings",
+  "embedding_dim": 1024,
+  "max_chunk_tokens": 905,
+  "max_tokens": 8192,
+  "seconds": 901.7,
+  "truncated_chunks": 0
+}

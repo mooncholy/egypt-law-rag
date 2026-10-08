@@ -471,7 +471,7 @@ def run_params(chunking: Chunking, embedding: Embedding) -> dict[str, object]:
     The chunking config a run is compared by, under the names used across runs.
 
     Only the semantic variant uses an embedding model, so only its runs record
-    one; the index stage records the model it embeds chunks with.
+    one; the embed stage records the model it embeds chunks with.
 
     returns:
     - params (dict[str, object]): strategy, chunk size and overlap, plus the

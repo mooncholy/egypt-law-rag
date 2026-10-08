@@ -1,0 +1,9 @@
+{
+  "bm25_tokenizer": "words",
+  "chunks_indexed": 1150,
+  "chunks_without_terms": 0,
+  "document_text": "both_with_headings",
+  "max_chunk_terms": 584,
+  "seconds": 0.2,
+  "vocabulary_size": 10502
+}

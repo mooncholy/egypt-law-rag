@@ -6,12 +6,16 @@ printed text. It is then lower-cased and split on anything that isn't a letter
 or a digit. Indexing and queries call this same function, so they can't drift.
 
 Light prefix stripping is a variant measured by retrieval evaluation, not the
-default: it can merge words that differ only in their first letter.
+default: it can merge words that differ only in their first letter. So is the
+embedding model's own subword tokenizer (``bm25_tokenizer``), which doesn't fold
+and splits words into pieces shared across unrelated words.
 """
 
 import re
+from collections.abc import Callable
+from typing import Protocol
 
-from raglaw.text.normalize import fold_arabic
+from raglaw.text.normalize import fold_arabic, normalize_arabic
 
 # Letters and digits in any script; underscores are not word characters here.
 TOKEN = re.compile(r"[^\W_]+")
@@ -46,3 +50,37 @@ def fold_tokens(text: str, *, strip_prefixes: bool = False) -> list[str]:
     if strip_prefixes:
         tokens = [_strip_prefixes(t) for t in tokens]
     return tokens
+
+
+class SubwordTokenizer(Protocol):
+    """The part of a Hugging Face tokenizer the ``model_subwords`` choice uses."""
+
+    def tokenize(self, text: str) -> list[str]: ...
+
+
+def bm25_tokenizer(
+    name: str, subword_tokenizer: SubwordTokenizer | None = None
+) -> Callable[[str], list[str]]:
+    """
+    The tokenizer named by ``retrieval.bm25_tokenizer``, for indexing and queries.
+
+    ``model_subwords`` tokenizes ``normalize_arabic`` text without folding, as
+    the model's vocabulary was learned on text as printed.
+
+    returns:
+    - tokenize (Callable[[str], list[str]]): text to BM25 terms
+
+    exceptions:
+    - ValueError: an unknown name, or ``model_subwords`` without a tokenizer
+    """
+    match name:
+        case "words":
+            return fold_tokens
+        case "words_light_stem":
+            return lambda text: fold_tokens(text, strip_prefixes=True)
+        case "model_subwords":
+            if subword_tokenizer is None:
+                raise ValueError("model_subwords needs the model's tokenizer")
+            return lambda text: subword_tokenizer.tokenize(normalize_arabic(text))
+        case _:
+            raise ValueError(f"Unknown BM25 tokenizer {name!r}")

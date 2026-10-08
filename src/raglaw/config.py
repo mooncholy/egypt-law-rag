@@ -49,6 +49,11 @@ class Paths(BaseModel):
         description="Evidence behind the source analysis report, written by "
         "`profile` (gitignored; pinned by its `.sha256` file)."
     )
+    index_dir: RepoPath = Field(
+        description="The search index: `dense/` (the Qdrant collection, built by "
+        "`embed`) and `bm25/` (built by `bm25`), each with its manifest "
+        "(DVC-tracked)."
+    )
     logs_dir: RepoPath = Field(
         description="One JSONL log per stage run (gitignored; attached to MLflow)."
     )
@@ -81,7 +86,7 @@ class Experiments(BaseModel):
 
 
 class Embedding(BaseModel):
-    """The one embedding model, shared by the semantic chunking variant and `index`.
+    """The one embedding model, shared by the semantic chunking variant and `embed`.
 
     Kept in one place so chunking and retrieval can't embed with different models.
     """
@@ -115,6 +120,27 @@ class Chunking(BaseModel):
         gt=0, description="Longest Arabic text in one chunk; a paragraph is never cut."
     )
     semantic: Semantic = Field(description="Settings for `structural_semantic`.")
+
+
+DocumentText = Literal["both_with_headings", "ar_only", "both_without_headings"]
+Bm25Tokenizer = Literal["words", "words_light_stem", "model_subwords"]
+
+
+class Retrieval(BaseModel):
+    """How chunks are indexed and searched (Phase 6)."""
+
+    document_text: DocumentText = Field(
+        description="What is embedded and BM25-indexed per chunk (D14). "
+        "`both_with_headings` (default): Arabic heading path, Arabic text, English "
+        "heading path, English text. `ar_only`: the Arabic half. "
+        "`both_without_headings`: both texts, no heading paths."
+    )
+    bm25_tokenizer: Bm25Tokenizer = Field(
+        description="How BM25 splits text into terms. `words` (default): folded "
+        "words (`fold_tokens`). `words_light_stem`: the same, with light Arabic "
+        "prefix stripping. `model_subwords`: the embedding model's own subword "
+        "tokenizer, on unfolded text."
+    )
 
 
 class Tracking(BaseModel):
@@ -155,6 +181,7 @@ class Settings(BaseSettings):
     tracking: Tracking = Field(description="MLflow run grouping.")
     chunking: Chunking = Field(description="Chunking strategy and limits.")
     embedding: Embedding = Field(description="The pinned embedding model.")
+    retrieval: Retrieval = Field(description="Indexing and search choices.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(

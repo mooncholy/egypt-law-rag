@@ -21,6 +21,7 @@ from raglaw.api.schemas import ComponentStatus
 from raglaw.config import Settings
 from raglaw.logging_conf import extra_fields
 from raglaw.logging_setup import close_logging, setup_logging
+from raglaw.schema import Chunk
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Settings reads params.yaml from the working directory, so tests run from the
@@ -187,6 +188,54 @@ class StubEmbeddings(Embeddings):
 def stub_embeddings() -> Callable[..., StubEmbeddings]:
     """Build a ``StubEmbeddings`` from a {text: vector} map and a default vector."""
     return StubEmbeddings
+
+
+class StubTokenizer:
+    """A model tokenizer without a model: whitespace pieces, plus the two special
+    tokens (``<s>``, ``</s>``) a real one adds to every input."""
+
+    def __init__(self, model_max_length: int = 8192) -> None:
+        self.model_max_length = model_max_length
+
+    def tokenize(self, text: str) -> list[str]:
+        return text.split()
+
+    def __call__(self, text: str) -> dict[str, list[int]]:
+        return {"input_ids": [0, *range(3, 3 + len(text.split())), 2]}
+
+
+@pytest.fixture
+def stub_tokenizer() -> Callable[..., StubTokenizer]:
+    """Build a ``StubTokenizer``, optionally with a small ``model_max_length``."""
+    return StubTokenizer
+
+
+# --- Chunks ----------------------------------------------------------------
+
+
+@pytest.fixture
+def make_chunk() -> Callable[..., Chunk]:
+    """Build a one-part ``Chunk`` for article ``number``; any field can be overridden."""
+
+    def _make(number: int, text_ar: str = "نص المادة", **overrides: Any) -> Chunk:
+        fields = {
+            "chunk_id": f"art-{number}-p1",
+            "article_number": number,
+            "citation": f"Article {number}",
+            "heading_path": ["Root"],
+            "heading_path_ar": ["الجذر"],
+            "source_pages": [1],
+            "is_repealed": False,
+            "part_index": 1,
+            "part_count": 1,
+            "paragraphs": [],
+            "text_ar": text_ar,
+            "text_en": f"English text of article {number}.",
+            "strategy": "structural",
+        }
+        return Chunk(**(fields | overrides))
+
+    return _make
 
 
 # --- Configuration ---------------------------------------------------------

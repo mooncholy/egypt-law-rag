@@ -1,4 +1,5 @@
-# The corpus build: profile -> extract -> repair -> assemble -> validate -> chunk.
+# The corpus build: profile -> extract -> repair -> assemble -> validate -> chunk,
+# then the search index: embed and bm25.
 # Paths come from params.yaml through ${...}; each stage lists the code that
 # defines what it computes, so a code change reruns it.
 stages:
@@ -86,4 +87,49 @@ stages:
       - ${paths.corpus_dir}/chunks.json
     metrics:
       - ${paths.metrics_dir}/chunks.json:
+          cache: false
+
+  # The search index, in two halves under ${paths.index_dir}, so a BM25
+  # tokenizer change takes seconds and never re-embeds (15 min on CPU).
+  embed:
+    cmd: python -m raglaw.ingest.embed
+    deps:
+      - ${paths.corpus_dir}/chunks.json
+      - src/raglaw/ingest/embed.py
+      - src/raglaw/retrieval/dense.py
+      - src/raglaw/retrieval/document_text.py
+      - src/raglaw/retrieval/embeddings.py
+      - src/raglaw/retrieval/manifest.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - embedding
+      - retrieval.document_text
+    outs:
+      - ${paths.index_dir}/dense
+    metrics:
+      - ${paths.metrics_dir}/embed.json:
+          cache: false
+
+  bm25:
+    cmd: python -m raglaw.ingest.bm25
+    deps:
+      - ${paths.corpus_dir}/chunks.json
+      - src/raglaw/ingest/bm25.py
+      - src/raglaw/retrieval/document_text.py
+      - src/raglaw/retrieval/embeddings.py  # the model tokenizer, for model_subwords
+      - src/raglaw/retrieval/lexical.py
+      - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/tokenize.py
+      - src/raglaw/text/normalize.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - embedding  # names the tokenizer model_subwords uses
+      - retrieval.document_text
+      - retrieval.bm25_tokenizer
+    outs:
+      - ${paths.index_dir}/bm25
+    metrics:
+      - ${paths.metrics_dir}/bm25.json:
           cache: false

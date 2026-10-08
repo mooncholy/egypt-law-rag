@@ -1,8 +1,10 @@
 import pytest
 
-from raglaw.retrieval.tokenize import fold_tokens
+from raglaw.retrieval.tokenize import bm25_tokenizer, fold_tokens
 
 pytestmark = pytest.mark.unit
+
+TATWEEL = chr(0x0640)  # built with chr(), so no editor can rewrite it
 
 # U25: one sample per fold, each with the tokens it must become.
 FOLD_CASES = {
@@ -11,7 +13,7 @@ FOLD_CASES = {
     "ta marbuta as ha": ("المادة", ["الماده"]),
     "diacritics": ("عَقْدٌ مَدَنِيّ", ["عقد", "مدني"]),
     "Arabic-Indic digits": ("المادة ١٤٧", ["الماده", "147"]),
-    "tatweel": ("مـــادة", ["ماده"]),
+    "tatweel": ("م" + TATWEEL * 3 + "ادة", ["ماده"]),
 }
 
 
@@ -70,3 +72,31 @@ def test_light_stripping_keeps_short_words_and_a_bare_ba_whole(word):
 
 def test_light_stripping_leaves_english_alone():
     assert fold_tokens("Alliance ball", strip_prefixes=True) == ["alliance", "ball"]
+
+
+# --- The BM25 tokenizer choice (retrieval.bm25_tokenizer) ---------------------
+
+
+def test_the_words_tokenizer_is_fold_tokens():
+    assert bm25_tokenizer("words")("والعقد ١٤٧") == ["والعقد", "147"]
+
+
+def test_the_light_stem_tokenizer_strips_prefixes():
+    assert bm25_tokenizer("words_light_stem")("والعقد ١٤٧") == ["عقد", "147"]
+
+
+def test_the_model_subword_tokenizer_sees_normalized_unfolded_text(stub_tokenizer):
+    """No fold: the model's vocabulary was learned on text as printed."""
+    tokenize = bm25_tokenizer("model_subwords", stub_tokenizer())
+
+    assert tokenize("  الأهلية" + TATWEEL + "  ١٤٧ ") == ["الأهلية", "١٤٧"]
+
+
+def test_the_model_subword_tokenizer_needs_the_model_tokenizer():
+    with pytest.raises(ValueError, match="model_subwords"):
+        bm25_tokenizer("model_subwords")
+
+
+def test_an_unknown_bm25_tokenizer_is_rejected():
+    with pytest.raises(ValueError, match="BM25 tokenizer"):
+        bm25_tokenizer("characters")

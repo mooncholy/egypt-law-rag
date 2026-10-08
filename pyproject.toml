@@ -21,7 +21,7 @@ build-backend = "uv_build"
 
 [tool.uv]
 # Plain `uv sync` / `uv run` keep the pipeline installed, including the
-# embedding model the `index` stage needs; the Docker image opts out with
+# embedding model the `embed` stage needs; the Docker image opts out with
 # `uv sync --no-default-groups`.
 default-groups = ["dev", "ingest", "embed"]
 required-version = "==0.12.20"
@@ -58,10 +58,14 @@ ingest = [
     "pikepdf>=10.15.0",
     "pymupdf>=1.28.2",
 ]
-# The pinned embedding model (bge-m3): the semantic chunking variant now, the
-# `index` stage next. Kept out of `dev`, so the lint job stays light.
+# The pinned embedding model (bge-m3) and the search index (Qdrant, BM25): the
+# semantic chunking variant and the `embed` and `bm25` stages. Kept out of `dev`, so the
+# lint job stays light.
 embed = [
+    "bm25s>=0.3.13",
     "langchain-huggingface>=1.2.2",
+    "langchain-qdrant>=1.1.0",
+    "qdrant-client>=1.19.1",
     "sentence-transformers>=6.1.0",
     "torch>=2.14.1",
 ]
