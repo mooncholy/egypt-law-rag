@@ -1,4 +1,4 @@
-# Retrieval misses: hybrid, tuning half
+# Retrieval misses: hybrid, tuning half; recall@5 0.569 against the 0.90 target
 
 ## Missed at 5: 28 of 65
 

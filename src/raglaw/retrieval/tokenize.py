@@ -15,6 +15,8 @@ import re
 from collections.abc import Callable
 from typing import Protocol
 
+from bm25s.stopwords import STOPWORDS_EN, STOPWORDS_EN_PLUS
+
 from raglaw.text.normalize import fold_arabic, normalize_arabic
 
 # Letters and digits in any script; underscores are not word characters here.
@@ -26,6 +28,13 @@ CONJUNCTIONS = "وف"
 ARTICLES = ("بال", "ال")
 MIN_LETTERS_BEFORE_CONJUNCTION = 4  # e.g. وعقد; وقف keeps its و
 MIN_STEM_LETTERS = 2
+# English words BM25 can drop (retrieval.bm25_stopwords), as bm25s ships them:
+# Lucene's default list, and NLTK's, which adds question words and negations.
+STOPWORDS = {
+    "none": frozenset(),
+    "lucene": frozenset(STOPWORDS_EN),
+    "nltk": frozenset(STOPWORDS_EN_PLUS),
+}
 
 
 def _strip_prefixes(token: str) -> str:
@@ -59,28 +68,41 @@ class SubwordTokenizer(Protocol):
 
 
 def bm25_tokenizer(
-    name: str, subword_tokenizer: SubwordTokenizer | None = None
+    name: str,
+    subword_tokenizer: SubwordTokenizer | None = None,
+    *,
+    stopwords: str = "none",
 ) -> Callable[[str], list[str]]:
     """
     The tokenizer named by ``retrieval.bm25_tokenizer``, for indexing and queries.
 
     ``model_subwords`` tokenizes ``normalize_arabic`` text without folding, as
-    the model's vocabulary was learned on text as printed.
+    the model's vocabulary was learned on text as printed. ``stopwords`` names
+    the English list (``STOPWORDS``) the word tokenizers drop.
 
     returns:
     - tokenize (Callable[[str], list[str]]): text to BM25 terms
 
     exceptions:
-    - ValueError: an unknown name, or ``model_subwords`` without a tokenizer
+    - ValueError: an unknown name or list, ``model_subwords`` without a
+      tokenizer, or stopwords with ``model_subwords``
     """
+    if stopwords not in STOPWORDS:
+        raise ValueError(f"Unknown stopword list {stopwords!r}")
     match name:
         case "words":
-            return fold_tokens
+            words = fold_tokens
         case "words_light_stem":
-            return lambda text: fold_tokens(text, strip_prefixes=True)
+            words = lambda text: fold_tokens(text, strip_prefixes=True)
         case "model_subwords":
             if subword_tokenizer is None:
                 raise ValueError("model_subwords needs the model's tokenizer")
+            if stopwords != "none":
+                raise ValueError("stopwords apply to words, not model_subwords pieces")
             return lambda text: subword_tokenizer.tokenize(normalize_arabic(text))
         case _:
             raise ValueError(f"Unknown BM25 tokenizer {name!r}")
+    drop = STOPWORDS[stopwords]
+    if not drop:
+        return words
+    return lambda text: [t for t in words(text) if t not in drop]

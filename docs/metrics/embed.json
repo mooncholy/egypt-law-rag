@@ -5,6 +5,6 @@
   "embedding_dim": 1024,
   "max_chunk_tokens": 905,
   "max_tokens": 8192,
-  "seconds": 901.7,
+  "seconds": 896.8,
   "truncated_chunks": 0
 }

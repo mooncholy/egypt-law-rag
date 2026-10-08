@@ -34,6 +34,7 @@ chunking:
   max_chars: 1000
   semantic:
     breakpoint_percentile: 90   # A starting value, could be changed later based on retrieval evaluation
+  repealed: per_article   # | per_range: one chunk per repealed range (54-80, 389-417)
 
 # The one embedding model (D12): the semantic chunking variant and `embed` both
 # read it, so the two can't drift apart.
@@ -47,6 +48,7 @@ embedding:
 retrieval:
   document_text: both_with_headings   # D14, the owner's default
   bm25_tokenizer: words               # | words_light_stem | model_subwords
+  bm25_stopwords: none                # | lucene (33 words) | nltk (179, incl. question words)
 
 # How a question searches the index, at query time: changing these never
 # rebuilds the index. Each is a measured choice (D17 after the baseline).
@@ -61,3 +63,4 @@ search:
 # chosen one is reported once on the held-out half.
 evaluation:
   split: tuning   # | heldout
+  target_recall_at_5: 0.9   # D17, set by the owner after the 0.57 baseline

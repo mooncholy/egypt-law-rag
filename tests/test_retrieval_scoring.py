@@ -91,6 +91,22 @@ def test_parts_of_one_article_collapse_to_the_article():
     }
 
 
+def test_a_range_chunk_stands_for_every_article_it_covers(make_question):
+    """One chunk for repealed 54-80 (chunking.repealed=per_range) at rank 2."""
+    documents = [hit(7, 1), hit(54, 2), hit(9, 3)]
+    documents[1].metadata["range_end"] = 80
+
+    found = Retrieved.from_documents(documents)
+    score = score_question(
+        make_question("q001", [60, 61], match="any", kind="repealed"), found, KS
+    )
+
+    assert found.articles == [7, 54, 9]
+    assert found.ranges == {54: 80}
+    assert score.ranks == {60: 2, 61: 2}
+    assert score.hits == {1: False, 3: True, 5: True, 10: True}
+
+
 def test_nothing_retrieved_has_no_top_scores():
     assert Retrieved.from_documents([]) == Retrieved(articles=[], top_scores={})
 

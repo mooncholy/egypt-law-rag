@@ -80,3 +80,17 @@ def test_rebuilding_replaces_the_index(tmp_path, lexical_chunks):
 
     assert read_manifest(tmp_path / "bm25", Bm25Manifest) == manifest
     assert manifest.chunk_ids == ["art-1-p1"]
+
+
+def test_the_manifest_records_the_stopword_list(tmp_path, lexical_chunks):
+    nltk = Retrieval(
+        document_text="both_without_headings",
+        bm25_tokenizer="words",
+        bm25_stopwords="nltk",
+    )
+
+    manifest = build(
+        tmp_path, lexical_chunks, nltk, bm25_tokenizer("words", stopwords="nltk")
+    )
+
+    assert manifest.bm25_stopwords == "nltk"

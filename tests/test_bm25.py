@@ -92,6 +92,7 @@ def test_runs_are_compared_by_tokenizer_and_document_text():
     assert run_params(WORDS) == {
         "document_text": "both_without_headings",
         "bm25_tokenizer": "words",
+        "bm25_stopwords": "none",
     }
 
 

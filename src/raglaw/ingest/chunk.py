@@ -82,6 +82,62 @@ def citation(number: int) -> str:
     return f"Article {number} | المادة {str(number).translate(AR_DIGITS)}"
 
 
+def range_citation(first: int, last: int) -> str:
+    """How an answer cites a repealed range, in both languages."""
+    ar = [str(n).translate(AR_DIGITS) for n in (first, last)]
+    return f"Articles {first}-{last} | المواد من {ar[0]} إلى {ar[1]}"
+
+
+def merge_repealed_ranges(chunks: list[Chunk]) -> tuple[list[Chunk], int]:
+    """
+    Replace each run of consecutive repealed articles sharing one note by one chunk.
+
+    Assembly expands a repeal row into one record per article (R19), each
+    holding the same note; ``chunking.repealed: per_range`` indexes the range
+    once instead.
+
+    returns:
+    - chunks (list[Chunk]): in order, each range as ``art-{first}-{last}``
+      with ``range_end``
+    - merged (int): how many ranges were merged
+    """
+    runs: list[list[Chunk]] = []
+    for c in chunks:
+        prev = runs[-1] if runs else None
+        if (
+            prev is not None
+            and c.is_repealed
+            and prev[0].is_repealed
+            and c.article_number == prev[-1].article_number + 1
+            and (c.text_ar, c.text_en) == (prev[0].text_ar, prev[0].text_en)
+        ):
+            prev.append(c)
+        else:
+            runs.append([c])
+    out = []
+    for run in runs:
+        if len(run) == 1:
+            out.append(run[0])
+            continue
+        first, last = run[0].article_number, run[-1].article_number
+        out.append(
+            run[0].model_copy(
+                update={
+                    "chunk_id": f"art-{first}-{last}",
+                    "citation": range_citation(first, last),
+                    "source_pages": sorted({p for c in run for p in c.source_pages}),
+                    "range_end": last,
+                }
+            )
+        )
+    return out, sum(len(run) > 1 for run in runs)
+
+
+def covered_articles(chunk: Chunk) -> range:
+    """The articles a chunk stands for: one, or a whole repealed range."""
+    return range(chunk.article_number, (chunk.range_end or chunk.article_number) + 1)
+
+
 def paragraph_numbers(text: str) -> list[int]:
     """The numbers of the paragraph markers that open lines of ``text``."""
     return [
@@ -407,7 +463,10 @@ def chunk_documents(
         chunks += parts
         counts["oversize_paragraph_anomalies"] += oversize
         counts["split_articles"] += len(parts) > 1
-    covered = len({c.article_number for c in chunks})
+    merged = 0
+    if chunking.repealed == "per_range":
+        chunks, merged = merge_repealed_ranges(chunks)
+    covered = len({n for c in chunks for n in covered_articles(c)})
     if covered != len(documents):
         raise ChunkError(f"{len(documents) - covered} articles have no chunk")
     metrics: dict[str, Any] = {
@@ -422,6 +481,7 @@ def chunk_documents(
         "chunks_with_untranslated_text": sum(
             bool(c.only_in_en or c.only_in_ar) for c in chunks
         ),
+        "repealed_ranges_merged": merged,
     }
     metrics |= quality_metrics(chunks, documents)
     if isinstance(splitter, ParagraphSemanticSplitter):
@@ -474,14 +534,15 @@ def run_params(chunking: Chunking, embedding: Embedding) -> dict[str, object]:
     one; the embed stage records the model it embeds chunks with.
 
     returns:
-    - params (dict[str, object]): strategy, chunk size and overlap, plus the
-      embedding model, its revision and the breakpoint percentile for the
+    - params (dict[str, object]): strategy, chunk size and overlap, how
+      repealed ranges are chunked, plus the embedding model, its revision and the breakpoint percentile for the
       semantic variant
     """
     params: dict[str, object] = {
         "strategy": chunking.strategy,
         "chunk_size": chunking.max_chars,
         "chunk_overlap": CHUNK_OVERLAP,
+        "repealed": chunking.repealed,
     }
     if chunking.strategy == "structural_semantic":
         params |= {

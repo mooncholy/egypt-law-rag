@@ -134,7 +134,7 @@ def test_the_stage_scores_one_half_and_writes_metrics_and_report(
         embedding=embedding_config,
         retrieval=search_index.retrieval,
         search=SEARCH,
-        evaluation=Evaluation(split="tuning"),
+        evaluation=Evaluation(split="tuning", target_recall_at_5=0.9),
         embeddings=search_index.embeddings,
     )
 
@@ -163,7 +163,7 @@ def test_two_runs_on_one_index_give_identical_files(
             embedding=embedding_config,
             retrieval=search_index.retrieval,
             search=SEARCH,
-            evaluation=Evaluation(split="heldout"),
+            evaluation=Evaluation(split="heldout", target_recall_at_5=0.9),
             embeddings=search_index.embeddings,
         )
         outputs.append(
@@ -188,6 +188,8 @@ def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
         "embedding_revision": tracking_settings.embedding.revision,
         "document_text": "both_with_headings",
         "bm25_tokenizer": "words",
+        "bm25_stopwords": "none",
+        "repealed": "per_article",
         "retrieval_mode": "hybrid",
         "article_lookup": True,
         "candidates": 50,

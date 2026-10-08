@@ -7,8 +7,10 @@ from pydantic import ValidationError
 
 from raglaw.config import (
     Embedding,
+    Evaluation,
     Experiments,
     Paths,
+    Retrieval,
     RootHeading,
     Search,
     Settings,
@@ -154,3 +156,26 @@ def test_embedding_revision_must_be_a_full_commit_sha(bad):
 def test_search_needs_at_least_top_k_candidates():
     with pytest.raises(ValidationError, match="candidates"):
         Search(mode="hybrid", article_lookup=True, candidates=5, rrf_k=60, top_k=10)
+
+
+def test_stopwords_apply_only_to_word_tokenizers():
+    """Subword pieces aren't words, so no stopword list can filter them."""
+    with pytest.raises(ValidationError, match="bm25_stopwords"):
+        Retrieval(
+            document_text="both_with_headings",
+            bm25_tokenizer="model_subwords",
+            bm25_stopwords="nltk",
+        )
+
+
+def test_the_variant_switches_default_to_off():
+    retrieval = Retrieval(document_text="both_with_headings", bm25_tokenizer="words")
+
+    assert retrieval.bm25_stopwords == "none"
+    assert Settings(_env_file=None).chunking.repealed == "per_article"
+
+
+@pytest.mark.parametrize("bad", [0, 1.5])
+def test_the_recall_target_is_a_share(bad):
+    with pytest.raises(ValidationError, match="target_recall_at_5"):
+        Evaluation(split="tuning", target_recall_at_5=bad)

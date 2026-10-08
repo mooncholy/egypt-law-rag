@@ -70,7 +70,9 @@ def run_bm25(
     - metrics (dict[str, Any]): what was written to ``metrics_out``
     """
     chunks = read_records(chunks_in, Chunk)
-    tokenize = bm25_tokenizer(retrieval.bm25_tokenizer, tokenizer)
+    tokenize = bm25_tokenizer(
+        retrieval.bm25_tokenizer, tokenizer, stopwords=retrieval.bm25_stopwords
+    )
     max_terms, without_terms = _count_terms(chunks, retrieval, tokenize)
     started = time.perf_counter()
     manifest = build_bm25(
@@ -90,6 +92,7 @@ def run_bm25(
         "seconds": round(seconds, 1),
         "document_text": retrieval.document_text,
         "bm25_tokenizer": retrieval.bm25_tokenizer,
+        "bm25_stopwords": retrieval.bm25_stopwords,
     }
     metrics_out.parent.mkdir(parents=True, exist_ok=True)
     metrics_out.write_text(
@@ -109,11 +112,13 @@ def run_params(retrieval: Retrieval) -> dict[str, object]:
     The BM25 config a run is compared by, under the names used across runs.
 
     returns:
-    - params (dict[str, object]): the document text variant and the tokenizer
+    - params (dict[str, object]): the document text variant, the tokenizer
+      and the stopword list
     """
     return {
         "document_text": retrieval.document_text,
         "bm25_tokenizer": retrieval.bm25_tokenizer,
+        "bm25_stopwords": retrieval.bm25_stopwords,
     }
 
 

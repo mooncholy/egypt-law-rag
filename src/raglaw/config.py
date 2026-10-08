@@ -131,6 +131,13 @@ class Chunking(BaseModel):
         gt=0, description="Longest Arabic text in one chunk; a paragraph is never cut."
     )
     semantic: Semantic = Field(description="Settings for `structural_semantic`.")
+    repealed: Literal["per_article", "per_range"] = Field(
+        default="per_article",
+        description="`per_article` (default): one chunk per repealed article, each "
+        "holding the range's note. `per_range`: one chunk per repealed range "
+        "(54-80, 389-417), covering every article in it, so 27 identical notes "
+        "don't crowd search results or dilute the range's terms.",
+    )
 
 
 DocumentText = Literal["both_with_headings", "ar_only", "both_without_headings"]
@@ -152,6 +159,22 @@ class Retrieval(BaseModel):
         "prefix stripping. `model_subwords`: the embedding model's own subword "
         "tokenizer, on unfolded text."
     )
+    bm25_stopwords: Literal["none", "lucene", "nltk"] = Field(
+        default="none",
+        description="English words BM25 drops from documents and queries. `none` "
+        "(default); `lucene`: Lucene's 33 articles and conjunctions; `nltk`: "
+        "NLTK's 179, which also hold question words (what, does, how) and "
+        "negations. Arabic terms are never dropped.",
+    )
+
+    @model_validator(mode="after")
+    def _stopwords_need_words(self) -> Self:
+        if self.bm25_tokenizer == "model_subwords" and self.bm25_stopwords != "none":
+            raise ValueError(
+                "bm25_stopwords applies to the word tokenizers only; subword "
+                "pieces aren't words"
+            )
+        return self
 
 
 class Search(BaseModel):
@@ -188,6 +211,12 @@ class Evaluation(BaseModel):
     split: Literal["tuning", "heldout"] = Field(
         description="Which half of the eval set to score (D15): `tuning` while "
         "choosing a config; `heldout` once, for the chosen one."
+    )
+    target_recall_at_5: float = Field(
+        gt=0,
+        le=1,
+        description="The owner's recall@5 target (D17); each run reports whether "
+        "it is met.",
     )
 
 

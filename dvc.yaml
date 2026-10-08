@@ -128,6 +128,7 @@ stages:
       - embedding  # names the tokenizer model_subwords uses
       - retrieval.document_text
       - retrieval.bm25_tokenizer
+      - retrieval.bm25_stopwords
     outs:
       - ${paths.index_dir}/bm25
     metrics:

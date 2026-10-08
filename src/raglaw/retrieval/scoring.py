@@ -206,6 +206,13 @@ class Retrieved:
     top_scores: dict[str, float | None] = field(
         metadata={"doc": "The rank-1 chunk's dense, BM25 and RRF scores."}
     )
+    ranges: dict[int, int] = field(
+        default_factory=dict,
+        metadata={
+            "doc": "For a chunk standing for a repealed range, its first "
+            "article -> its last; every article between ranks with it."
+        },
+    )
 
     @classmethod
     def from_documents(cls, documents: Sequence[Document]) -> Self:
@@ -216,8 +223,21 @@ class Retrieved:
         - retrieved (Retrieved): empty ``top_scores`` when nothing came back
         """
         articles = list(dict.fromkeys(d.metadata["article_number"] for d in documents))
+        ranges = {
+            d.metadata["article_number"]: d.metadata["range_end"]
+            for d in documents
+            if d.metadata.get("range_end")
+        }
         top = documents[0].metadata["retrieval"] if documents else {}
-        return cls(articles, {k: top[k] for k in SCORE_NAMES if k in top})
+        return cls(articles, {k: top[k] for k in SCORE_NAMES if k in top}, ranges)
+
+    def positions(self) -> dict[int, int]:
+        """Each article's 1-based rank; every article of a range takes the range's."""
+        ranked: dict[int, int] = {}
+        for rank, first in enumerate(self.articles, start=1):
+            for number in range(first, self.ranges.get(first, first) + 1):
+                ranked.setdefault(number, rank)
+        return ranked
 
 
 @dataclass(frozen=True)
@@ -247,7 +267,7 @@ def score_question(
     """
     if not question.in_scope:
         return QuestionScore(question, retrieved, {}, {}, None)
-    position = {a: i for i, a in enumerate(retrieved.articles, start=1)}
+    position = retrieved.positions()
     ranks = {a: position.get(a) for a in question.expected_articles}
     found = [r for r in ranks.values() if r is not None]
     need = all if question.match == "all" else any

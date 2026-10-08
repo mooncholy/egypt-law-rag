@@ -33,6 +33,7 @@
     "pairs": 11,
     "same_top1": 0.272727
   },
+  "bm25_stopwords": "none",
   "bm25_tokenizer": "words",
   "by_kind": {
     "article_lookup": {
@@ -157,6 +158,7 @@
   },
   "questions": 70,
   "split": "tuning",
+  "target_recall_at_5": 0.9,
   "top1_scores": {
     "in_scope": {
       "bm25_score": {

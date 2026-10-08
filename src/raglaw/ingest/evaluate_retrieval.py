@@ -124,7 +124,13 @@ def misses_report(scores: Sequence[QuestionScore], title: str) -> str:
     for s in missed:
         q = s.question
         expected = _expected(s.ranks)
-        returned = ", ".join(str(a) for a in s.retrieved.articles) or "nothing"
+        returned = (
+            ", ".join(
+                f"{a}-{s.retrieved.ranges[a]}" if a in s.retrieved.ranges else str(a)
+                for a in s.retrieved.articles
+            )
+            or "nothing"
+        )
         lines += [f"### {q.id} ({q.kind}, {q.language}, {q.speech_register})", ""]
         lines += _question_block(q)
         lines += [
@@ -233,16 +239,20 @@ def run_evaluate_retrieval(
         "mode": search.mode,
         "document_text": retrieval.document_text,
         "bm25_tokenizer": retrieval.bm25_tokenizer,
+        "bm25_stopwords": retrieval.bm25_stopwords,
+        "target_recall_at_5": evaluation.target_recall_at_5,
         **summarize(scores),
         "bilingual": bilingual_agreement(scores),
     }
     for path in (metrics_out, report_out):
         path.parent.mkdir(parents=True, exist_ok=True)
     metrics_out.write_text(dump(metrics), encoding="utf-8")
-    report_out.write_text(
-        misses_report(scores, f"{search.mode}, {evaluation.split} half"),
-        encoding="utf-8",
+    recall = metrics["overall"]["recall_at_5"]
+    title = (
+        f"{search.mode}, {evaluation.split} half; recall@5 {recall:.3f} against "
+        f"the {evaluation.target_recall_at_5:.2f} target"
     )
+    report_out.write_text(misses_report(scores, title), encoding="utf-8")
     overall = metrics["overall"]
     logger.info(
         "Recall@5 %.3f, MRR %.3f over %d in-scope questions (%s half)",
@@ -271,6 +281,7 @@ def run_params(settings: Settings, *, chunks_sha256: str) -> dict[str, object]:
         "embedding_revision": settings.embedding.revision,
         "document_text": settings.retrieval.document_text,
         "bm25_tokenizer": settings.retrieval.bm25_tokenizer,
+        "bm25_stopwords": settings.retrieval.bm25_stopwords,
         "retrieval_mode": search.mode,
         "article_lookup": search.article_lookup,
         "candidates": search.candidates,

@@ -100,3 +100,51 @@ def test_the_model_subword_tokenizer_needs_the_model_tokenizer():
 def test_an_unknown_bm25_tokenizer_is_rejected():
     with pytest.raises(ValueError, match="BM25 tokenizer"):
         bm25_tokenizer("characters")
+
+
+# --- English stopwords (retrieval.bm25_stopwords) ------------------------------
+
+
+def test_no_stopwords_are_dropped_by_default():
+    assert bm25_tokenizer("words")("What does the law say?") == [
+        "what",
+        "does",
+        "the",
+        "law",
+        "say",
+    ]
+
+
+def test_lucene_drops_articles_and_conjunctions_only():
+    tokenize = bm25_tokenizer("words", stopwords="lucene")
+
+    assert tokenize("What does the law say and is it not void?") == [
+        "what",
+        "does",
+        "law",
+        "say",
+        "void",
+    ]
+
+
+def test_nltk_also_drops_question_words():
+    tokenize = bm25_tokenizer("words", stopwords="nltk")
+
+    assert tokenize("What does the law say about how associations are founded?") == [
+        "law",
+        "say",
+        "associations",
+        "founded",
+    ]
+
+
+def test_stopwords_never_drop_arabic_terms():
+    """Arabic has its own function words (في، من، على), and no list here covers them."""
+    tokenize = bm25_tokenizer("words_light_stem", stopwords="nltk")
+
+    assert tokenize("the والعقد في المادة") == ["عقد", "في", "ماده"]
+
+
+def test_stopwords_with_subword_pieces_are_rejected(stub_tokenizer):
+    with pytest.raises(ValueError, match="stopwords"):
+        bm25_tokenizer("model_subwords", stub_tokenizer(), stopwords="lucene")

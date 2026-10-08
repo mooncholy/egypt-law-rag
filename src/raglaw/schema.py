@@ -189,3 +189,9 @@ class Chunk(Record):
         description="This part's Arabic passages with no English counterpart (R28).",
     )
     strategy: str = Field(description="The chunking strategy that produced it.")
+    range_end: int | None = Field(
+        default=None,
+        description="For one chunk standing for a repealed range "
+        "(`chunking.repealed: per_range`), the range's last article; the chunk "
+        "covers `article_number` to `range_end`. None for every other chunk.",
+    )

@@ -83,7 +83,12 @@ def check_manifests(
             f"BM25 was built with bm25_tokenizer={lexical.bm25_tokenizer!r}, the "
             f"config names {retrieval.bm25_tokenizer!r}"
         )
-    elif lexical.bm25_tokenizer == "model_subwords" and (
+    if lexical.bm25_stopwords != retrieval.bm25_stopwords:
+        problems.append(
+            f"BM25 was built with bm25_stopwords={lexical.bm25_stopwords!r}, the "
+            f"config names {retrieval.bm25_stopwords!r}"
+        )
+    if lexical.bm25_tokenizer == "model_subwords" and (
         lexical.tokenizer_model,
         lexical.tokenizer_revision,
     ) != (embedding.model, embedding.revision):
@@ -146,7 +151,9 @@ class HybridRetriever(BaseRetriever):
         lexical = read_manifest(bm25_dir, Bm25Manifest)
         check_manifests(dense, lexical, embedding, retrieval)
         retriever = cls(search=search)
-        retriever._tokenize = bm25_tokenizer(retrieval.bm25_tokenizer, tokenizer)
+        retriever._tokenize = bm25_tokenizer(
+            retrieval.bm25_tokenizer, tokenizer, stopwords=retrieval.bm25_stopwords
+        )
         retriever._bm25 = load_bm25(bm25_dir)
         retriever._chunk_ids = dense.chunk_ids
         client = qdrant_client(dense_dir)
@@ -177,9 +184,9 @@ class HybridRetriever(BaseRetriever):
             )
         parts: dict[int, list[tuple[int, str]]] = {}
         for chunk_id, (_, meta) in payloads.items():
-            parts.setdefault(meta["article_number"], []).append(
-                (meta["part_index"], chunk_id)
-            )
+            last = meta.get("range_end") or meta["article_number"]
+            for number in range(meta["article_number"], last + 1):
+                parts.setdefault(number, []).append((meta["part_index"], chunk_id))
         self._payloads = payloads
         self._parts = {n: [c for _, c in sorted(ps)] for n, ps in parts.items()}
 

@@ -1,7 +1,7 @@
 import pytest
 
 from raglaw.config import Embedding, Retrieval, Search
-from raglaw.retrieval.dense import qdrant_client
+from raglaw.retrieval.dense import build_dense, qdrant_client
 from raglaw.retrieval.lexical import build_bm25
 from raglaw.retrieval.retriever import HybridRetriever, IndexMismatchError
 from raglaw.retrieval.tokenize import bm25_tokenizer
@@ -165,6 +165,17 @@ def test_a_different_bm25_tokenizer_is_refused(search_index, embedding_config):
         open_retriever(search_index, embedding_config, configured)
 
 
+def test_a_different_stopword_list_is_refused(search_index, embedding_config):
+    configured = Retrieval(
+        document_text=search_index.retrieval.document_text,
+        bm25_tokenizer="words",
+        bm25_stopwords="lucene",
+    )
+
+    with pytest.raises(IndexMismatchError, match="bm25_stopwords"):
+        open_retriever(search_index, embedding_config, configured)
+
+
 def test_halves_built_from_different_chunks_are_refused(search_index, embedding_config):
     build_bm25(
         search_index.chunks[:2],
@@ -191,3 +202,43 @@ def test_a_refused_index_leaves_no_lock_behind(search_index, embedding_config):
         open_retriever(search_index, other)
 
     qdrant_client(search_index.dense_dir).close()
+
+
+def test_lookup_of_an_article_inside_a_range_finds_the_range_chunk(
+    tmp_path, make_chunk, stub_embeddings, embedding_config
+):
+    chunks = [
+        make_chunk(1, "نص"),
+        make_chunk(54, "ملغاة", chunk_id="art-54-56", range_end=56, is_repealed=True),
+    ]
+    retrieval = Retrieval(document_text="both_without_headings", bm25_tokenizer="words")
+    embeddings = stub_embeddings({}, default=[1.0, 0.0])
+    build_dense(
+        chunks,
+        tmp_path / "dense",
+        embeddings=embeddings,
+        embedding=embedding_config,
+        document_text="both_without_headings",
+        chunks_sha256="0" * 64,
+    )
+    build_bm25(
+        chunks,
+        tmp_path / "bm25",
+        tokenize=bm25_tokenizer("words"),
+        retrieval=retrieval,
+        embedding=embedding_config,
+        chunks_sha256="0" * 64,
+    )
+
+    with HybridRetriever.from_index(
+        tmp_path / "dense",
+        tmp_path / "bm25",
+        embedding=embedding_config,
+        retrieval=retrieval,
+        search=search(),
+        embeddings=embeddings,
+    ) as retriever:
+        [first, *_] = retriever.invoke("What does Article 55 say?")
+
+    assert first.metadata["chunk_id"] == "art-54-56"
+    assert first.metadata["retrieval"]["lookup"] is True

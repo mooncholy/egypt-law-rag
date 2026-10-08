@@ -29,6 +29,9 @@ class Bm25Manifest(IndexManifest):
         description="The `retrieval.bm25_tokenizer` the terms came from; queries "
         "must be tokenized the same way."
     )
+    bm25_stopwords: str = Field(
+        description="The `retrieval.bm25_stopwords` list dropped from the terms."
+    )
     tokenizer_model: str | None = Field(
         description="For `model_subwords`, the model whose tokenizer made the "
         "terms; None for the word tokenizers."
@@ -77,6 +80,7 @@ def build_bm25(
         chunk_ids=[c.chunk_id for c in chunks],
         document_text=retrieval.document_text,
         bm25_tokenizer=retrieval.bm25_tokenizer,
+        bm25_stopwords=retrieval.bm25_stopwords,
         tokenizer_model=embedding.model if subwords else None,
         tokenizer_revision=embedding.revision if subwords else None,
         vocabulary_size=len(set(bm25.vocab_dict) - {EMPTY_TERM}),
