@@ -49,6 +49,7 @@ def test_the_stage_embeds_every_chunk_and_writes_its_metrics(
     assert metrics["max_chunk_tokens"] == 14
     manifest = read_manifest(tmp_path / "dense", DenseManifest)
     assert manifest.chunks_sha256 == sha256_file(embed_chunks_file)
+    assert manifest.device == "cpu"  # DVC can't see it, so the index carries it
 
 
 @pytest.mark.unit

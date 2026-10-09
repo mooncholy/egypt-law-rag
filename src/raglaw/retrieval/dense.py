@@ -36,6 +36,13 @@ class DenseManifest(IndexManifest):
     )
     embedding_revision: str = Field(description="The model's pinned commit (D12).")
     embedding_dim: int = Field(gt=0, description="Length of each dense vector.")
+    device: str | None = Field(
+        default=None,
+        description="Where the chunks were embedded (`settings.device`): GPU "
+        "vectors differ from CPU ones in the last digits, and DVC can't see the "
+        "device, so the index carries it. None for an index built before it "
+        "was recorded.",
+    )
 
 
 def point_id(chunk_id: str) -> str:
@@ -64,9 +71,12 @@ def build_dense(
     document_text: str,
     chunks_sha256: str,
     repealed_text: str = "note",
+    device: str | None = None,
 ) -> DenseManifest:
     """
     Embed every chunk's document text into a new collection in ``dense_dir``.
+
+    ``device`` is where ``embeddings`` runs, recorded in the manifest.
 
     returns:
     - manifest (DenseManifest): what was built, also written to
@@ -97,6 +107,7 @@ def build_dense(
         embedding_model=embedding.model,
         embedding_revision=embedding.revision,
         embedding_dim=dim,
+        device=device,
     )
     write_manifest(dense_dir, manifest)
     return manifest

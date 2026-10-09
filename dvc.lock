@@ -286,16 +286,16 @@ stages:
       size: 2086210
     - path: src/raglaw/ingest/embed.py
       hash: md5
-      md5: a401fe1b4b4908d8d23551cb01bc4a43
-      size: 6184
+      md5: 9308e98b89b68fd4254bfd1a30624491
+      size: 6231
     - path: src/raglaw/records.py
       hash: md5
       md5: b470051d287b2c26fc47e23ff0baf566
       size: 2991
     - path: src/raglaw/retrieval/dense.py
       hash: md5
-      md5: 559c9b542127d382119ab417767c942a
-      size: 3778
+      md5: ef4b3d32c25c0266d3a28258280bd2df
+      size: 4228
     - path: src/raglaw/retrieval/document_text.py
       hash: md5
       md5: 72a918f964ad2ea1b5b7ab7f4e08dcda
@@ -323,12 +323,12 @@ stages:
     outs:
     - path: data/index/dense
       hash: md5
-      md5: 9dd195e3780da424289c84380466bdf9.dir
-      size: 15176838
+      md5: 0fbdcb603ff7c54a3e36d530542bb43b.dir
+      size: 15176858
       nfiles: 4
     - path: docs/metrics/embed.json
       hash: md5
-      md5: 649ccd5e26b235cb1c8f2be8a56f7cc5
+      md5: be1ad2322aed1008a4520a887281799d
       size: 235
   evaluate_retrieval:
     cmd: python -m raglaw.ingest.evaluate_retrieval
@@ -344,17 +344,17 @@ stages:
       nfiles: 6
     - path: data/index/dense
       hash: md5
-      md5: 9dd195e3780da424289c84380466bdf9.dir
-      size: 15176838
+      md5: 0fbdcb603ff7c54a3e36d530542bb43b.dir
+      size: 15176858
       nfiles: 4
     - path: src/raglaw/ingest/evaluate_retrieval.py
       hash: md5
-      md5: 131cefa6ccf8e286c88c58feca27ba55
-      size: 15156
+      md5: cead1d3e8b6983d22fa76b9492597e0e
+      size: 15773
     - path: src/raglaw/retrieval/dense.py
       hash: md5
-      md5: 559c9b542127d382119ab417767c942a
-      size: 3778
+      md5: ef4b3d32c25c0266d3a28258280bd2df
+      size: 4228
     - path: src/raglaw/retrieval/embeddings.py
       hash: md5
       md5: a7e0368a51253607fbba36288a973843

@@ -83,7 +83,8 @@ def run_embed(
     """
     Embed ``chunks_in`` into ``dense_dir``, with metrics.
 
-    ``device`` is where ``embeddings`` runs, recorded with the metrics.
+    ``device`` is where ``embeddings`` runs, recorded with the metrics and in
+    the manifest.
 
     returns:
     - metrics (dict[str, Any]): what was written to ``metrics_out``
@@ -107,6 +108,7 @@ def run_embed(
         document_text=retrieval.document_text,
         repealed_text=retrieval.repealed_text,
         chunks_sha256=sha256_file(chunks_in),
+        device=device,
     )
     seconds = time.perf_counter() - started
     indexed = count_points(dense_dir)

@@ -91,6 +91,9 @@ stages:
 
   # The search index, in two halves under ${paths.index_dir}, so a BM25
   # tokenizer change takes seconds and never re-embeds (15 min on CPU).
+  # `device` comes from the environment, not params.yaml, so DVC can't see it:
+  # the dense manifest records it instead, and `dvc repro -f embed` rebuilds
+  # the index on another device.
   embed:
     cmd: python -m raglaw.ingest.embed
     deps:

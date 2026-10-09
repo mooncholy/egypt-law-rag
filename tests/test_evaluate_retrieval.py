@@ -187,7 +187,7 @@ def test_two_runs_on_one_index_give_identical_files(
 def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
     """Every choice that shapes retrieval is logged, read from the config in use."""
     settings = tracking_settings
-    params = run_params(settings, chunks_sha256="0" * 64)
+    params = run_params(settings, chunks_sha256="0" * 64, index_device="cuda")
 
     assert set(params) == {
         "strategy",
@@ -212,6 +212,7 @@ def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
         "cite_expansion",
         "split",
         "device",
+        "index_device",
         "chunks_sha256",
     }
     assert params["retrieval_mode"] == settings.search.mode
@@ -220,6 +221,7 @@ def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
     assert params["chunk_size"] == settings.chunking.max_chars
     assert params["split"] == settings.evaluation.split
     assert params["device"] == settings.device
+    assert params["index_device"] == "cuda"
     assert params["chunks_sha256"] == "0" * 64
 
 
@@ -235,20 +237,25 @@ def test_a_dvc_experiment_names_its_run():
     assert tags == {
         "changed": "search.mode=dense",
         "params_added": "none",
+        "params_removed": "none",
         "baseline_rev": "abc123",
     }
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
-    ("changed", "expected"), [([], "baseline"), (["search.rrf_k=10"], "workspace")]
+    ("diff", "expected"),
+    [
+        (ParamsDiff(changed=[], added=[], removed=[]), "baseline"),
+        (ParamsDiff(changed=["search.rrf_k=10"], added=[], removed=[]), "workspace"),
+        (ParamsDiff(changed=[], added=["search.new=1"], removed=[]), "workspace"),
+        (ParamsDiff(changed=[], added=[], removed=["search.old"]), "workspace"),
+    ],
 )
-def test_outside_an_experiment_the_run_is_the_baseline_unless_params_changed(
-    changed, expected
+def test_outside_an_experiment_the_run_is_the_baseline_unless_params_differ(
+    diff, expected
 ):
-    name, tags = run_identity(
-        None, None, ParamsDiff(changed=changed, added=[], removed=[])
-    )
+    name, tags = run_identity(None, None, diff)
 
     assert name == expected
     assert tags["baseline_rev"] == "HEAD"

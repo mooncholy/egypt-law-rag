@@ -64,18 +64,52 @@ def test_the_registered_config_is_what_the_run_was_scored_with(
     assert config["embedding"]["revision"] == champion_settings.embedding.revision
 
 
-def test_a_run_made_with_another_config_is_not_registered(champion_settings):
-    run_id = evaluation_run(champion_settings, retrieval_mode="dense")
+@pytest.mark.parametrize(
+    ("param", "value"),
+    [("retrieval_mode", "dense"), ("chunk_size", "1"), ("strategy", "other")],
+)
+def test_a_run_made_with_another_config_is_not_registered(
+    champion_settings, param, value
+):
+    run_id = evaluation_run(champion_settings, **{param: value})
 
-    with pytest.raises(ChampionError, match="retrieval_mode"):
+    with pytest.raises(ChampionError, match=param):
         register_champion(champion_settings, run_id)
+
+
+@pytest.mark.parametrize(
+    ("param", "value"), [("chunks_sha256", "f" * 64), ("index_device", "cuda")]
+)
+def test_a_run_that_searched_another_index_is_not_registered(
+    champion_settings, param, value
+):
+    run_id = evaluation_run(champion_settings, **{param: value})
+
+    with pytest.raises(ChampionError, match=param):
+        register_champion(champion_settings, run_id)
+
+
+def test_the_champion_declares_what_it_imports(champion_settings, tmp_path):
+    register_champion(champion_settings, evaluation_run(champion_settings))
+
+    mlflow.set_tracking_uri(champion_settings.mlflow_tracking_uri)
+    mlflow.artifacts.download_artifacts(
+        f"models:/{MODEL_NAME}@{ALIAS}", dst_path=str(tmp_path / "model")
+    )
+    requirements = (
+        next((tmp_path / "model").rglob("requirements.txt")).read_text().split()
+    )
+
+    assert "egypt-law-rag" in requirements
+    for package in ("langchain-qdrant", "qdrant-client", "bm25s", "torch"):
+        assert any(r.startswith(f"{package}==") for r in requirements)
 
 
 def test_the_champion_answers_with_article_citations(champion_settings, search_index):
     register_champion(champion_settings, evaluation_run(champion_settings))
 
     with load_champion(
-        champion_settings, embeddings=search_index.embeddings, reranker=None
+        champion_settings, embeddings=search_index.embeddings
     ) as champion:
         [citations] = champion.predict(["What does Article 4 say about majority?"])
 
@@ -96,17 +130,13 @@ def test_the_champion_refuses_an_index_built_differently(
     )
 
     with pytest.raises(IndexMismatchError, match="registered"):
-        load_champion(
-            champion_settings, embeddings=search_index.embeddings, reranker=None
-        )
+        load_champion(champion_settings, embeddings=search_index.embeddings)
 
 
 def test_closing_the_champion_releases_the_index(champion_settings, search_index):
     from raglaw.retrieval.dense import qdrant_client
 
     register_champion(champion_settings, evaluation_run(champion_settings))
-    load_champion(
-        champion_settings, embeddings=search_index.embeddings, reranker=None
-    ).close()
+    load_champion(champion_settings, embeddings=search_index.embeddings).close()
 
     qdrant_client(search_index.dense_dir).close()  # would raise if still locked

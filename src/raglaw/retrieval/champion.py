@@ -18,6 +18,7 @@ import logging
 import os
 import tempfile
 from collections.abc import Sequence
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Self
 
@@ -42,24 +43,21 @@ MODEL_NAME = "civil-code-retriever"
 ALIAS = "champion"
 # What defines a retrieval config; `evaluation` (the split, the target) doesn't.
 CONFIG_SECTIONS = ("chunking", "embedding", "reranker", "retrieval", "search")
-# The run params that must agree with the config being registered.
-CHECKED_PARAMS = (
-    "embedding_model",
-    "embedding_revision",
-    "document_text",
-    "bm25_tokenizer",
-    "bm25_stopwords",
-    "repealed_text",
-    "retrieval_mode",
-    "article_lookup",
-    "candidates",
-    "rrf_k",
-    "top_k",
-    "rerank",
-    "rerank_depth",
-    "reranker_model",
-    "reranker_revision",
-    "cite_expansion",
+# The run params that needn't agree with the config being registered: the
+# machine the run scored on, and which half of the eval set it scored. Every
+# other one must, including the chunks and device of the index it searched.
+UNCHECKED_PARAMS = frozenset({"device", "split"})
+# What the registered model imports beyond the project itself. The project's
+# dependency groups don't install with it, so a model environment names them.
+RUNTIME_PACKAGES = (
+    "mlflow",
+    "langchain-core",
+    "langchain-qdrant",
+    "qdrant-client",
+    "bm25s",
+    "langchain-huggingface",
+    "sentence-transformers",
+    "torch",
 )
 
 
@@ -148,20 +146,37 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
         ]
 
 
-def _check_run(client: MlflowClient, run_id: str, settings: Settings) -> None:
+def _check_run(
+    client: MlflowClient, run_id: str, settings: Settings, index: DenseManifest
+) -> None:
     from raglaw.ingest.evaluate_retrieval import run_params  # stage code, pipeline only
 
     logged = client.get_run(run_id).data.params
-    wanted = {k: str(v) for k, v in run_params(settings, chunks_sha256="").items()}
+    wanted = {
+        k: str(v)
+        for k, v in run_params(
+            settings, chunks_sha256=index.chunks_sha256, index_device=index.device
+        ).items()
+        if k not in UNCHECKED_PARAMS
+    }
     differ = [
-        f"{k}: run {logged.get(k)!r}, config {wanted[k]!r}"
-        for k in CHECKED_PARAMS
-        if logged.get(k) != wanted[k]
+        f"{k}: run {logged.get(k)!r}, config {v!r}"
+        for k, v in wanted.items()
+        if logged.get(k) != v
     ]
     if differ:
         raise ChampionError(
-            f"run {run_id} wasn't scored with this config ({'; '.join(differ)})"
+            f"run {run_id} wasn't scored with this config and index "
+            f"({'; '.join(differ)})"
         )
+
+
+def _pip_requirements() -> list[str]:
+    """The project, and each package the model imports pinned to its version here."""
+    # A local build tag (torch's `+cpu`) names an index, not a PyPI release.
+    return ["egypt-law-rag"] + [
+        f"{p}=={version(p).split('+')[0]}" for p in RUNTIME_PACKAGES
+    ]
 
 
 def register_champion(
@@ -176,14 +191,15 @@ def register_champion(
     - version (ModelVersion): the new version, which the alias now names
 
     exceptions:
-    - ChampionError: the run's params differ from ``settings``' config
+    - ChampionError: the run's params differ from ``settings``' config, or it
+      searched another index than the one at ``paths.index_dir``
     """
     if settings.aws_profile:  # run artifacts live in S3
         os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     client = MlflowClient(settings.mlflow_tracking_uri)
-    _check_run(client, run_id, settings)
     index = Path(settings.paths.index_dir)
+    _check_run(client, run_id, settings, read_manifest(index / "dense", DenseManifest))
     with tempfile.TemporaryDirectory() as tmp:
         config = Path(tmp) / "config.json"
         sections = {
@@ -201,7 +217,7 @@ def register_champion(
                     "dense_manifest": str(index / "dense" / MANIFEST),
                     "bm25_manifest": str(index / "bm25" / MANIFEST),
                 },
-                pip_requirements=["egypt-law-rag"],
+                pip_requirements=_pip_requirements(),
             )
     version = mlflow.register_model(info.model_uri, MODEL_NAME)
     for key, value in (heldout or {}).items():

@@ -279,14 +279,20 @@ def run_evaluate_retrieval(
     return metrics
 
 
-def run_params(settings: Settings, *, chunks_sha256: str) -> dict[str, object]:
+def run_params(
+    settings: Settings, *, chunks_sha256: str, index_device: str | None = None
+) -> dict[str, object]:
     """
     The whole retrieval config a run is compared by, under the names used across runs.
+
+    ``device`` is where this run embeds queries and reranks; ``index_device``
+    is where the index's chunks were embedded (its manifest), which a cached
+    index keeps when ``device`` changes.
 
     returns:
     - params (dict[str, object]): the chunking (``chunk.run_params``), the
       embedding model, the index's text and tokenizer, every search choice,
-      the split, and the hash of the chunks the index holds
+      the split, both devices, and the hash of the chunks the index holds
     """
     search = settings.search
     return {
@@ -309,6 +315,7 @@ def run_params(settings: Settings, *, chunks_sha256: str) -> dict[str, object]:
         "cite_expansion": search.cite_expansion,
         "split": settings.evaluation.split,
         "device": settings.device,
+        "index_device": index_device,
         "chunks_sha256": chunks_sha256,
     }
 
@@ -329,27 +336,32 @@ def run_identity(
     Name a run after the variant it measures, and tag what made it one.
 
     Inside ``dvc exp run``, DVC passes the experiment's name and baseline
-    commit. Outside, a run with no changed params is the ``baseline``; any
-    other is ``workspace``. The tags are a label only: the comparison script
+    commit. Outside, a run whose params match the baseline commit (none
+    changed, added or removed) is the ``baseline``; any other is ``workspace``. The tags are a label only: the comparison script
     diffs the runs' logged params itself.
 
     returns:
     - name (str): the run name
     - tags (dict[str, str]): ``changed`` and ``params_added`` (``key=value``
-      against the baseline commit; ``unknown`` without git) and
-      ``baseline_rev``
+      against the baseline commit), ``params_removed`` (keys), each
+      ``unknown`` without git, and ``baseline_rev``
     """
     if diff is None:
-        changed = added = "unknown"
+        changed = added = removed = "unknown"
     else:
-        changed, added = _entries(diff.changed), _entries(diff.added)
+        changed, added, removed = (
+            _entries(diff.changed),
+            _entries(diff.added),
+            _entries(diff.removed),
+        )
     if exp_name:
         name = exp_name
     else:
-        name = "baseline" if diff is not None and not diff.changed else "workspace"
+        name = "baseline" if (changed, added, removed) == ("none",) * 3 else "workspace"
     return name, {
         "changed": changed,
         "params_added": added,
+        "params_removed": removed,
         "baseline_rev": baseline_rev or "HEAD",
     }
 
@@ -405,7 +417,13 @@ def main(argv: list[str] | None = None) -> None:
         tags=tags,
     ) as run:
         manifest = read_manifest(dense_dir, DenseManifest)
-        run.log_params(run_params(settings, chunks_sha256=manifest.chunks_sha256))
+        run.log_params(
+            run_params(
+                settings,
+                chunks_sha256=manifest.chunks_sha256,
+                index_device=manifest.device,
+            )
+        )
         metrics = run_evaluate_retrieval(
             args.eval,
             dense_dir,
