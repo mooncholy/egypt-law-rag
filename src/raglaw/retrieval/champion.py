@@ -3,13 +3,19 @@
 The registered model is a pyfunc wrapping ``HybridRetriever``. Its artifacts are
 the config sections that define retrieval and both index manifests; the index
 itself stays in DVC. A deployment loads it by alias, never by path:
-``models:/civil-code-retriever@champion``. Opening it checks that the index on
+``models:/civil-code-retriever@production``. Opening it checks that the index on
 that machine is the one the champion was scored on, so a registered score can't
 silently describe another index.
 
+Its lifecycle uses aliases (D22; MLflow 3 deprecates stages): a new version is
+the ``candidate``, and ``promote`` moves ``production`` to it only when its
+held-out recall@5 is not lower than production's. Moving ``production`` changes
+what a deployment serves at its next start, with no code change.
+
 This is the only retrieval module that imports MLflow.
 
-Register with ``python -m raglaw.retrieval.champion`` (see ``main``).
+Register with ``python -m raglaw.retrieval.champion register``, then promote
+with ``python -m raglaw.retrieval.champion promote`` (see ``main``).
 """
 
 import argparse
@@ -29,6 +35,7 @@ import mlflow.pyfunc
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from mlflow.entities.model_registry import ModelVersion
+from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 
 from raglaw.config import Embedding, Reranker, Retrieval, Search, Settings
@@ -41,7 +48,10 @@ from raglaw.retrieval.retriever import HybridRetriever, IndexMismatchError
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "civil-code-retriever"
-ALIAS = "champion"
+CANDIDATE = "candidate"  # a newly registered version, not yet served
+PRODUCTION = "production"  # what deployments load; moved only by `promote`
+# The tag `promote` compares: the held-out half's recall@5 (D15, D17).
+PROMOTION_TAG = "heldout_recall_at_5"
 # What defines a retrieval config; `evaluation` (the split, the target) doesn't.
 CONFIG_SECTIONS = ("chunking", "embedding", "reranker", "retrieval", "search")
 # The run params that needn't agree with the config being registered: the
@@ -64,6 +74,10 @@ RUNTIME_PACKAGES = (
 
 class ChampionError(RuntimeError):
     """The run doesn't match the config being registered."""
+
+
+class PromotionError(RuntimeError):
+    """The candidate can't replace production: missing, unscored, or worse."""
 
 
 class ChampionRetriever(mlflow.pyfunc.PythonModel):
@@ -184,12 +198,14 @@ def register_champion(
     settings: Settings, run_id: str, heldout: dict[str, float] | None = None
 ) -> ModelVersion:
     """
-    Register the config ``run_id`` was scored with as the new ``champion``.
+    Register the config ``run_id`` was scored with as the new ``candidate``.
 
-    ``heldout`` holds the held-out half's scores (D15), kept as version tags.
+    ``heldout`` holds the held-out half's scores (D15), kept as version tags;
+    ``promote`` compares its ``recall_at_5``. Nothing serves the version until
+    it is promoted.
 
     returns:
-    - version (ModelVersion): the new version, which the alias now names
+    - version (ModelVersion): the new version, which ``candidate`` now names
 
     exceptions:
     - ChampionError: the run's params differ from ``settings``' config, or it
@@ -225,9 +241,69 @@ def register_champion(
         client.set_model_version_tag(
             MODEL_NAME, version.version, f"heldout_{key}", str(value)
         )
-    client.set_registered_model_alias(MODEL_NAME, ALIAS, version.version)
-    logger.info("Registered %s version %s as %s", MODEL_NAME, version.version, ALIAS)
+    client.set_registered_model_alias(MODEL_NAME, CANDIDATE, version.version)
+    logger.info(
+        "Registered %s version %s as %s", MODEL_NAME, version.version, CANDIDATE
+    )
     return client.get_model_version(MODEL_NAME, version.version)
+
+
+def _by_alias(client: MlflowClient, alias: str) -> ModelVersion | None:
+    try:
+        return client.get_model_version_by_alias(MODEL_NAME, alias)
+    except MlflowException:  # no such alias, or no registered model yet
+        return None
+
+
+def _score(version: ModelVersion) -> float:
+    try:
+        return float(version.tags[PROMOTION_TAG])
+    except (KeyError, ValueError) as exc:
+        raise PromotionError(
+            f"version {version.version} has no {PROMOTION_TAG} tag to compare"
+        ) from exc
+
+
+def promote(settings: Settings) -> ModelVersion:
+    """
+    Move ``production`` to the ``candidate`` when it scores no lower (D22).
+
+    The comparison is the held-out recall@5 each version was tagged with at
+    registration. On success ``candidate`` is removed, so it always names a
+    version still waiting.
+
+    returns:
+    - version (ModelVersion): the version ``production`` now names
+
+    exceptions:
+    - PromotionError: no candidate, a version without a held-out score, or a
+      candidate scoring lower than production
+    """
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    client = MlflowClient(settings.mlflow_tracking_uri)
+    candidate = _by_alias(client, CANDIDATE)
+    if candidate is None:
+        raise PromotionError(f"{MODEL_NAME} has no {CANDIDATE} to promote")
+    score = _score(candidate)
+    current = _by_alias(client, PRODUCTION)
+    if current is not None and _score(current) > score:
+        raise PromotionError(
+            f"version {candidate.version} scores {PROMOTION_TAG}={score}, below "
+            f"production (version {current.version}, {_score(current)}); "
+            "production is unchanged"
+        )
+    client.set_registered_model_alias(MODEL_NAME, PRODUCTION, candidate.version)
+    client.delete_registered_model_alias(MODEL_NAME, CANDIDATE)
+    logger.info(
+        "Promoted %s version %s to %s (%s=%s, was version %s)",
+        MODEL_NAME,
+        candidate.version,
+        PRODUCTION,
+        PROMOTION_TAG,
+        score,
+        current.version if current else "none",
+    )
+    return client.get_model_version(MODEL_NAME, candidate.version)
 
 
 def load_champion(
@@ -237,21 +313,26 @@ def load_champion(
     reranker: RerankScorer | None = None,
 ) -> Champion:
     """
-    Load ``champion`` by alias and open it on this machine's index.
+    Load the ``production`` version and open it on this machine's index.
+
+    The alias is resolved once, so the version loaded is the one reported.
 
     returns:
-    - champion (Champion): call ``predict(questions)``
+    - champion (Champion): call ``predict(questions)``; ``version`` names it
 
     exceptions:
+    - MlflowException: no registered model, or no ``production`` alias
     - IndexMismatchError: this machine's index isn't the registered one
     """
-    if settings.aws_profile:  # the model's artifacts live in S3
+    if settings.aws_profile:  # the model's artifacts may live in S3
         os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    model = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}@{ALIAS}")
+    client = MlflowClient(settings.mlflow_tracking_uri)
+    version = client.get_model_version_by_alias(MODEL_NAME, PRODUCTION).version
+    model = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}/{version}")
     champion = model.unwrap_python_model()
     champion.open(settings, embeddings=embeddings, reranker=reranker)
-    return Champion(champion)
+    return Champion(champion, version)
 
 
 class Champion:
@@ -260,8 +341,9 @@ class Champion:
     It holds the index's Qdrant lock until ``close`` (or the end of a ``with``).
     """
 
-    def __init__(self, champion: ChampionRetriever) -> None:
+    def __init__(self, champion: ChampionRetriever, version: str) -> None:
         self.champion = champion
+        self.version = version  # the registered version, e.g. "2"
 
     def predict(self, questions: Sequence[str]) -> list[list[str]]:
         return self.champion.predict(None, list(questions))
@@ -310,14 +392,31 @@ def _latest_run(client: MlflowClient, experiment: str, name: str) -> Any:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """
+    ``register`` (the default): register the newest ``--run`` as ``candidate``,
+    tagged with its held-out run's scores. ``promote``: move ``production`` to
+    the candidate when it scores no lower.
+    """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     settings = Settings()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "action", nargs="?", choices=("register", "promote"), default="register"
+    )
     ap.add_argument("--run", default="champion", help="the tuning run to register")
     ap.add_argument(
         "--heldout-run", default="champion-heldout", help="its one held-out run (D15)"
     )
     args = ap.parse_args(argv)
+    if args.action == "promote":
+        try:
+            version = promote(settings)
+        except PromotionError as exc:
+            raise SystemExit(str(exc)) from exc
+        logger.info(
+            "models:/%s@%s -> version %s", MODEL_NAME, PRODUCTION, version.version
+        )
+        return
     client = MlflowClient(settings.mlflow_tracking_uri)
     experiment = settings.tracking.experiments.retrieval
     run = _latest_run(client, experiment, args.run)
@@ -332,7 +431,7 @@ def main(argv: list[str] | None = None) -> None:
             "mrr": metrics["overall.mrr"],
         },
     )
-    logger.info("models:/%s@%s -> version %s", MODEL_NAME, ALIAS, version.version)
+    logger.info("models:/%s@%s -> version %s", MODEL_NAME, CANDIDATE, version.version)
 
 
 if __name__ == "__main__":

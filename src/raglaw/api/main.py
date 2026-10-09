@@ -178,7 +178,7 @@ def retriever_component(
         from langchain_qdrant.qdrant import QdrantVectorStoreError
         from mlflow.exceptions import MlflowException
 
-        from raglaw.retrieval.champion import ALIAS, MODEL_NAME, load_champion
+        from raglaw.retrieval.champion import MODEL_NAME, PRODUCTION, load_champion
     except ImportError as exc:
         return ComponentStatus(
             ready=False, detail=f"retrieval dependencies missing: {exc}"
@@ -205,7 +205,9 @@ def retriever_component(
             ready=False, detail=f"champion not loaded: {type(exc).__name__}: {exc}"
         ), None
     return ComponentStatus(
-        ready=True, detail=f"models:/{MODEL_NAME}@{ALIAS} on {settings.paths.index_dir}"
+        ready=True,
+        detail=f"models:/{MODEL_NAME}@{PRODUCTION} (version {champion.version}) "
+        f"on {settings.paths.index_dir}",
     ), champion
 
 

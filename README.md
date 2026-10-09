@@ -7,7 +7,7 @@ A DVC pipeline turns it into a validated corpus of articles and chunks, and a Fa
 **Status:** the corpus, retrieval and `/ask` are built; containers are next.
 - Done: `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
 - Done: `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval on the eval set before any LLM is involved.
-- The registered retriever (`models:/civil-code-retriever@champion`) fuses dense and BM25 search and reranks the top 30 with a cross-encoder. It finds the governing articles in the top 5 for 79% of held-out questions (recall@5 0.788; the target is 0.9).
+- The registered retriever (`models:/civil-code-retriever@production`) fuses dense and BM25 search and reranks the top 30 with a cross-encoder. It finds the governing articles in the top 5 for 79% of held-out questions (recall@5 0.788; the target is 0.9).
 - `/ask` answers from the registered retriever and an LLM, citing only articles it retrieved. When the rank-1 reranker score is below a threshold, it replies that the Code doesn't address the question, without calling the LLM.
 - Not built yet: `validate`, which checks the corpus against the gold sample.
 
@@ -38,7 +38,8 @@ uv run pytest -m "profile or corpus"     # needs `dvc pull` and `dvc repro`
 uv run dvc repro                         # run the pipeline
 uv run dvc metrics show                  # each stage's checks and counts
 uv run python scripts/compare_retrieval.py   # retrieval runs vs the baseline, question by question
-uv run python -m raglaw.retrieval.champion   # register the `champion` run (and its held-out run) as the retriever
+uv run python -m raglaw.retrieval.champion register   # the `champion` run (and its held-out run) becomes the `candidate`
+uv run python -m raglaw.retrieval.champion promote    # `production` moves to it, unless its held-out recall@5 is lower
 # One MLflow run per stage execution. Log artifacts live in S3, so the UI needs
 # the same profile as RAGLAW_AWS_PROFILE in .env (it doesn't read .env itself):
 AWS_PROFILE=<your profile> uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
@@ -46,7 +47,7 @@ AWS_PROFILE=<your profile> uv run mlflow ui --backend-store-uri sqlite:///mlflow
 
 ### Ask a question
 
-`/ask` needs three things running: the `models` service (the embedder and reranker, so the API itself has no torch), the registered `champion` with the index it was scored on (`dvc pull`), and an OpenAI-compatible LLM endpoint set in `.env` (`RAGLAW_LLM_BASE_URL`, `RAGLAW_LLM_MODEL`, `RAGLAW_LLM_API_KEY`).
+`/ask` needs three things running: the `models` service (the embedder and reranker, so the API itself has no torch), the `production` version of the registered retriever with the index it was scored on (`dvc pull`), and an OpenAI-compatible LLM endpoint set in `.env` (`RAGLAW_LLM_BASE_URL`, `RAGLAW_LLM_MODEL`, `RAGLAW_LLM_API_KEY`).
 
 ```bash
 uv run uvicorn raglaw.serving.models_app:app --port 8001    # models service; loads both models once
@@ -59,6 +60,17 @@ uv run python scripts/check_answers.py   # C19: 20 real questions end to end, to
 ```
 
 `GET /health` reports `degraded`, with the reason per component (`llm`, `models`, `retriever`), until all three are ready, and `documents_indexed` from the index's manifest. It still answers 200, so a container healthcheck stays green. Run the API with one worker: Qdrant's local mode locks the index directory to one process.
+
+### Tracking server (optional)
+
+By default runs and the registry live in the local `mlflow.db`. The shared server keeps them in Postgres and proxies artifacts to the project bucket, so a client needs only its URL (Docker required):
+
+```bash
+docker compose --env-file .env -f docker/compose.tracking.yml up -d --build
+# in .env: RAGLAW_MLFLOW_TRACKING_URI=http://localhost:5000, RAGLAW_MLFLOW_ARTIFACT_ROOT blank
+```
+
+The UI is on http://localhost:5000. The API serves whichever version the `production` alias names, read at startup: moving the alias (`promote`, or `set_registered_model_alias` for a rollback) and restarting the API changes the served config, with no code change and no rebuild.
 
 ### GPU (optional)
 
