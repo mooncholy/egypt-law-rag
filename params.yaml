@@ -76,3 +76,12 @@ search:
 evaluation:
   split: tuning   # | heldout
   target_recall_at_5: 0.9   # D17, set by the owner after the 0.57 baseline
+
+# How /ask answers from the retrieved articles (Phase 7).
+answer:
+  prompt_version: v1        # src/raglaw/prompts/answer_v1.md
+  # D21, set by the owner: on the tuning half, 0.1 refuses 14 of 61 in-scope
+  # questions (5 with the expected articles in the top 5); 0.3 refused 22 (10).
+  no_answer_threshold: 0.1
+  max_sources: 5            # articles given to the LLM, in rank order
+  temperature: 0.0

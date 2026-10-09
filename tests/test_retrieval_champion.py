@@ -140,3 +140,20 @@ def test_closing_the_champion_releases_the_index(champion_settings, search_index
     load_champion(champion_settings, embeddings=search_index.embeddings).close()
 
     qdrant_client(search_index.dense_dir).close()  # would raise if still locked
+
+
+def test_the_champion_retrieves_chunks_with_their_scores(
+    champion_settings, search_index
+):
+    register_champion(champion_settings, evaluation_run(champion_settings))
+
+    with load_champion(
+        champion_settings, embeddings=search_index.embeddings
+    ) as champion:
+        documents = champion.retrieve("What does Article 4 say about majority?")
+
+        assert champion.documents_indexed == 5
+    assert documents[0].metadata["retrieval"]["lookup"] is True
+    assert [d.metadata["article_number"] for d in documents[:3]] == [4, 4, 2]
+    with pytest.raises(RuntimeError, match="closed"):
+        champion.retrieve("anything")

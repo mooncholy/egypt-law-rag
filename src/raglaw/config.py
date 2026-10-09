@@ -259,6 +259,33 @@ class Evaluation(BaseModel):
     )
 
 
+class Answer(BaseModel):
+    """How ``/ask`` turns retrieved articles into an answer (Phase 7)."""
+
+    prompt_version: Annotated[str, StringConstraints(pattern=r"^v\d+$")] = Field(
+        description="The system prompt, `src/raglaw/prompts/answer_<version>.md`. "
+        "A new wording is a new file, so every answer names the prompt it used."
+    )
+    no_answer_threshold: float = Field(
+        ge=0,
+        le=1,
+        description="Below this rank-1 reranker score, the Code is taken not to "
+        "address the question and no LLM is called (D21). A question that names "
+        "an article it finds is always answered.",
+    )
+    max_sources: int = Field(
+        gt=0,
+        description="Retrieved articles given to the LLM, in rank order, and so "
+        "the most an answer can cite. recall@5 is what retrieval was tuned on.",
+    )
+    temperature: float = Field(
+        ge=0, le=2, description="Sampling temperature; 0 for repeatable answers."
+    )
+
+
+HttpUrl = Annotated[str, StringConstraints(pattern=r"^https?://\S+$")]
+
+
 class Tracking(BaseModel):
     """How MLflow groups the project's runs."""
 
@@ -301,6 +328,7 @@ class Settings(BaseSettings):
     retrieval: Retrieval = Field(description="What the index holds per chunk.")
     search: Search = Field(description="How a question searches the index.")
     evaluation: Evaluation = Field(description="How retrieval is scored.")
+    answer: Answer = Field(description="How /ask answers from retrieved articles.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(
@@ -308,6 +336,19 @@ class Settings(BaseSettings):
         description="Key for the OpenAI-compatible LLM backend. Optional so the "
         "service still starts without it: /health reports the gap and /ask "
         "answers 503.",
+    )
+    llm_base_url: HttpUrl | None = Field(
+        default=None,
+        description="The OpenAI-compatible endpoint (D20): a local vLLM such as "
+        "`http://localhost:8002/v1`, or a hosted API's base URL.",
+    )
+    llm_model: NonEmptyStr | None = Field(
+        default=None, description="The model name that endpoint serves (D20)."
+    )
+    models_url: HttpUrl = Field(
+        default="http://localhost:8001",
+        description="The `models` service (D18), which embeds questions and "
+        "reranks chunks so the API needs no torch.",
     )
     s3_bucket: (
         Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")]

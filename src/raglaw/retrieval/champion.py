@@ -26,6 +26,7 @@ os.environ.setdefault("MLFLOW_DISABLE_AGENT_HINT", "1")
 
 import mlflow
 import mlflow.pyfunc
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from mlflow.entities.model_registry import ModelVersion
 from mlflow.tracking import MlflowClient
@@ -244,6 +245,8 @@ def load_champion(
     exceptions:
     - IndexMismatchError: this machine's index isn't the registered one
     """
+    if settings.aws_profile:  # the model's artifacts live in S3
+        os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     model = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}@{ALIAS}")
     champion = model.unwrap_python_model()
@@ -262,6 +265,23 @@ class Champion:
 
     def predict(self, questions: Sequence[str]) -> list[list[str]]:
         return self.champion.predict(None, list(questions))
+
+    def retrieve(self, question: str) -> list[Document]:
+        """
+        The chunks for one question, with their scores (``HybridRetriever``).
+
+        returns:
+        - documents (list[Document]): in rank order, at most ``search.top_k``
+        """
+        retriever = self.champion._retriever
+        if retriever is None:
+            raise RuntimeError("the champion is closed")
+        return retriever.invoke(question)
+
+    @property
+    def documents_indexed(self) -> int:
+        """Chunks in the index the champion was registered with."""
+        return len(self.champion.manifests["dense"].chunk_ids)
 
     def close(self) -> None:
         """Release the index."""
