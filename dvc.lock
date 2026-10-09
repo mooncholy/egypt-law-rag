@@ -426,19 +426,19 @@ stages:
           candidates: 50
           rrf_k: 60
           top_k: 10
-          rerank: false
+          rerank: true
           rerank_depth: 30
           cite_expansion: false
     outs:
     - path: docs/metrics/retrieval.json
       hash: md5
-      md5: 8605ef9b7f3505440169d75fded37999
-      size: 4281
+      md5: 947c505407f137f9d1119b9d00af1e6a
+      size: 4445
     - path: docs/reports/retrieval_misses.md
       hash: md5
-      md5: 7d8f4a43742b28214729b6fbcc6a427e
-      size: 14341
+      md5: 7cc67db7133ad0832171e6350f4a0415
+      size: 9526
     - path: docs/reports/retrieval_questions.json
       hash: md5
-      md5: fcd9c56ce0e2435a2271cff72e1034b2
-      size: 45372
+      md5: cbb2744bd5ecc9e3e87d5a7e8fb679bf
+      size: 46043

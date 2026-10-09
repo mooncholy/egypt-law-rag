@@ -476,6 +476,28 @@ def stub_reranker() -> Callable[..., StubReranker]:
     return StubReranker
 
 
+@pytest.fixture
+def champion_settings(
+    tracking_settings: Settings,
+    search_index: SearchIndex,
+    embedding_config: Embedding,
+) -> Settings:
+    """``tracking_settings`` pointed at ``search_index``, with its config.
+
+    The index lives at ``<tmp>/index/{dense,bm25}``, as a deployment's
+    ``paths.index_dir`` would.
+    """
+    return tracking_settings.model_copy(
+        update={
+            "embedding": embedding_config,
+            "retrieval": search_index.retrieval,
+            "paths": tracking_settings.paths.model_copy(
+                update={"index_dir": search_index.dense_dir.parent}
+            ),
+        }
+    )
+
+
 # --- Evaluation --------------------------------------------------------------
 
 

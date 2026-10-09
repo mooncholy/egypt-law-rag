@@ -185,33 +185,42 @@ def test_two_runs_on_one_index_give_identical_files(
 
 @pytest.mark.unit
 def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
-    params = run_params(tracking_settings, chunks_sha256="0" * 64)
+    """Every choice that shapes retrieval is logged, read from the config in use."""
+    settings = tracking_settings
+    params = run_params(settings, chunks_sha256="0" * 64)
 
-    assert params == {
-        "strategy": "structural",
-        "chunk_size": 1000,
-        "chunk_overlap": 0,
-        "embedding_model": "BAAI/bge-m3",
-        "embedding_revision": tracking_settings.embedding.revision,
-        "document_text": "both_with_headings",
-        "bm25_tokenizer": "words",
-        "bm25_stopwords": "none",
-        "repealed": "per_article",
-        "repealed_text": "note",
-        "retrieval_mode": "hybrid",
-        "article_lookup": True,
-        "candidates": 50,
-        "rrf_k": 60,
-        "top_k": 10,
-        "rerank": False,
-        "rerank_depth": 30,
-        "reranker_model": "BAAI/bge-reranker-v2-m3",
-        "reranker_revision": tracking_settings.reranker.revision,
-        "cite_expansion": False,
-        "split": "tuning",
-        "device": "cpu",
-        "chunks_sha256": "0" * 64,
+    assert set(params) == {
+        "strategy",
+        "chunk_size",
+        "chunk_overlap",
+        "repealed",
+        "embedding_model",
+        "embedding_revision",
+        "document_text",
+        "bm25_tokenizer",
+        "bm25_stopwords",
+        "repealed_text",
+        "retrieval_mode",
+        "article_lookup",
+        "candidates",
+        "rrf_k",
+        "top_k",
+        "rerank",
+        "rerank_depth",
+        "reranker_model",
+        "reranker_revision",
+        "cite_expansion",
+        "split",
+        "device",
+        "chunks_sha256",
     }
+    assert params["retrieval_mode"] == settings.search.mode
+    assert params["rerank"] == settings.search.rerank
+    assert params["reranker_revision"] == settings.reranker.revision
+    assert params["chunk_size"] == settings.chunking.max_chars
+    assert params["split"] == settings.evaluation.split
+    assert params["device"] == settings.device
+    assert params["chunks_sha256"] == "0" * 64
 
 
 @pytest.mark.unit
@@ -257,13 +266,19 @@ def test_without_git_the_change_is_unknown():
 
 @pytest.mark.corpus
 def test_two_runs_on_the_real_index_give_identical_metrics(tmp_path, repo_root):
-    """Loads bge-m3 and scores the tuning half twice (about a minute on CPU)."""
+    """Loads the models and scores the tuning half twice (minutes with the reranker)."""
     from raglaw.config import Settings
     from raglaw.retrieval.embeddings import huggingface_embeddings
+    from raglaw.retrieval.rerank import CrossEncoderReranker
 
-    settings = Settings(_env_file=None)
+    settings = Settings()  # this machine's device, from .env
     index = repo_root / settings.paths.index_dir
     embeddings = huggingface_embeddings(settings.embedding, settings.device)
+    reranker = (
+        CrossEncoderReranker(settings.reranker, settings.device)
+        if settings.search.rerank
+        else None
+    )
     outputs = []
     for run in ("a", "b"):
         run_evaluate_retrieval(
@@ -278,6 +293,7 @@ def test_two_runs_on_the_real_index_give_identical_metrics(tmp_path, repo_root):
             search=settings.search,
             evaluation=settings.evaluation,
             embeddings=embeddings,
+            reranker=reranker,
         )
         outputs.append((tmp_path / f"{run}.json").read_bytes())
 

@@ -19,8 +19,8 @@ paths:
 # The page 1 heading that opens every heading path (P7). It has no English side
 # in the source; the owner supplies the label (D7).
 root_heading:
-  ar: "باب تمهيدي / أحكام عامة"
-  en: "Preliminary Chapter / General Provisions"
+  ar: باب تمهيدي / أحكام عامة
+  en: Preliminary Chapter / General Provisions
 
 # MLflow: one experiment per kind of work, since runs are compared within one.
 # Not a stage input: never list these under a stage's `params:` in dvc.yaml.
@@ -67,7 +67,7 @@ search:
   candidates: 50        # hits each retriever returns before fusion
   rrf_k: 60             # Cormack et al. (2009)
   top_k: 10             # chunks returned per question
-  rerank: false         # re-score the top rerank_depth fused chunks with `reranker`
+  rerank: true          # re-score the top rerank_depth fused chunks with `reranker`
   rerank_depth: 30
   cite_expansion: false # insert the articles a returned chunk cites, right after it
 

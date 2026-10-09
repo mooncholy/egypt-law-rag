@@ -4,11 +4,12 @@ A retrieval-augmented generation (RAG) chatbot that answers questions about the 
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
 
-**Status:** the corpus is built; retrieval is next.
+**Status:** the corpus and retrieval are built; `/ask` is next.
 - Done: `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
+- Done: `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval on the eval set before any LLM is involved.
+- The registered retriever (`models:/civil-code-retriever@champion`) fuses dense and BM25 search and reranks the top 30 with a cross-encoder. It finds the governing articles in the top 5 for 79% of held-out questions (recall@5 0.788; the target is 0.9).
 - Not built yet: `validate`, which checks the corpus against the gold sample.
-- Next: embeddings, hybrid retrieval and its evaluation, then `/ask`.
-- `/ask` answers 501 until retrieval is built.
+- `/ask` answers 501 until it calls the retriever and an LLM.
 
 ## Quickstart
 
@@ -36,6 +37,8 @@ uv run pytest -m unit --cov              # what CI runs; no data needed
 uv run pytest -m "profile or corpus"     # needs `dvc pull` and `dvc repro`
 uv run dvc repro                         # run the pipeline
 uv run dvc metrics show                  # each stage's checks and counts
+uv run python scripts/compare_retrieval.py   # retrieval runs vs the baseline, question by question
+uv run python -m raglaw.retrieval.champion   # register the `champion` run (and its held-out run) as the retriever
 # One MLflow run per stage execution. Log artifacts live in S3, so the UI needs
 # the same profile as RAGLAW_AWS_PROFILE in .env (it doesn't read .env itself):
 AWS_PROFILE=<your profile> uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
@@ -63,8 +66,10 @@ A plain `uv run` resyncs the default groups and puts the CPU build back, so on t
 | --- | --- |
 | `params.yaml` | Tracked parameters (paths, chunking, root heading), shared with `dvc.yaml` |
 | `.env` | Per-machine and secret values only (key, bucket, MLflow URI, AWS profile) |
-| `dvc.yaml`, `dvc.lock` | The pipeline: `profile → extract → repair → assemble → validate → chunk` |
+| `dvc.yaml`, `dvc.lock` | The pipeline: `profile → extract → repair → assemble → validate → chunk → embed, bm25 → evaluate_retrieval` |
 | `src/raglaw/ingest/` | One module per stage, runnable as `python -m raglaw.ingest.<stage>` |
+| `src/raglaw/retrieval/` | Query-time retrieval: tokenizer, article lookup, RRF, the hybrid retriever, the reranker, scoring and the `champion` model |
+| `docs/reports/retrieval_misses.md`, `retrieval_comparison.md` | What the current config misses, and every retrieval variant against the baseline |
 | `src/raglaw/schema.py`, `records.py` | Record models and their versioned file format |
 | `src/raglaw/api/` | The FastAPI service |
 | `data/errata.yaml` | Owner-approved fixes for one-off source errors |

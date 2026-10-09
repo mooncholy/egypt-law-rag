@@ -182,10 +182,14 @@ def test_the_recall_target_is_a_share(bad):
 
 
 def test_the_new_search_switches_default_to_off():
-    search = Settings(_env_file=None).search
+    """The models' defaults; params.yaml may turn a switch on (the champion does)."""
+    fields = Search.model_fields
 
-    assert (search.rerank, search.cite_expansion) == (False, False)
-    assert Settings(_env_file=None).retrieval.repealed_text == "note"
+    assert (fields["rerank"].default, fields["cite_expansion"].default) == (
+        False,
+        False,
+    )
+    assert Retrieval.model_fields["repealed_text"].default == "note"
 
 
 def test_the_reranker_is_pinned_like_the_embedder():
