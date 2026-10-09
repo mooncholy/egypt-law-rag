@@ -74,7 +74,7 @@ jobs:
           save-cache: false
       - run: uv sync --locked --no-default-groups
       # Fails if the API imports anything outside the runtime group, or can't
-      # serve. No LLM key and no index here, so it reports "degraded".
+      # serve. No LLM, models service or registry here, so it reports "degraded".
       - name: Serve /health
         run: |
           uv run --no-sync uvicorn raglaw.api.main:app --port 8000 &
@@ -83,4 +83,4 @@ jobs:
             sleep 1
           done
           curl -sf localhost:8000/health | tee /dev/stderr \
-            | uv run --no-sync python -c "import json, sys; assert json.load(sys.stdin)['status'] in ('ok', 'degraded')"
+            | uv run --no-sync python -c "import json, sys; assert json.load(sys.stdin)['status'] in ('healthy', 'degraded')"

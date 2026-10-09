@@ -4,12 +4,12 @@ A retrieval-augmented generation (RAG) chatbot that answers questions about the 
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
 
-**Status:** the corpus and retrieval are built; `/ask` is next.
+**Status:** the corpus, retrieval and `/ask` are built; containers are next.
 - Done: `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
 - Done: `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval on the eval set before any LLM is involved.
 - The registered retriever (`models:/civil-code-retriever@champion`) fuses dense and BM25 search and reranks the top 30 with a cross-encoder. It finds the governing articles in the top 5 for 79% of held-out questions (recall@5 0.788; the target is 0.9).
+- `/ask` answers from the registered retriever and an LLM, citing only articles it retrieved. When the rank-1 reranker score is below a threshold, it replies that the Code doesn't address the question, without calling the LLM.
 - Not built yet: `validate`, which checks the corpus against the gold sample.
-- `/ask` answers 501 until it calls the retriever and an LLM.
 
 ## Quickstart
 
@@ -25,7 +25,7 @@ A DVC pipeline turns it into a validated corpus of articles and chunks, and a Fa
 ```bash
 git clone <repo-url> && cd egypt-law-rag
 uv sync                      # dev, ingest, embed and CPU-only torch, from uv.lock
-cp .env.example .env         # then set RAGLAW_AWS_PROFILE (and RAGLAW_LLM_API_KEY if you have one)
+cp .env.example .env         # then set RAGLAW_AWS_PROFILE, and the RAGLAW_LLM_* values to answer questions
 uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type post-checkout
 uv run dvc pull              # fetches data/raw/civil_code.pdf from S3
 ```
@@ -42,10 +42,23 @@ uv run python -m raglaw.retrieval.champion   # register the `champion` run (and 
 # One MLflow run per stage execution. Log artifacts live in S3, so the UI needs
 # the same profile as RAGLAW_AWS_PROFILE in .env (it doesn't read .env itself):
 AWS_PROFILE=<your profile> uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
-uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0.0.1:8000/docs
 ```
 
-`GET /health` reports `degraded` until an LLM key and the retrieval index are present. It still answers 200, so a container healthcheck stays green.
+### Ask a question
+
+`/ask` needs three things running: the `models` service (the embedder and reranker, so the API itself has no torch), the registered `champion` with the index it was scored on (`dvc pull`), and an OpenAI-compatible LLM endpoint set in `.env` (`RAGLAW_LLM_BASE_URL`, `RAGLAW_LLM_MODEL`, `RAGLAW_LLM_API_KEY`).
+
+```bash
+uv run uvicorn raglaw.serving.models_app:app --port 8001    # models service; loads both models once
+uv run uvicorn raglaw.api.main:app --port 8000              # API on http://127.0.0.1:8000/docs
+curl -s localhost:8000/health
+curl -s localhost:8000/ask -H 'Content-Type: application/json' \
+  -d '{"question": "ما هي سن الرشد في القانون المدني؟"}'
+# stop the API first (Qdrant's local mode locks the index to one process), then:
+uv run python scripts/check_answers.py   # C19: 20 real questions end to end, to docs/reports/answer_check.md
+```
+
+`GET /health` reports `degraded`, with the reason per component (`llm`, `models`, `retriever`), until all three are ready, and `documents_indexed` from the index's manifest. It still answers 200, so a container healthcheck stays green. Run the API with one worker: Qdrant's local mode locks the index directory to one process.
 
 ### GPU (optional)
 
@@ -71,7 +84,10 @@ A plain `uv run` resyncs the default groups and puts the CPU build back, so on t
 | `src/raglaw/retrieval/` | Query-time retrieval: tokenizer, article lookup, RRF, the hybrid retriever, the reranker, scoring and the `champion` model |
 | `docs/reports/retrieval_misses.md`, `retrieval_comparison.md` | What the current config misses, and every retrieval variant against the baseline |
 | `src/raglaw/schema.py`, `records.py` | Record models and their versioned file format |
-| `src/raglaw/api/` | The FastAPI service |
+| `src/raglaw/api/` | The FastAPI service: `/ask` and `/health` |
+| `src/raglaw/rag.py`, `src/raglaw/prompts/` | The answer pipeline (retrieve, no-answer gate, prompt, citation check) and its versioned prompts |
+| `src/raglaw/serving/models_app.py`, `src/raglaw/retrieval/remote.py` | The `models` service, and the API's HTTP clients for it |
+| `docs/reports/answer_check.md` | 20 real questions answered end to end (`scripts/check_answers.py`) |
 | `data/errata.yaml` | Owner-approved fixes for one-off source errors |
 | `docs/reports/0_source_pdf_analysis.md` | The source facts (P1 to P26) and the rules (R1 to R23) built on them |
 | `docs/reports/evaluation_data.md` | How the evaluation data was made, and its limits |
@@ -102,7 +118,7 @@ A plain `uv run` resyncs the default groups and puts the CPU build back, so on t
 | test | `pytest -m unit --cov` (80% coverage gate) | no S3 access |
 | runtime | serves `/health` with `uv sync --no-default-groups` | API dependencies only |
 
-The runtime job fails if the API imports anything outside the runtime dependencies. Keep `pymupdf`, `mlflow` and other pipeline imports out of `raglaw.api` and `raglaw.schema`.
+The runtime job fails if the API imports anything outside the runtime dependencies. Those include retrieval, the registry client (`mlflow-skinny`) and the LLM client, but not torch: keep `pymupdf`, `torch`, `sentence-transformers` and other pipeline imports out of `raglaw.api`, `raglaw.rag` and `raglaw.schema`. The models live in the `models` service.
 
 ### Test markers
 

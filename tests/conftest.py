@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -14,15 +15,18 @@ import pymupdf
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from mlflow.tracking import MlflowClient
 
-from raglaw.api.main import create_app
+from raglaw.api.main import Service, create_app
 from raglaw.api.schemas import ComponentStatus
+from raglaw.config import Answer as AnswerConfig
 from raglaw.config import Embedding, Retrieval, Search, Settings
 from raglaw.ingest.evaluate_retrieval import evaluate
 from raglaw.logging_conf import extra_fields
 from raglaw.logging_setup import close_logging, setup_logging
+from raglaw.rag import AnswerPipeline
 from raglaw.records import write_records
 from raglaw.retrieval.dense import build_dense
 from raglaw.retrieval.document_text import document_text
@@ -31,6 +35,7 @@ from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import EvalQuestion, QuestionScore
 from raglaw.retrieval.tokenize import bm25_tokenizer
 from raglaw.schema import Chunk
+from raglaw.serving.models_app import create_models_app
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Settings reads params.yaml from the working directory, so tests run from the
@@ -72,12 +77,12 @@ def full_pdf() -> Path:
 
 @pytest.fixture
 def stage_metrics() -> Callable[[str], dict[str, Any]]:
-    """Load a stage's metrics file from ``docs/metrics``, written by ``dvc repro``."""
+    """Load a metrics file from ``docs/metrics``, written by ``dvc repro`` or a script."""
 
     def _load(name: str) -> dict[str, Any]:
         path = METRICS_DIR / f"{name}.json"
         if not path.exists():
-            pytest.fail(f"{path} is missing: run `dvc repro` first")
+            pytest.fail(f"{path} is missing: run `dvc repro` (or its script) first")
         return json.loads(path.read_text("utf-8"))
 
     return _load
@@ -696,31 +701,205 @@ def git_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-# --- API -------------------------------------------------------------------
+# --- Answering ---------------------------------------------------------------
+
+
+class StubLLM:
+    """Replies ``reply`` to every chat, and keeps each chat it was sent."""
+
+    def __init__(self, reply: str = "") -> None:
+        self.reply = reply
+        self.calls: list[list[dict[str, str]]] = []
+
+    async def complete(
+        self, messages: list[dict[str, str]], *, temperature: float
+    ) -> str:
+        self.calls.append(messages)
+        return self.reply
 
 
 @pytest.fixture
-def make_app() -> Callable[..., FastAPI]:
-    """Build an API app with the given LLM key, ignoring the developer's real .env."""
+def stub_llm() -> Callable[..., StubLLM]:
+    """Build a ``StubLLM`` with a fixed reply."""
+    return StubLLM
 
-    def _make_app(api_key: str | None = None) -> FastAPI:
-        return create_app(Settings(_env_file=None, llm_api_key=api_key))
+
+@pytest.fixture
+def retrieved() -> Callable[..., list[Document]]:
+    """Chunks as ``HybridRetriever`` returns them, in the given rank order.
+
+    Rank 1 carries ``rerank_score`` and ``lookup`` (fetched by its article
+    number); the other ranks score just below it.
+    """
+
+    def _retrieved(
+        chunks: list[Chunk], rerank_score: float | None = 0.9, lookup: bool = False
+    ) -> list[Document]:
+        documents = []
+        for rank, chunk in enumerate(chunks, start=1):
+            score = rerank_score if rank == 1 or rerank_score is None else 0.1
+            found = {
+                "rank": rank,
+                "rerank_score": score,
+                "lookup": lookup and rank == 1,
+            }
+            documents.append(
+                Document(
+                    id=chunk.chunk_id,
+                    page_content=chunk.text_ar,
+                    metadata={**chunk.model_dump(mode="json"), "retrieval": found},
+                )
+            )
+        return documents
+
+    return _retrieved
+
+
+@pytest.fixture
+def answer_config() -> AnswerConfig:
+    """``params.yaml``'s answer block, with the no-answer threshold at 0.3."""
+    return Settings(_env_file=None).answer.model_copy(
+        update={"no_answer_threshold": 0.3, "max_sources": 5}
+    )
+
+
+@pytest.fixture
+def make_pipeline(
+    answer_config: AnswerConfig,
+) -> Callable[..., tuple[AnswerPipeline, StubLLM]]:
+    """An ``AnswerPipeline`` retrieving ``documents`` for any question, and its LLM."""
+
+    def _make(
+        documents: list[Document], reply: str = ""
+    ) -> tuple[AnswerPipeline, StubLLM]:
+        llm = StubLLM(reply)
+        return AnswerPipeline(lambda _: documents, llm, answer_config), llm
+
+    return _make
+
+
+class _Capture(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@pytest.fixture
+def rag_log_records() -> Iterator[Callable[..., list[dict[str, Any]]]]:
+    """``raglaw.rag``'s records as dicts. Its logger (``get_logger``) doesn't
+    propagate, so ``log_records`` can't see it."""
+    logger = logging.getLogger("raglaw.rag")
+    handler = _Capture()
+    logger.addHandler(handler)
+
+    def _records(event_type: str | None = None) -> list[dict[str, Any]]:
+        return [
+            {"level": r.levelname, "message": r.getMessage(), **extra_fields(r)}
+            for r in handler.records
+            if event_type is None or getattr(r, "event_type", None) == event_type
+        ]
+
+    yield _records
+    logger.removeHandler(handler)
+
+
+# --- Models service --------------------------------------------------------
+
+
+@pytest.fixture
+def closed_url() -> str:
+    """A local URL nothing listens on: a port just freed, so a connection is
+    refused at once. (A fixed port such as 9 can hang instead, e.g. under WSL's
+    mirrored networking.)"""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
+
+
+@pytest.fixture
+def models_client(
+    stub_embeddings: Callable[..., StubEmbeddings],
+    stub_reranker: Callable[..., StubReranker],
+) -> Iterator[TestClient]:
+    """A started ``models`` service on stub models: every text embeds to
+    [1, 0], and "relevant" scores 0.9 against any question, anything else 0.1."""
+    app = create_models_app(
+        Settings(_env_file=None),
+        embeddings=stub_embeddings({"query": [0.0, 1.0]}, default=[1.0, 0.0]),
+        reranker=stub_reranker({"relevant": 0.9}, default=0.1),
+    )
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+# --- API -------------------------------------------------------------------
+
+NOT_CONFIGURED = {
+    "llm": "RAGLAW_LLM_API_KEY, RAGLAW_LLM_BASE_URL, RAGLAW_LLM_MODEL are not set.",
+    "models": "http://localhost:8001 is not answering.",
+    "retriever": "champion not loaded.",
+}
+
+
+@pytest.fixture
+def make_service() -> Callable[..., Service]:
+    """A loaded ``Service``: every component ready with ``pipeline``, else none
+    ready, as a fresh checkout starts."""
+
+    def _make(
+        pipeline: AnswerPipeline | None = None, documents_indexed: int = 0
+    ) -> Service:
+        if pipeline is None:
+            components = {
+                name: ComponentStatus(ready=False, detail=detail)
+                for name, detail in NOT_CONFIGURED.items()
+            }
+        else:
+            components = {
+                name: ComponentStatus(ready=True, detail="ok")
+                for name in NOT_CONFIGURED
+            }
+        return Service(components, documents_indexed, pipeline)
+
+    return _make
+
+
+@pytest.fixture
+def make_app(make_service: Callable[..., Service]) -> Callable[..., FastAPI]:
+    """Build an API app whose startup loads ``service``, never the machine's
+    registry, models service or .env."""
+
+    def _make_app(service: Service | None = None) -> FastAPI:
+        loaded = service or make_service()
+        return create_app(Settings(_env_file=None), load=lambda _: loaded)
 
     return _make_app
 
 
 @pytest.fixture
 def client(make_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
-    """A started API with no LLM key and no retriever, as a fresh checkout runs."""
+    """A started API with no component ready, as a fresh checkout runs."""
     with TestClient(make_app()) as test_client:
         yield test_client
 
 
 @pytest.fixture
-def ready_client(client: TestClient) -> TestClient:
-    """``client`` with every component marked ready, as a fully configured service."""
-    client.app.state.components = {
-        "llm": ComponentStatus(ready=True, detail="ok"),
-        "retriever": ComponentStatus(ready=True, detail="ok"),
-    }
-    return client
+def ask_client(
+    make_app: Callable[..., FastAPI],
+    make_service: Callable[..., Service],
+    make_pipeline: Callable[..., tuple[AnswerPipeline, StubLLM]],
+) -> Callable[..., TestClient]:
+    """A started, fully ready API answering through a stub pipeline; enter it
+    with ``with``."""
+
+    def _make(
+        documents: list[Document], reply: str = "", documents_indexed: int = 1150
+    ) -> TestClient:
+        pipeline, _ = make_pipeline(documents, reply)
+        return TestClient(make_app(make_service(pipeline, documents_indexed)))
+
+    return _make

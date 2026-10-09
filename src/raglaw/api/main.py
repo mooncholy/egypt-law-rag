@@ -1,15 +1,19 @@
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from importlib.metadata import version
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request, status
+from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
+from langchain_core.embeddings import Embeddings
 
 from raglaw.api.schemas import (
     AskRequest,
+    AskResponse,
     ComponentStatus,
     ErrorResponse,
     FieldError,
@@ -18,11 +22,20 @@ from raglaw.api.schemas import (
     ValidationErrorResponse,
 )
 from raglaw.config import Settings
+from raglaw.llm import ChatModel, LLMError, OpenAIChat
 from raglaw.logging_conf import (
     configure_server_logging,
     correlation_id_var,
     get_logger,
 )
+from raglaw.rag import AnswerPipeline, load_prompt
+from raglaw.retrieval.remote import (
+    ModelsServiceError,
+    RemoteEmbeddings,
+    RemoteReranker,
+    models_health,
+)
+from raglaw.retrieval.rerank import RerankScorer
 from raglaw.schema import LogEvent
 
 configure_server_logging()
@@ -45,9 +58,6 @@ INVALID_REQUEST_RESPONSE: dict[int | str, dict[str, Any]] = {
         "description": "The request was rejected; `errors` lists every problem.",
     }
 }
-NOT_IMPLEMENTED_RESPONSE: dict[int | str, dict[str, Any]] = {
-    501: {"model": ErrorResponse, "description": "Answering is not built yet."}
-}
 
 
 class ServiceUnavailableError(Exception):
@@ -58,28 +68,188 @@ class ServiceUnavailableError(Exception):
         self.reasons = reasons
 
 
-def load_components(settings: Settings) -> dict[str, ComponentStatus]:
+@dataclass
+class Service:
+    """What the API loaded at startup: each component's state, and the pipeline.
+
+    ``pipeline`` is None unless every component is ready; ``close`` releases
+    the index.
     """
-    Check or load every dependency /ask needs, once, at startup.
+
+    components: dict[str, ComponentStatus]
+    documents_indexed: int = 0
+    pipeline: AnswerPipeline | None = None
+    close: Callable[[], None] = field(default=lambda: None)
+
+
+def llm_component(settings: Settings) -> tuple[ComponentStatus, ChatModel | None]:
+    """
+    The LLM client, when its endpoint, model and key are all set (D20).
+
+    Configuration only: no call is made, so startup costs nothing and a
+    hosted API isn't billed for a probe.
+
+    returns:
+    - status (ComponentStatus): ready, or naming each missing setting
+    - llm (ChatModel | None): the client when ready
+    """
+    key = settings.llm_api_key
+    values = {
+        "RAGLAW_LLM_API_KEY": key.get_secret_value().strip() if key else "",
+        "RAGLAW_LLM_BASE_URL": settings.llm_base_url or "",
+        "RAGLAW_LLM_MODEL": settings.llm_model or "",
+    }
+    missing = [name for name, value in values.items() if not value]
+    if missing:
+        verb = "is" if len(missing) == 1 else "are"
+        return ComponentStatus(
+            ready=False, detail=f"{', '.join(missing)} {verb} not set."
+        ), None
+    llm = OpenAIChat(
+        settings.llm_base_url, values["RAGLAW_LLM_API_KEY"], settings.llm_model
+    )
+    return ComponentStatus(
+        ready=True, detail=f"{settings.llm_model} at {settings.llm_base_url}"
+    ), llm
+
+
+def models_component(settings: Settings) -> ComponentStatus:
+    """
+    Whether the ``models`` service answers and serves the pinned models (D18).
+
+    returns:
+    - status (ComponentStatus): ready, or why not (down, or other models)
+    """
+    try:
+        served = models_health(settings.models_url)
+    except ModelsServiceError as exc:
+        return ComponentStatus(ready=False, detail=str(exc))
+    wanted = {
+        "embedding": f"{settings.embedding.model}@{settings.embedding.revision}",
+        "reranker": f"{settings.reranker.model}@{settings.reranker.revision}",
+    }
+    differ = [f"{k} {served.get(k)}" for k, v in wanted.items() if served.get(k) != v]
+    if differ:
+        return ComponentStatus(
+            ready=False,
+            detail=f"{settings.models_url} serves {', '.join(differ)}, not the "
+            "pinned models in params.yaml",
+        )
+    return ComponentStatus(
+        ready=True, detail=f"{settings.models_url} on {served.get('device')}"
+    )
+
+
+def indexed_chunks(settings: Settings) -> int:
+    """
+    The chunk count in the dense index's manifest.
+
+    returns:
+    - count (int): 0 when there is no readable index
+    """
+    try:
+        from raglaw.retrieval.dense import DenseManifest
+        from raglaw.retrieval.manifest import read_manifest
+
+        manifest = read_manifest(settings.paths.index_dir / "dense", DenseManifest)
+    except ImportError, OSError, ValueError:  # no deps, no index, or unreadable
+        return 0
+    return len(manifest.chunk_ids)
+
+
+def retriever_component(
+    settings: Settings,
+    *,
+    embeddings: Embeddings | None = None,
+    reranker: RerankScorer | None = None,
+) -> tuple[ComponentStatus, Any]:
+    """
+    ``champion``, loaded by alias from the registry (D16) and opened on this
+    machine's index, querying the ``models`` service unless ``embeddings`` and
+    ``reranker`` are given. Opening it embeds a probe text, so the ``models``
+    service must be up.
+
+    returns:
+    - status (ComponentStatus): ready, or why it couldn't load
+    - champion (Champion | None): the open retriever when ready
+    """
+    try:
+        from botocore.exceptions import BotoCoreError, ClientError
+        from langchain_qdrant.qdrant import QdrantVectorStoreError
+        from mlflow.exceptions import MlflowException
+
+        from raglaw.retrieval.champion import ALIAS, MODEL_NAME, load_champion
+    except ImportError as exc:
+        return ComponentStatus(
+            ready=False, detail=f"retrieval dependencies missing: {exc}"
+        ), None
+    try:
+        champion = load_champion(
+            settings,
+            embeddings=embeddings or RemoteEmbeddings(settings.models_url),
+            reranker=reranker or RemoteReranker(settings.models_url),
+        )
+    # No registry or alias; the artifacts unreachable in S3; no index on this
+    # machine; an index other than the registered one (IndexMismatchError is a
+    # ValueError); no models service, or one embedding to another size.
+    except (
+        MlflowException,
+        BotoCoreError,
+        ClientError,
+        OSError,
+        ValueError,
+        ModelsServiceError,
+        QdrantVectorStoreError,
+    ) as exc:
+        return ComponentStatus(
+            ready=False, detail=f"champion not loaded: {type(exc).__name__}: {exc}"
+        ), None
+    return ComponentStatus(
+        ready=True, detail=f"models:/{MODEL_NAME}@{ALIAS} on {settings.paths.index_dir}"
+    ), champion
+
+
+def load_service(
+    settings: Settings,
+    *,
+    embeddings: Embeddings | None = None,
+    reranker: RerankScorer | None = None,
+) -> Service:
+    """
+    Check or load every component /ask needs, once, at startup.
 
     A component that fails is recorded with its reason instead of stopping the
     process, so /health can report it and /ask can refuse with that reason.
-    Loading the retrieval index and the embedding model belongs here from
-    Phase 2 on; until then the retriever is reported as not loaded.
+    ``embeddings`` and ``reranker`` replace the ``models`` service's (tests).
 
     returns:
-    - components (dict[str, ComponentStatus]): readiness and detail per
-      component name
+    - service (Service): every component's state, and the pipeline when all
+      are ready
+
+    exceptions:
+    - FileNotFoundError: ``answer.prompt_version`` names no prompt file
     """
-    key = settings.llm_api_key
-    if key is not None and key.get_secret_value().strip():
-        llm = ComponentStatus(ready=True, detail="API key is configured.")
-    else:
-        llm = ComponentStatus(ready=False, detail="RAGLAW_LLM_API_KEY is not set.")
-    retriever = ComponentStatus(
-        ready=False, detail="The retrieval index is not loaded."
+    load_prompt(settings.answer.prompt_version)  # a config error stops startup
+    llm_status, llm = llm_component(settings)
+    retriever_status, champion = retriever_component(
+        settings, embeddings=embeddings, reranker=reranker
     )
-    return {"llm": llm, "retriever": retriever}
+    components = {
+        "llm": llm_status,
+        "models": models_component(settings),
+        "retriever": retriever_status,
+    }
+    service = Service(
+        components=components,
+        documents_indexed=(
+            champion.documents_indexed if champion else indexed_chunks(settings)
+        ),
+    )
+    if champion is not None:
+        service.close = champion.close
+        if all(c.ready for c in components.values()):
+            service.pipeline = AnswerPipeline(champion.retrieve, llm, settings.answer)
+    return service
 
 
 @asynccontextmanager
@@ -92,8 +262,9 @@ async def lifespan(app: FastAPI):
     missing key shows up at boot and not only on the first request.
     """
     logger.info("Starting service", extra={"event_type": LogEvent.STARTUP})
-    app.state.components = load_components(app.state.settings)
-    for name, component in app.state.components.items():
+    service: Service = app.state.load(app.state.settings)
+    app.state.service = service
+    for name, component in service.components.items():
         if not component.ready:
             logger.warning(
                 "Component not ready: %s",
@@ -103,6 +274,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        service.close()
         logger.info("Stopping service", extra={"event_type": LogEvent.SHUTDOWN})
 
 
@@ -260,57 +432,65 @@ async def health_check(request: Request) -> HealthResponse:
 
     Always 200: the process answering is what a container healthcheck asks.
     Readiness is in the body, so a missing key reads as ``degraded`` with its
-    reason instead of the container being restarted for it.
+    reason instead of the container being restarted for it. Components are
+    checked at startup; a component lost later fails /ask with a 503.
 
     returns:
-    - health (HealthResponse): ``ok`` or ``degraded``, the service version, and
-      each component's readiness
+    - health (HealthResponse): ``healthy`` or ``degraded``, the service
+      version, the index's chunk count, and each component's readiness
     """
-    components: dict[str, ComponentStatus] = request.app.state.components
-    all_ready = all(component.ready for component in components.values())
+    service: Service = request.app.state.service
+    all_ready = all(c.ready for c in service.components.values())
     return HealthResponse(
-        status="ok" if all_ready else "degraded",
+        status="healthy" if all_ready else "degraded",
         version=SERVICE_VERSION,
-        components=components,
+        documents_indexed=service.documents_indexed,
+        components=service.components,
     )
 
 
 @router.post(
     "/ask",
-    responses={
-        **INVALID_REQUEST_RESPONSE,
-        **UNAVAILABLE_RESPONSE,
-        **NOT_IMPLEMENTED_RESPONSE,
-    },
+    response_model=AskResponse,
+    responses={**INVALID_REQUEST_RESPONSE, **UNAVAILABLE_RESPONSE},
 )
-async def ask(request: Request, body: AskRequest) -> None:
+async def ask(request: Request, body: AskRequest) -> AskResponse:
     """
     Answer a question about the Civil Code from the retrieved articles.
 
+    returns:
+    - answer (AskResponse): the answer, and the article citations it rests on
+
     exceptions:
-    - ServiceUnavailableError: 503 when a component isn't ready, naming each one
+    - ServiceUnavailableError: 503 when a component isn't ready at startup, or
+      the ``models`` service or the LLM fails on this request, naming each one
     - RequestValidationError: 422 when the question is empty or too long
-    - HTTPException: 501 until retrieval and generation are built in Phase 2
     """
-    components: dict[str, ComponentStatus] = request.app.state.components
-    reasons = {name: c.detail for name, c in components.items() if not c.ready}
-    if reasons:
-        raise ServiceUnavailableError(reasons)
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Answering is not implemented yet.",
-    )
+    service: Service = request.app.state.service
+    reasons = {name: c.detail for name, c in service.components.items() if not c.ready}
+    if reasons or service.pipeline is None:
+        raise ServiceUnavailableError(reasons or {"pipeline": "not built"})
+    try:
+        answer = await service.pipeline.answer(body.question)
+    except ModelsServiceError as exc:
+        raise ServiceUnavailableError({"models": str(exc)}) from exc
+    except LLMError as exc:
+        raise ServiceUnavailableError({"llm": str(exc)}) from exc
+    return AskResponse(answer=answer.text, sources=answer.sources)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    load: Callable[[Settings], Service] = load_service,
+) -> FastAPI:
     """
     Build the application with its middleware, error handlers and routes.
 
     A factory rather than a module-level app alone, so tests can pass their own
-    settings instead of whatever ``.env`` holds.
+    settings instead of whatever ``.env`` holds, and their own ``load``.
 
     returns:
-    - app (FastAPI): the configured application; components load when its
+    - app (FastAPI): the configured application; ``load`` runs when its
       lifespan starts
     """
     app = FastAPI(
@@ -326,6 +506,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         },
     )
     app.state.settings = settings or Settings()
+    app.state.load = load
     app.middleware("http")(correlation_id_middleware)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(ServiceUnavailableError, service_unavailable_handler)

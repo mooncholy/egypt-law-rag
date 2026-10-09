@@ -7,11 +7,26 @@ authors = [
     { name = "mooncholy", email = "m.yzh.zayn@gmail.com" }
 ]
 requires-python = ">=3.14"
+# What the API runs on, and all the Docker image installs: retrieval over the
+# index, the registry (mlflow-skinny with the pandas its pyfunc imports; sqlite
+# until Phase 8; S3 artifacts) and the LLM client. No torch: the `models`
+# service embeds and reranks (D18).
 dependencies = [
+    "alembic>=1.20.0",
+    "bm25s>=0.3.13",
+    "boto3>=1.43.75",
     "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "langchain-core>=1.6.7",
+    "langchain-qdrant>=1.1.0",
+    "mlflow-skinny>=3.16.1",
+    "openai>=3.27.0",
+    "pandas>=3.0.6",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
+    "qdrant-client>=1.19.1",
+    "sqlalchemy>=2.1.1",
     "uvicorn>=0.54.0",
 ]
 
