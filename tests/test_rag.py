@@ -115,13 +115,34 @@ def test_the_prompt_marks_repealed_and_one_language_passages(
     ask(pipeline)
 
     [[system, user]] = llm.calls
-    assert system["content"] == load_prompt("v1")
-    assert "Answer in English." in user["content"]
+    assert system["content"] == load_prompt("v2").system
+    assert user["content"].endswith("Write your whole answer in English.")
     assert "### Article 54 (repealed)" in user["content"]
     assert (
         "Only in the English text:\nA passage printed in English only."
         in (user["content"])
     )
+
+
+def test_each_article_is_labelled_in_both_languages(
+    make_pipeline, retrieved, make_chunk
+):
+    chunk = make_chunk(222, citation="Article 222 | المادة ٢٢٢")
+    pipeline, llm = make_pipeline(retrieved([chunk]), reply="المادة ٢٢٢ تنص على...")
+
+    answer = ask(pipeline, "ما نص المادة ٢٢٢؟")
+
+    [[_, user]] = llm.calls
+    assert "### Article 222 | المادة ٢٢٢" in user["content"]
+    assert user["content"].endswith("Write your whole answer in Arabic (العربية).")
+    assert answer.sources == ["Egyptian Civil Code, Article 222"]
+
+
+def test_v1_keeps_its_own_user_message_layout():
+    v1 = load_prompt("v1")
+
+    assert "<!-- user -->" not in v1.system
+    assert v1.user.startswith("Question:\n{question}\n\nAnswer in {language}.")
 
 
 def test_a_missing_prompt_version_fails_loudly():
@@ -187,7 +208,7 @@ def test_a_repealed_range_chunk_covers_every_article_in_it(make_chunk, retrieved
 
 
 def test_each_question_logs_one_answer_line(
-    make_pipeline, retrieved, make_chunk, rag_log_records
+    make_pipeline, retrieved, make_chunk, rag_log_records, answer_config
 ):
     pipeline, _ = make_pipeline(retrieved([make_chunk(44)]), reply="Article 44.")
 
@@ -197,5 +218,5 @@ def test_each_question_logs_one_answer_line(
     assert (line["articles"], line["cited"], line["prompt_version"]) == (
         [44],
         [44],
-        "v1",
+        answer_config.prompt_version,
     )

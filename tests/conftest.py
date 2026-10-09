@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -806,6 +807,17 @@ def rag_log_records() -> Iterator[Callable[..., list[dict[str, Any]]]]:
 
 
 # --- Models service --------------------------------------------------------
+
+
+@pytest.fixture
+def closed_url() -> str:
+    """A local URL nothing listens on: a port just freed, so a connection is
+    refused at once. (A fixed port such as 9 can hang instead, e.g. under WSL's
+    mirrored networking.)"""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture

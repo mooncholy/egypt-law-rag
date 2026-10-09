@@ -54,6 +54,7 @@ uv run uvicorn raglaw.api.main:app --port 8000              # API on http://127.
 curl -s localhost:8000/health
 curl -s localhost:8000/ask -H 'Content-Type: application/json' \
   -d '{"question": "ما هي سن الرشد في القانون المدني؟"}'
+# stop the API first (Qdrant's local mode locks the index to one process), then:
 uv run python scripts/check_answers.py   # C19: 20 real questions end to end, to docs/reports/answer_check.md
 ```
 

@@ -46,19 +46,38 @@ NO_ANSWER = {
     "en": "I could not find an article of the Egyptian Civil Code that addresses "
     "this question.",
 }
-LANGUAGE_NAMES = {"ar": "Arabic", "en": "English"}
+LANGUAGE_NAMES = {"ar": "Arabic (العربية)", "en": "English"}
 ARABIC_LETTER = re.compile(r"[ء-ي]")  # letters, not Arabic-Indic digits
 LATIN_LETTER = re.compile(r"[A-Za-z]")
 
 
-def load_prompt(version: str) -> str:
+# A prompt file holds the system prompt, then, after this line, the user
+# message's template, so a version fixes both. v1 predates the template.
+USER_MARKER = "<!-- user -->"
+V1_USER = (
+    "Question:\n{question}\n\nAnswer in {language}.\n\nArticles found:\n\n{articles}"
+)
+
+
+@dataclass(frozen=True)
+class Prompt:
+    """One prompt version: the system prompt and the user message's template
+    (``{question}``, ``{language}``, ``{articles}``)."""
+
+    system: str
+    user: str
+
+
+def load_prompt(version: str) -> Prompt:
     """
-    The system prompt ``answer.prompt_version`` names.
+    The prompt ``answer.prompt_version`` names.
 
     exceptions:
     - FileNotFoundError: no ``prompts/answer_<version>.md``
     """
-    return (files("raglaw.prompts") / f"answer_{version}.md").read_text("utf-8")
+    text = (files("raglaw.prompts") / f"answer_{version}.md").read_text("utf-8")
+    system, _, user = text.partition(USER_MARKER)
+    return Prompt(system.strip(), user.strip() or V1_USER)
 
 
 def question_language(question: str) -> Language:
@@ -81,6 +100,7 @@ class ContextArticle:
 
     first: int
     last: int  # above ``first`` only for a chunk standing for a repealed range
+    citation: str  # `Article 147 | المادة ١٤٧`, so either language finds it
     is_repealed: bool
     text_ar: str
     text_en: str
@@ -93,7 +113,7 @@ class ContextArticle:
 
     def render(self) -> str:
         label = (
-            f"Article {self.first}"
+            self.citation
             if self.first == self.last
             else f"Articles {self.first} to {self.last}"
         )
@@ -132,6 +152,7 @@ def context_articles(
             ContextArticle(
                 first=number,
                 last=metas[0].get("range_end") or number,
+                citation=metas[0]["citation"],
                 is_repealed=metas[0]["is_repealed"],
                 text_ar="\n".join(m["text_ar"] for m in metas),
                 text_en=metas[0]["text_en"],
@@ -163,7 +184,7 @@ def build_messages(
     question: str,
     language: Language,
     articles: Sequence[ContextArticle],
-    system_prompt: str,
+    prompt: Prompt,
 ) -> list[dict[str, str]]:
     """
     The chat: the system prompt, then the question with its articles.
@@ -171,14 +192,13 @@ def build_messages(
     returns:
     - messages (list[dict[str, str]]): OpenAI chat messages
     """
-    context = "\n\n".join(a.render() for a in articles)
-    user = (
-        f"Question:\n{question}\n\n"
-        f"Answer in {LANGUAGE_NAMES[language]}.\n\n"
-        f"Articles found:\n\n{context}"
+    user = prompt.user.format(
+        question=question,
+        language=LANGUAGE_NAMES[language],
+        articles="\n\n".join(a.render() for a in articles),
     )
     return [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": prompt.system},
         {"role": "user", "content": user},
     ]
 
@@ -233,7 +253,7 @@ class AnswerPipeline:
         self._lock = threading.Lock()
         self.llm = llm
         self.config = config
-        self.system_prompt = load_prompt(config.prompt_version)
+        self.prompt = load_prompt(config.prompt_version)
 
     def _retrieve_locked(self, question: str) -> list[Document]:
         with self._lock:
@@ -263,7 +283,7 @@ class AnswerPipeline:
             return Answer(NO_ANSWER[language], [], language, True, [], score)
         articles = context_articles(documents, self.config.max_sources)
         text = await self.llm.complete(
-            build_messages(question, language, articles, self.system_prompt),
+            build_messages(question, language, articles, self.prompt),
             temperature=self.config.temperature,
         )
         given, hallucinated = check_citations(text, articles)

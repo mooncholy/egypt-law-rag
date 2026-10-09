@@ -79,7 +79,7 @@ evaluation:
 
 # How /ask answers from the retrieved articles (Phase 7).
 answer:
-  prompt_version: v1        # src/raglaw/prompts/answer_v1.md
+  prompt_version: v2        # src/raglaw/prompts/answer_v2.md (v1: the first wording)
   # D21, set by the owner: on the tuning half, 0.1 refuses 14 of 61 in-scope
   # questions (5 with the expected articles in the top 5); 0.3 refused 22 (10).
   no_answer_threshold: 0.1

@@ -62,13 +62,13 @@ def test_the_service_rejects_malformed_requests(models_client, path, body):
 
 
 @pytest.mark.unit
-def test_a_service_that_isnt_running_is_a_models_service_error():
-    embeddings = RemoteEmbeddings("http://127.0.0.1:9")  # discard port: refused
+def test_a_service_that_isnt_running_is_a_models_service_error(closed_url):
+    embeddings = RemoteEmbeddings(closed_url)
 
     with pytest.raises(ModelsServiceError, match="/embed"):
         embeddings.embed_query("q")
     with pytest.raises(ModelsServiceError, match="not answering"):
-        models_health("http://127.0.0.1:9")
+        models_health(closed_url)
 
 
 @pytest.mark.unit

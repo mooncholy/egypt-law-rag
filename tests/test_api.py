@@ -255,8 +255,10 @@ def registered(settings):
     return settings
 
 
-def test_without_the_models_service_the_retriever_isnt_ready(champion_settings):
-    closed = {"models_url": "http://127.0.0.1:9"}  # the discard port: refused
+def test_without_the_models_service_the_retriever_isnt_ready(
+    champion_settings, closed_url
+):
+    closed = {"models_url": closed_url}
     status, _ = retriever_component(
         registered(champion_settings).model_copy(update=closed)
     )
