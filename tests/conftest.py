@@ -338,13 +338,67 @@ class SearchIndex:
     chunks: list[Chunk]
     embeddings: StubEmbeddings
     retrieval: Retrieval
+    texts: dict[str, str]  # chunk_id -> its document text
+
+
+@pytest.fixture
+def build_search_index(
+    tmp_path: Path, stub_embeddings: Callable[..., StubEmbeddings]
+) -> Callable[..., SearchIndex]:
+    """Index ``chunks`` in both halves under ``tmp_path/<name>``.
+
+    Each chunk embeds to ``vectors[chunk_id]``; every query embeds to
+    ``query_vector``, so the dense order is fixed whatever the wording.
+    """
+
+    def _build(
+        chunks: list[Chunk],
+        vectors: dict[str, list[float]],
+        query_vector: list[float],
+        retrieval: Retrieval | None = None,
+        name: str = "index",
+    ) -> SearchIndex:
+        retrieval = retrieval or Retrieval(
+            document_text=DENSE_VARIANT, bm25_tokenizer="words"
+        )
+        texts = {
+            c.chunk_id: document_text(
+                c, retrieval.document_text, repealed_text=retrieval.repealed_text
+            )
+            for c in chunks
+        }
+        embeddings = stub_embeddings(
+            {texts[c.chunk_id]: vectors[c.chunk_id] for c in chunks},
+            default=query_vector,
+        )
+        root = tmp_path / name
+        build_dense(
+            chunks,
+            root / "dense",
+            embeddings=embeddings,
+            embedding=EMBEDDING,
+            document_text=retrieval.document_text,
+            repealed_text=retrieval.repealed_text,
+            chunks_sha256="0" * 64,
+        )
+        build_bm25(
+            chunks,
+            root / "bm25",
+            tokenize=bm25_tokenizer("words"),
+            retrieval=retrieval,
+            embedding=EMBEDDING,
+            chunks_sha256="0" * 64,
+        )
+        return SearchIndex(
+            root / "dense", root / "bm25", chunks, embeddings, retrieval, texts
+        )
+
+    return _build
 
 
 @pytest.fixture
 def search_index(
-    tmp_path: Path,
-    make_chunk: Callable[..., Chunk],
-    stub_embeddings: Callable[..., StubEmbeddings],
+    make_chunk: Callable[..., Chunk], build_search_index: Callable[..., SearchIndex]
 ) -> SearchIndex:
     """Five chunks indexed in both halves; article 4 has two parts.
 
@@ -368,31 +422,58 @@ def search_index(
             part_count=2,
         ),
     ]
-    retrieval = Retrieval(document_text=DENSE_VARIANT, bm25_tokenizer="words")
-    texts = [document_text(c, DENSE_VARIANT) for c in chunks]
-    embeddings = stub_embeddings(
-        {t: SEARCH_VECTORS[c.chunk_id] for c, t in zip(chunks, texts, strict=True)},
-        default=QUERY_VECTOR,
-    )
-    common = {"retrieval": retrieval, "chunks_sha256": "0" * 64}
-    build_dense(
-        chunks,
-        tmp_path / "dense",
-        embeddings=embeddings,
-        embedding=EMBEDDING,
-        document_text=DENSE_VARIANT,
-        chunks_sha256="0" * 64,
-    )
-    build_bm25(
-        chunks,
-        tmp_path / "bm25",
-        tokenize=bm25_tokenizer("words"),
-        embedding=EMBEDDING,
-        **common,
-    )
-    return SearchIndex(
-        tmp_path / "dense", tmp_path / "bm25", chunks, embeddings, retrieval
-    )
+    return build_search_index(chunks, SEARCH_VECTORS, QUERY_VECTOR)
+
+
+@pytest.fixture
+def citing_index(
+    make_chunk: Callable[..., Chunk], build_search_index: Callable[..., SearchIndex]
+) -> SearchIndex:
+    """Article 1 cites 3 in Arabic (dual form) and 4 in English; dense: 1, 2, 3, 4, 5.
+
+    Article 5 is a repealed note citing its own range and article 2.
+    """
+    chunks = [
+        make_chunk(1, "تسري أحكام المادتين ٣ ، ٢", text_en="Articles 4 and 2 apply."),
+        make_chunk(2, "نص ثان", text_en="Second."),
+        make_chunk(3, "نص ثالث", text_en="Third."),
+        make_chunk(4, "نص رابع", text_en="Fourth."),
+        make_chunk(
+            5,
+            "المواد من ٥ إلى ٦ ملغاة وفقا للمادة ٢",
+            is_repealed=True,
+            text_en="Articles 5-6 repealed",
+        ),
+    ]
+    vectors = {
+        "art-1-p1": [1.0, 0.0],
+        "art-2-p1": [0.9, 0.44],
+        "art-3-p1": [0.7, 0.71],
+        "art-4-p1": [0.5, 0.87],
+        "art-5-p1": [0.1, 0.99],
+    }
+    return build_search_index(chunks, vectors, [1.0, 0.0], name="citing")
+
+
+class StubReranker:
+    """Fixed scores per document text, so reranking is tested without a model.
+
+    A text not in ``scores`` gets ``default``; ``calls`` counts the questions scored.
+    """
+
+    def __init__(self, scores: dict[str, float], default: float = 0.0) -> None:
+        self.scores, self.default = scores, default
+        self.calls = 0
+
+    def score(self, query: str, texts: list[str]) -> list[float]:
+        self.calls += 1
+        return [self.scores.get(t, self.default) for t in texts]
+
+
+@pytest.fixture
+def stub_reranker() -> Callable[..., StubReranker]:
+    """Build a ``StubReranker`` from a {document text: score} map and a default."""
+    return StubReranker
 
 
 # --- Evaluation --------------------------------------------------------------

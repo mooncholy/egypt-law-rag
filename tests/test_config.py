@@ -179,3 +179,36 @@ def test_the_variant_switches_default_to_off():
 def test_the_recall_target_is_a_share(bad):
     with pytest.raises(ValidationError, match="target_recall_at_5"):
         Evaluation(split="tuning", target_recall_at_5=bad)
+
+
+def test_the_new_search_switches_default_to_off():
+    search = Settings(_env_file=None).search
+
+    assert (search.rerank, search.cite_expansion) == (False, False)
+    assert Settings(_env_file=None).retrieval.repealed_text == "note"
+
+
+def test_the_reranker_is_pinned_like_the_embedder():
+    reranker = Settings(_env_file=None).reranker
+
+    assert reranker.model == "BAAI/bge-reranker-v2-m3"
+    assert len(reranker.revision) == 40
+
+
+def test_rerank_depth_must_cover_top_k():
+    with pytest.raises(ValidationError, match="rerank_depth"):
+        Search(
+            mode="hybrid",
+            article_lookup=True,
+            candidates=50,
+            rrf_k=60,
+            top_k=10,
+            rerank=True,
+            rerank_depth=5,
+        )
+
+
+def test_the_device_is_per_machine_and_defaults_to_cpu(clean_env, monkeypatch):
+    assert Settings(_env_file=None).device == "cpu"
+    monkeypatch.setenv("RAGLAW_DEVICE", "cuda")
+    assert Settings(_env_file=None).device == "cuda"

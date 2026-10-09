@@ -34,20 +34,30 @@ def params_changed(base: Mapping[str, str], run: Mapping[str, str]) -> list[str]
     """
     The params a run sets differently from the baseline.
 
+    A param the run doesn't log isn't a change: the run predates it, and every
+    switch added later defaults to the behaviour before it existed.
+
     returns:
     - changes (list[str]): sorted ``key=value``; a key the baseline doesn't
-      log is marked ``(new)``, one the run doesn't log ``(unset)``
+      log is marked ``(new)``
     """
-    keys = (base.keys() | run.keys()) - DERIVED_PARAMS
     out = []
-    for key in sorted(keys):
+    for key in sorted((run.keys()) - DERIVED_PARAMS):
         if key not in base:
             out.append(f"{key}={run[key]} (new)")
-        elif key not in run:
-            out.append(f"{key} (unset)")
         elif base[key] != run[key]:
             out.append(f"{key}={run[key]}")
     return out
+
+
+def params_unlogged(base: Mapping[str, str], run: Mapping[str, str]) -> list[str]:
+    """
+    The baseline's params a run didn't log, because it predates them.
+
+    returns:
+    - keys (list[str]): sorted
+    """
+    return sorted(base.keys() - run.keys() - DERIVED_PARAMS)
 
 
 def _in_scope(records: Sequence[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
@@ -172,6 +182,11 @@ def comparison_report(
             f"## {run.name} (run {run.run_id})",
             "",
             f"- Changed: {', '.join(changed) or 'none'}",
+            *(
+                [f"- Not logged (the run predates them): {', '.join(unlogged)}"]
+                if (unlogged := params_unlogged(baseline.params, run.params))
+                else []
+            ),
             f"- Fixed at {k} ({len(changes['fixed'])}): {_questions(changes['fixed'])}",
             f"- Broken at {k} ({len(changes['broken'])}): {_questions(changes['broken'])}",
             "",

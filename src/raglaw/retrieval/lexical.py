@@ -70,7 +70,10 @@ def build_bm25(
       ``bm25_dir/manifest.json``
     """
     fresh_dir(bm25_dir)
-    terms = [tokenize(build_text(c, retrieval.document_text)) for c in chunks]
+    terms = [
+        tokenize(build_text(c, retrieval.document_text, retrieval.repealed_text))
+        for c in chunks
+    ]
     bm25 = bm25s.BM25(k1=BM25_K1, b=BM25_B, method=BM25_METHOD)
     bm25.index(terms, show_progress=False)
     bm25.save(str(bm25_dir), show_progress=False)
@@ -79,6 +82,7 @@ def build_bm25(
         chunks_sha256=chunks_sha256,
         chunk_ids=[c.chunk_id for c in chunks],
         document_text=retrieval.document_text,
+        repealed_text=retrieval.repealed_text,
         bm25_tokenizer=retrieval.bm25_tokenizer,
         bm25_stopwords=retrieval.bm25_stopwords,
         tokenizer_model=embedding.model if subwords else None,

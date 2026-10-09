@@ -26,6 +26,7 @@ def run(tmp_path, chunks_file, embeddings, tokenizer):
         retrieval=RETRIEVAL,
         embeddings=embeddings,
         tokenizer=tokenizer,
+        device="cpu",
     )
 
 
@@ -72,10 +73,12 @@ def test_a_chunk_the_model_would_truncate_stops_the_stage_before_embedding(
 
 @pytest.mark.unit
 def test_runs_are_compared_by_model_and_document_text():
-    assert run_params(EMBEDDING, RETRIEVAL) == {
+    assert run_params(EMBEDDING, RETRIEVAL, "cpu") == {
         "embedding_model": "BAAI/bge-m3",
         "embedding_revision": EMBEDDING.revision,
         "document_text": "both_with_headings",
+        "repealed_text": "note",
+        "device": "cpu",
     }
 
 

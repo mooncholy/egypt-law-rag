@@ -35,7 +35,12 @@ def _count_terms(
     chunks: list[Chunk], retrieval: Retrieval, tokenize: Callable[[str], list[str]]
 ) -> tuple[int, int]:
     """The most terms in one chunk, and how many chunks have none (each logged)."""
-    counts = [len(tokenize(document_text(c, retrieval.document_text))) for c in chunks]
+    counts = [
+        len(
+            tokenize(document_text(c, retrieval.document_text, retrieval.repealed_text))
+        )
+        for c in chunks
+    ]
     for c, n in zip(chunks, counts, strict=True):
         if n == 0:
             log_anomaly(

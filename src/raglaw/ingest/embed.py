@@ -27,7 +27,6 @@ from raglaw.records import read_records
 from raglaw.retrieval.dense import build_dense, count_points
 from raglaw.retrieval.document_text import document_text
 from raglaw.retrieval.embeddings import (
-    DEVICE,
     ModelTokenizer,
     huggingface_embeddings,
     model_tokenizer,
@@ -79,9 +78,12 @@ def run_embed(
     retrieval: Retrieval,
     embeddings: Embeddings,
     tokenizer: ModelTokenizer,
+    device: str = "cpu",
 ) -> dict[str, Any]:
     """
     Embed ``chunks_in`` into ``dense_dir``, with metrics.
+
+    ``device`` is where ``embeddings`` runs, recorded with the metrics.
 
     returns:
     - metrics (dict[str, Any]): what was written to ``metrics_out``
@@ -91,7 +93,10 @@ def run_embed(
       collection doesn't hold one point per chunk
     """
     chunks = read_records(chunks_in, Chunk)
-    texts = [document_text(c, retrieval.document_text) for c in chunks]
+    texts = [
+        document_text(c, retrieval.document_text, retrieval.repealed_text)
+        for c in chunks
+    ]
     counts = _check_lengths(chunks, texts, tokenizer)
     started = time.perf_counter()
     manifest = build_dense(
@@ -100,6 +105,7 @@ def run_embed(
         embeddings=embeddings,
         embedding=embedding,
         document_text=retrieval.document_text,
+        repealed_text=retrieval.repealed_text,
         chunks_sha256=sha256_file(chunks_in),
     )
     seconds = time.perf_counter() - started
@@ -112,9 +118,10 @@ def run_embed(
         "max_chunk_tokens": max(counts),
         "max_tokens": tokenizer.model_max_length,
         "truncated_chunks": 0,
-        "device": DEVICE,
+        "device": device,
         "seconds": round(seconds, 1),
         "document_text": retrieval.document_text,
+        "repealed_text": retrieval.repealed_text,
     }
     metrics_out.parent.mkdir(parents=True, exist_ok=True)
     metrics_out.write_text(
@@ -129,18 +136,22 @@ def run_embed(
     return metrics
 
 
-def run_params(embedding: Embedding, retrieval: Retrieval) -> dict[str, object]:
+def run_params(
+    embedding: Embedding, retrieval: Retrieval, device: str
+) -> dict[str, object]:
     """
     The embedding config a run is compared by, under the names used across runs.
 
     returns:
-    - params (dict[str, object]): the model, its revision and the document
-      text variant
+    - params (dict[str, object]): the model, its revision, the document text
+      choices and the device
     """
     return {
         "embedding_model": embedding.model,
         "embedding_revision": embedding.revision,
         "document_text": retrieval.document_text,
+        "repealed_text": retrieval.repealed_text,
+        "device": device,
     }
 
 
@@ -155,15 +166,18 @@ def main(argv: list[str] | None = None) -> None:
     with stage_run(
         "embed", input_hash=sha256_file(args.chunks), settings=settings
     ) as run:
-        run.log_params(run_params(settings.embedding, settings.retrieval))
+        run.log_params(
+            run_params(settings.embedding, settings.retrieval, settings.device)
+        )
         metrics = run_embed(
             args.chunks,
             args.out,
             args.metrics,
             embedding=settings.embedding,
             retrieval=settings.retrieval,
-            embeddings=huggingface_embeddings(settings.embedding),
+            embeddings=huggingface_embeddings(settings.embedding, settings.device),
             tokenizer=model_tokenizer(settings.embedding),
+            device=settings.device,
         )
         run.log_metrics(
             {k: v for k, v in metrics.items() if isinstance(v, int | float)}

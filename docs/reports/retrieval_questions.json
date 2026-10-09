@@ -31,7 +31,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.558504104614258,
-      "dense_score": 0.5591589806163285,
+      "dense_score": 0.5591587424201037,
+      "rerank_score": null,
       "rrf_score": 0.032266458495966696
     }
   },
@@ -67,7 +68,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.104963779449463,
-      "dense_score": 0.5613506752755453,
+      "dense_score": 0.5613506759357996,
+      "rerank_score": null,
       "rrf_score": 0.02749266862170088
     }
   },
@@ -103,7 +105,8 @@
     ],
     "top_scores": {
       "bm25_score": 12.853670120239258,
-      "dense_score": 0.6822674766726805,
+      "dense_score": 0.6822674725402863,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -139,7 +142,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.8446133136749268,
-      "dense_score": 0.49908835802043905,
+      "dense_score": 0.4990884491447229,
+      "rerank_score": null,
       "rrf_score": 0.030886196246139225
     }
   },
@@ -175,7 +179,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.17282247543335,
-      "dense_score": 0.6234999166572351,
+      "dense_score": 0.6234999441396332,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -211,7 +216,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.144630432128906,
-      "dense_score": 0.5848733168156619,
+      "dense_score": 0.5848731479375828,
+      "rerank_score": null,
       "rrf_score": 0.026984126984126985
     }
   },
@@ -247,7 +253,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.935330390930176,
-      "dense_score": 0.758017363926885,
+      "dense_score": 0.7580174151112467,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -283,7 +290,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.081332206726074,
-      "dense_score": 0.5984201202020842,
+      "dense_score": 0.5984198440148688,
+      "rerank_score": null,
       "rrf_score": 0.030834914611005692
     }
   },
@@ -319,7 +327,8 @@
     ],
     "top_scores": {
       "bm25_score": 8.121330261230469,
-      "dense_score": 0.6096109071313591,
+      "dense_score": 0.6096109650675114,
+      "rerank_score": null,
       "rrf_score": 0.032266458495966696
     }
   },
@@ -355,7 +364,8 @@
     ],
     "top_scores": {
       "bm25_score": 1.8339173793792725,
-      "dense_score": 0.5657190256641477,
+      "dense_score": 0.565719106781099,
+      "rerank_score": null,
       "rrf_score": 0.027364110201042444
     }
   },
@@ -391,7 +401,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.966804504394531,
-      "dense_score": 0.7150975568810545,
+      "dense_score": 0.715097295417768,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -427,7 +438,8 @@
     ],
     "top_scores": {
       "bm25_score": 6.613950729370117,
-      "dense_score": 0.6019379974217264,
+      "dense_score": 0.6019377649209139,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -463,7 +475,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.927392959594727,
-      "dense_score": 0.6713461899772784,
+      "dense_score": 0.6713460984988473,
+      "rerank_score": null,
       "rrf_score": 0.032266458495966696
     }
   },
@@ -499,7 +512,8 @@
     ],
     "top_scores": {
       "bm25_score": 9.173988342285156,
-      "dense_score": 0.6725173944473823,
+      "dense_score": 0.6725174257526103,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -535,7 +549,8 @@
     ],
     "top_scores": {
       "bm25_score": 6.26690673828125,
-      "dense_score": 0.5847884886476005,
+      "dense_score": 0.5847884303710977,
+      "rerank_score": null,
       "rrf_score": 0.029957522915269395
     }
   },
@@ -571,7 +586,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.2778778076171875,
-      "dense_score": 0.5965683050005646,
+      "dense_score": 0.5965681576484744,
+      "rerank_score": null,
       "rrf_score": 0.031746031746031744
     }
   },
@@ -607,7 +623,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.381117343902588,
-      "dense_score": 0.5807603947577766,
+      "dense_score": 0.5807602817720248,
+      "rerank_score": null,
       "rrf_score": 0.03125763125763126
     }
   },
@@ -643,7 +660,8 @@
     ],
     "top_scores": {
       "bm25_score": 6.540772914886475,
-      "dense_score": 0.6089637582483168,
+      "dense_score": 0.6089637973823658,
+      "rerank_score": null,
       "rrf_score": 0.031754032258064516
     }
   },
@@ -679,7 +697,8 @@
     ],
     "top_scores": {
       "bm25_score": 8.22585391998291,
-      "dense_score": 0.621900950677485,
+      "dense_score": 0.6219006872289159,
+      "rerank_score": null,
       "rrf_score": 0.03200204813108039
     }
   },
@@ -715,7 +734,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.8886895179748535,
-      "dense_score": 0.7278638161946763,
+      "dense_score": 0.7278638020637418,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -751,7 +771,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.893640995025635,
-      "dense_score": 0.5984203840886526,
+      "dense_score": 0.5984204134002586,
+      "rerank_score": null,
       "rrf_score": 0.032018442622950824
     }
   },
@@ -787,7 +808,8 @@
     ],
     "top_scores": {
       "bm25_score": 10.544084548950195,
-      "dense_score": 0.6629598299246493,
+      "dense_score": 0.6629595361355428,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -823,7 +845,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.247166633605957,
-      "dense_score": 0.6202559372072831,
+      "dense_score": 0.6202559815288663,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -859,7 +882,8 @@
     ],
     "top_scores": {
       "bm25_score": 12.907156944274902,
-      "dense_score": 0.6857273616176054,
+      "dense_score": 0.6857273289641682,
+      "rerank_score": null,
       "rrf_score": 0.03225806451612903
     }
   },
@@ -895,7 +919,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.041120529174805,
-      "dense_score": 0.6966589223772156,
+      "dense_score": 0.6966588840127523,
+      "rerank_score": null,
       "rrf_score": 0.03225806451612903
     }
   },
@@ -930,7 +955,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.405847549438477,
-      "dense_score": 0.5708140632684346,
+      "dense_score": 0.5708138258771598,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -967,7 +993,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.0826239585876465,
-      "dense_score": 0.5748691280560037,
+      "dense_score": 0.5748694033898654,
+      "rerank_score": null,
       "rrf_score": 0.029138513513513514
     }
   },
@@ -1005,7 +1032,8 @@
     ],
     "top_scores": {
       "bm25_score": 8.216741561889648,
-      "dense_score": 0.5725906148774231,
+      "dense_score": 0.5725904355332136,
+      "rerank_score": null,
       "rrf_score": 0.03125763125763126
     }
   },
@@ -1042,7 +1070,8 @@
     ],
     "top_scores": {
       "bm25_score": 8.470152854919434,
-      "dense_score": 0.5901982650764974,
+      "dense_score": 0.5901983934954237,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -1079,7 +1108,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.389026641845703,
-      "dense_score": 0.5926448766640475,
+      "dense_score": 0.5926447731864304,
+      "rerank_score": null,
       "rrf_score": 0.03131881575727918
     }
   },
@@ -1116,7 +1146,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.2338244915008545,
-      "dense_score": 0.5730839725784013,
+      "dense_score": 0.5730839237889425,
+      "rerank_score": null,
       "rrf_score": 0.0264301860545992
     }
   },
@@ -1153,7 +1184,8 @@
     ],
     "top_scores": {
       "bm25_score": 4.92646598815918,
-      "dense_score": 0.6288860857096688,
+      "dense_score": 0.6288859960711561,
+      "rerank_score": null,
       "rrf_score": 0.03047794966520434
     }
   },
@@ -1190,7 +1222,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.6869635581970215,
-      "dense_score": 0.6175247312776802,
+      "dense_score": 0.6175247068730876,
+      "rerank_score": null,
       "rrf_score": 0.032266458495966696
     }
   },
@@ -1227,7 +1260,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.1581664085388184,
-      "dense_score": 0.624254578415871,
+      "dense_score": 0.6242548802635373,
+      "rerank_score": null,
       "rrf_score": 0.031754032258064516
     }
   },
@@ -1264,7 +1298,8 @@
     ],
     "top_scores": {
       "bm25_score": 9.42013931274414,
-      "dense_score": 0.6156826836466394,
+      "dense_score": 0.6156824436871895,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -1301,7 +1336,8 @@
     ],
     "top_scores": {
       "bm25_score": 9.866243362426758,
-      "dense_score": 0.6355902350319746,
+      "dense_score": 0.6355901523800229,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -1339,7 +1375,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.972171306610107,
-      "dense_score": 0.6501116924811292,
+      "dense_score": 0.6501116806989788,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -1375,7 +1412,8 @@
     ],
     "top_scores": {
       "bm25_score": 4.885372161865234,
-      "dense_score": 0.5786542104102967,
+      "dense_score": 0.5786542533562171,
+      "rerank_score": null,
       "rrf_score": 0.032018442622950824
     }
   },
@@ -1412,7 +1450,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.544483661651611,
-      "dense_score": 0.614180639476311,
+      "dense_score": 0.6141807016997576,
+      "rerank_score": null,
       "rrf_score": 0.0315136476426799
     }
   },
@@ -1449,6 +1488,7 @@
     "top_scores": {
       "bm25_score": null,
       "dense_score": null,
+      "rerank_score": null,
       "rrf_score": null
     }
   },
@@ -1485,6 +1525,7 @@
     "top_scores": {
       "bm25_score": null,
       "dense_score": null,
+      "rerank_score": null,
       "rrf_score": null
     }
   },
@@ -1521,6 +1562,7 @@
     "top_scores": {
       "bm25_score": null,
       "dense_score": null,
+      "rerank_score": null,
       "rrf_score": null
     }
   },
@@ -1582,7 +1624,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.4841911792755127,
-      "dense_score": 0.44183593993731674,
+      "dense_score": 0.441835915264048,
+      "rerank_score": null,
       "rrf_score": 0.027443609022556388
     }
   },
@@ -1646,7 +1689,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.610945224761963,
-      "dense_score": 0.5114725485116102,
+      "dense_score": 0.511472151987425,
+      "rerank_score": null,
       "rrf_score": 0.02964426877470356
     }
   },
@@ -1682,7 +1726,8 @@
     ],
     "top_scores": {
       "bm25_score": 9.962039947509766,
-      "dense_score": 0.6829666541354318,
+      "dense_score": 0.6829666321263813,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -1718,7 +1763,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.609704971313477,
-      "dense_score": 0.6071970279338439,
+      "dense_score": 0.607196880048453,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -1754,7 +1800,8 @@
     ],
     "top_scores": {
       "bm25_score": 6.77830696105957,
-      "dense_score": 0.6583433109240928,
+      "dense_score": 0.6583434932141894,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -1791,7 +1838,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.595778703689575,
-      "dense_score": 0.5248706706126626,
+      "dense_score": 0.5248708970945912,
+      "rerank_score": null,
       "rrf_score": 0.03036576949620428
     }
   },
@@ -1827,7 +1875,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.133084535598755,
-      "dense_score": 0.562473862206119,
+      "dense_score": 0.5624735901244824,
+      "rerank_score": null,
       "rrf_score": 0.028370221327967807
     }
   },
@@ -1863,7 +1912,8 @@
     ],
     "top_scores": {
       "bm25_score": 4.907476425170898,
-      "dense_score": 0.547245805812898,
+      "dense_score": 0.5472456271692774,
+      "rerank_score": null,
       "rrf_score": 0.03149801587301587
     }
   },
@@ -1899,7 +1949,8 @@
     ],
     "top_scores": {
       "bm25_score": 1.9671679735183716,
-      "dense_score": 0.5573929680696965,
+      "dense_score": 0.5573932298834012,
+      "rerank_score": null,
       "rrf_score": 0.02844551282051282
     }
   },
@@ -1935,7 +1986,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.651729106903076,
-      "dense_score": 0.4885633378960501,
+      "dense_score": 0.488563309518939,
+      "rerank_score": null,
       "rrf_score": 0.030158730158730156
     }
   },
@@ -1971,7 +2023,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.8131186962127686,
-      "dense_score": 0.6089300897269847,
+      "dense_score": 0.6089299374179394,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -2007,7 +2060,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.306659460067749,
-      "dense_score": 0.5088670504312768,
+      "dense_score": 0.5088672385397954,
+      "rerank_score": null,
       "rrf_score": 0.02964254577157803
     }
   },
@@ -2036,7 +2090,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.9206032752990723,
-      "dense_score": 0.4531733314197492,
+      "dense_score": 0.45317318124295114,
+      "rerank_score": null,
       "rrf_score": 0.032018442622950824
     }
   },
@@ -2065,7 +2120,8 @@
     ],
     "top_scores": {
       "bm25_score": 4.040545463562012,
-      "dense_score": 0.4806286131962437,
+      "dense_score": 0.48062861322886474,
+      "rerank_score": null,
       "rrf_score": 0.03125763125763126
     }
   },
@@ -2094,7 +2150,8 @@
     ],
     "top_scores": {
       "bm25_score": 4.505524635314941,
-      "dense_score": 0.5651271663684037,
+      "dense_score": 0.5651269633336384,
+      "rerank_score": null,
       "rrf_score": 0.03177805800756621
     }
   },
@@ -2123,7 +2180,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.7010715007781982,
-      "dense_score": 0.5348071814197988,
+      "dense_score": 0.5348072345865496,
+      "rerank_score": null,
       "rrf_score": 0.03252247488101534
     }
   },
@@ -2152,7 +2210,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.5425684452056885,
-      "dense_score": 0.5006191314922537,
+      "dense_score": 0.5006190812912399,
+      "rerank_score": null,
       "rrf_score": 0.03009207275993712
     }
   },
@@ -2188,7 +2247,8 @@
     ],
     "top_scores": {
       "bm25_score": 4.311625003814697,
-      "dense_score": 0.5138914359588874,
+      "dense_score": 0.5138913262238489,
+      "rerank_score": null,
       "rrf_score": 0.031746031746031744
     }
   },
@@ -2224,7 +2284,8 @@
     ],
     "top_scores": {
       "bm25_score": 9.075578689575195,
-      "dense_score": 0.6985764610048723,
+      "dense_score": 0.6985765213897934,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -2260,7 +2321,8 @@
     ],
     "top_scores": {
       "bm25_score": null,
-      "dense_score": 0.416595155815362,
+      "dense_score": 0.4165951402823853,
+      "rerank_score": null,
       "rrf_score": 0.009523809523809525
     }
   },
@@ -2324,7 +2386,8 @@
     ],
     "top_scores": {
       "bm25_score": 2.4390454292297363,
-      "dense_score": 0.5239686091121326,
+      "dense_score": 0.5239685385754316,
+      "rerank_score": null,
       "rrf_score": 0.02844551282051282
     }
   },
@@ -2360,7 +2423,8 @@
     ],
     "top_scores": {
       "bm25_score": 6.445446014404297,
-      "dense_score": 0.4797390279862955,
+      "dense_score": 0.4797390336312721,
+      "rerank_score": null,
       "rrf_score": 0.02736726874657909
     }
   },
@@ -2396,7 +2460,8 @@
     ],
     "top_scores": {
       "bm25_score": 8.522027015686035,
-      "dense_score": 0.5854156653776265,
+      "dense_score": 0.5854156348960069,
+      "rerank_score": null,
       "rrf_score": 0.03278688524590164
     }
   },
@@ -2432,7 +2497,8 @@
     ],
     "top_scores": {
       "bm25_score": 5.151825904846191,
-      "dense_score": 0.6105174502900992,
+      "dense_score": 0.6105172997641302,
+      "rerank_score": null,
       "rrf_score": 0.031754032258064516
     }
   },
@@ -2469,7 +2535,8 @@
     ],
     "top_scores": {
       "bm25_score": 10.860513687133789,
-      "dense_score": 0.5652069063818522,
+      "dense_score": 0.5652069597490046,
+      "rerank_score": null,
       "rrf_score": 0.030679156908665108
     }
   },
@@ -2506,7 +2573,8 @@
     ],
     "top_scores": {
       "bm25_score": 6.403991222381592,
-      "dense_score": 0.571600619073524,
+      "dense_score": 0.5716006869627452,
+      "rerank_score": null,
       "rrf_score": 0.03128054740957967
     }
   },
@@ -2544,7 +2612,8 @@
     ],
     "top_scores": {
       "bm25_score": 3.808401584625244,
-      "dense_score": 0.5440579682926519,
+      "dense_score": 0.5440577415006433,
+      "rerank_score": null,
       "rrf_score": 0.03125763125763126
     }
   },
@@ -2580,7 +2649,8 @@
     ],
     "top_scores": {
       "bm25_score": 7.740251541137695,
-      "dense_score": 0.5651743248513964,
+      "dense_score": 0.5651744234984172,
+      "rerank_score": null,
       "rrf_score": 0.031544957774465976
     }
   }

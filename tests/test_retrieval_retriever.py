@@ -242,3 +242,132 @@ def test_lookup_of_an_article_inside_a_range_finds_the_range_chunk(
 
     assert first.metadata["chunk_id"] == "art-54-56"
     assert first.metadata["retrieval"]["lookup"] is True
+
+
+# --- Reranking (search.rerank) -----------------------------------------------------
+
+
+def open_with(index, embedding, reranker=None, **overrides):
+    return HybridRetriever.from_index(
+        index.dense_dir,
+        index.bm25_dir,
+        embedding=embedding,
+        retrieval=index.retrieval,
+        search=search(**overrides),
+        embeddings=index.embeddings,
+        reranker=reranker,
+    )
+
+
+def test_the_reranker_reorders_the_fused_head(
+    search_index, embedding_config, stub_reranker
+):
+    """Article 4's first part is last but one when fused; the reranker puts it first."""
+    reranker = stub_reranker({search_index.texts["art-4-p1"]: 0.9}, default=0.1)
+
+    with open_with(search_index, embedding_config, reranker, rerank=True) as r:
+        documents = r.invoke("majority")
+
+    # Ties keep their fused order: 2, 3, 1, 4-p2
+    assert ids(documents) == [
+        "art-4-p1",
+        "art-2-p1",
+        "art-3-p1",
+        "art-1-p1",
+        "art-4-p2",
+    ]
+    assert documents[0].metadata["retrieval"]["rerank_score"] == 0.9
+    assert reranker.calls == 1
+
+
+def test_only_the_top_rerank_depth_chunks_are_rescored(
+    search_index, embedding_config, stub_reranker
+):
+    reranker = stub_reranker({search_index.texts["art-4-p1"]: 0.9}, default=0.1)
+
+    with open_with(
+        search_index, embedding_config, reranker, rerank=True, rerank_depth=2, top_k=2
+    ) as r:
+        documents = r.invoke("majority")
+
+    assert ids(documents) == ["art-2-p1", "art-3-p1"]  # 4-p1 is beyond the depth
+    assert documents[0].metadata["retrieval"]["rerank_score"] == 0.1
+
+
+def test_a_looked_up_article_stays_first_whatever_the_reranker_says(
+    search_index, embedding_config, stub_reranker
+):
+    reranker = stub_reranker({search_index.texts["art-3-p1"]: 0.99}, default=0.1)
+
+    with open_with(search_index, embedding_config, reranker, rerank=True) as r:
+        found = ids(r.invoke("Article 4 majority"))
+
+    assert found[:3] == ["art-4-p1", "art-4-p2", "art-3-p1"]
+
+
+def test_reranking_needs_a_reranker(search_index, embedding_config):
+    with pytest.raises(ValueError, match="reranker"):
+        open_with(search_index, embedding_config, rerank=True)
+
+
+def test_without_reranking_no_rerank_score_is_recorded(search_index, embedding_config):
+    with open_with(search_index, embedding_config) as r:
+        assert r.invoke("majority")[0].metadata["retrieval"]["rerank_score"] is None
+
+
+# --- Citation expansion (search.cite_expansion) -----------------------------------
+
+
+def test_a_cited_article_comes_right_after_the_chunk_citing_it(
+    citing_index, embedding_config
+):
+    """Article 1's Arabic cites 3 and 2; its English (4 and 2) is not used."""
+    with open_with(
+        citing_index, embedding_config, mode="dense", cite_expansion=True
+    ) as r:
+        documents = r.invoke("question")
+
+    assert ids(documents) == [
+        "art-1-p1",
+        "art-3-p1",
+        "art-2-p1",
+        "art-4-p1",
+        "art-5-p1",
+    ]
+    assert documents[1].metadata["retrieval"]["cited_by"] == "art-1-p1"
+    assert documents[3].metadata["retrieval"]["cited_by"] is None
+
+
+def test_without_expansion_the_ranking_is_untouched(citing_index, embedding_config):
+    with open_with(citing_index, embedding_config, mode="dense") as r:
+        assert ids(r.invoke("question")) == [
+            "art-1-p1",
+            "art-2-p1",
+            "art-3-p1",
+            "art-4-p1",
+            "art-5-p1",
+        ]
+
+
+def test_a_repealed_note_never_expands(citing_index, embedding_config):
+    """Article 5's note cites its own range and article 2; neither is inserted."""
+    with open_with(
+        citing_index, embedding_config, mode="bm25", cite_expansion=True
+    ) as r:
+        found = r.invoke("ملغاة")
+
+    assert ids(found) == ["art-5-p1"]
+
+
+# --- The repealed search text (retrieval.repealed_text) -----------------------------
+
+
+def test_a_different_repealed_text_is_refused(search_index, embedding_config):
+    configured = Retrieval(
+        document_text=search_index.retrieval.document_text,
+        bm25_tokenizer="words",
+        repealed_text="heading",
+    )
+
+    with pytest.raises(IndexMismatchError, match="repealed_text"):
+        open_retriever(search_index, embedding_config, configured)

@@ -6,6 +6,12 @@ either language, or one that names a topic only its heading states (e.g.,
 
 An empty heading label (a heading printed in one language only, R28) is left
 out: the placeholder the answer prompt uses would only add noise to a search.
+
+A repealed article's text is its repeal note (R19). With
+``retrieval.repealed_text: heading`` its search text keeps only the heading
+paths and ``Article N repealed``, since the decree's wording would otherwise
+outweigh the headings, the only text naming the subject. The stored record is
+never changed (R10); this is a search key.
 """
 
 from raglaw.schema import Chunk
@@ -17,7 +23,13 @@ def _headings(path: list[str]) -> str:
     return HEADING_SEPARATOR.join(label for label in path if label)
 
 
-def document_text(chunk: Chunk, variant: str) -> str:
+def _repealed_marker(chunk: Chunk) -> tuple[str, str]:
+    """``المادة ٥٤ ملغاة`` and ``Article 54 repealed``, from the chunk's citation."""
+    en, ar = chunk.citation.split(" | ")
+    return f"{ar} ملغاة", f"{en} repealed"
+
+
+def document_text(chunk: Chunk, variant: str, repealed_text: str = "note") -> str:
     """
     Build the searchable text of one chunk.
 
@@ -30,15 +42,18 @@ def document_text(chunk: Chunk, variant: str) -> str:
     exceptions:
     - ValueError: ``variant`` is not one of the three
     """
-    ar = [_headings(chunk.heading_path_ar), chunk.text_ar]
-    en = [_headings(chunk.heading_path), chunk.text_en]
+    text_ar, text_en = chunk.text_ar, chunk.text_en
+    if chunk.is_repealed and repealed_text == "heading":
+        text_ar, text_en = _repealed_marker(chunk)
+    ar = [_headings(chunk.heading_path_ar), text_ar]
+    en = [_headings(chunk.heading_path), text_en]
     match variant:
         case "both_with_headings":
             parts = ar + en
         case "ar_only":
             parts = ar
         case "both_without_headings":
-            parts = [chunk.text_ar, chunk.text_en]
+            parts = [text_ar, text_en]
         case _:
             raise ValueError(f"Unknown document text variant {variant!r}")
     return "\n".join(part for part in parts if part)

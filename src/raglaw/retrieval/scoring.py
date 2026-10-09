@@ -32,7 +32,7 @@ from langchain_core.documents import Document
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 KS = (1, 3, 5, 10)
-SCORE_NAMES = ("dense_score", "bm25_score", "rrf_score")
+SCORE_NAMES = ("dense_score", "bm25_score", "rrf_score", "rerank_score")
 SPLITS = ("tuning", "heldout")
 
 Kind = Literal[

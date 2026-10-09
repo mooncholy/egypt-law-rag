@@ -168,9 +168,10 @@
       },
       "dense_score": {
         "max": 0.758017,
-        "median": 0.594607,
+        "median": 0.594606,
         "min": 0.416595
       },
+      "rerank_score": null,
       "rrf_score": {
         "max": 0.032787,
         "median": 0.031754,
@@ -188,6 +189,7 @@
         "median": 0.500619,
         "min": 0.453173
       },
+      "rerank_score": null,
       "rrf_score": {
         "max": 0.032522,
         "median": 0.031778,

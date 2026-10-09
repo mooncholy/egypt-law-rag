@@ -63,6 +63,7 @@ def build_dense(
     embedding: Embedding,
     document_text: str,
     chunks_sha256: str,
+    repealed_text: str = "note",
 ) -> DenseManifest:
     """
     Embed every chunk's document text into a new collection in ``dense_dir``.
@@ -72,7 +73,7 @@ def build_dense(
       ``dense_dir/manifest.json``
     """
     fresh_dir(dense_dir)
-    texts = [build_text(c, document_text) for c in chunks]
+    texts = [build_text(c, document_text, repealed_text) for c in chunks]
     dim = len(embeddings.embed_documents(texts[:1])[0])
     client = qdrant_client(dense_dir)
     try:
@@ -91,6 +92,7 @@ def build_dense(
         chunks_sha256=chunks_sha256,
         chunk_ids=[c.chunk_id for c in chunks],
         document_text=document_text,
+        repealed_text=repealed_text,
         collection=COLLECTION,
         embedding_model=embedding.model,
         embedding_revision=embedding.revision,

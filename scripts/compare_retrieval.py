@@ -1,8 +1,10 @@
 """Compare retrieval runs in MLflow against a baseline, question by question.
 
 Reads the newest finished run of each name in the ``retrieval`` experiment that
-logged a per-question file, keeps the runs scored on the baseline's half, and
-writes ``docs/reports/retrieval_comparison.md`` (``raglaw.retrieval.compare``).
+logged a per-question file, keeps the runs scored on the baseline's half and on
+its device (GPU arithmetic differs from CPU in the last digits, so a cross-device
+difference isn't the variant's), and writes
+``docs/reports/retrieval_comparison.md`` (``raglaw.retrieval.compare``).
 It sits outside ``dvc repro``: its input is MLflow's run history, not a
 tracked file.
 
@@ -31,6 +33,12 @@ logger = logging.getLogger("compare_retrieval")
 QUESTIONS = "questions/retrieval_questions.json"
 # Runs from before per-question files were logged carry no `changed` tag.
 MARKER_TAG = "changed"
+# Runs from before the device was logged all ran on CPU.
+DEFAULT_DEVICE = "cpu"
+
+
+def device_of(run: Run) -> str:
+    return run.data.params.get("device", DEFAULT_DEVICE)
 
 
 def latest_by_name(client: MlflowClient, experiment_id: str) -> dict[str, Run]:
@@ -81,14 +89,18 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(
             f"No finished run named {args.baseline!r}; found {sorted(latest)}"
         )
-    split = latest[args.baseline].data.params["split"]
+    base_run = latest.pop(args.baseline)
+    split, device = base_run.data.params["split"], device_of(base_run)
+    kept = [
+        run
+        for run in latest.values()
+        if run.data.params.get("split") == split and device_of(run) == device
+    ]
+    if left_out := sorted(set(latest) - {r.info.run_name for r in kept}):
+        logger.info("Left out (another half or device): %s", ", ".join(left_out))
     with tempfile.TemporaryDirectory() as tmp:
-        baseline = summarize(client, latest.pop(args.baseline), Path(tmp))
-        runs = [
-            summarize(client, run, Path(tmp))
-            for run in latest.values()
-            if run.data.params.get("split") == split
-        ]
+        baseline = summarize(client, base_run, Path(tmp))
+        runs = [summarize(client, run, Path(tmp)) for run in kept]
     runs.sort(key=lambda r: (-r.metrics["overall.recall_at_5"], r.name))
     args.out.write_text(comparison_report(baseline, runs), encoding="utf-8")
     logger.info("Compared %d runs against %s: %s", len(runs), baseline.name, args.out)

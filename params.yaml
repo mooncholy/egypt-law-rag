@@ -43,12 +43,21 @@ embedding:
   revision: 5617a9f61b028005a4858fdac845db406aefb181
   batch_size: 32
 
+# The cross-encoder for `search.rerank`: multilingual (Arabic included), from
+# the same family as the embedder, revision pinned like D12's.
+reranker:
+  model: BAAI/bge-reranker-v2-m3
+  revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+  max_length: 1024
+  batch_size: 8
+
 # What `embed` and `bm25` index per chunk, and how `bm25` splits it into terms.
 # Each alternative is a measured variant (`dvc exp run -S retrieval.<key>=...`).
 retrieval:
   document_text: both_with_headings   # D14, the owner's default
   bm25_tokenizer: words               # | words_light_stem | model_subwords
   bm25_stopwords: none                # | lucene (33 words) | nltk (179, incl. question words)
+  repealed_text: note                 # | heading: a repealed article searched by its headings only
 
 # How a question searches the index, at query time: changing these never
 # rebuilds the index. Each is a measured choice (D17 after the baseline).
@@ -58,6 +67,9 @@ search:
   candidates: 50        # hits each retriever returns before fusion
   rrf_k: 60             # Cormack et al. (2009)
   top_k: 10             # chunks returned per question
+  rerank: false         # re-score the top rerank_depth fused chunks with `reranker`
+  rerank_depth: 30
+  cite_expansion: false # insert the articles a returned chunk cites, right after it
 
 # How retrieval is scored (D15): configs are chosen on the tuning half; the
 # chosen one is reported once on the held-out half.

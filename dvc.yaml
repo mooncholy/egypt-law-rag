@@ -105,6 +105,7 @@ stages:
     params:
       - embedding
       - retrieval.document_text
+      - retrieval.repealed_text
     outs:
       - ${paths.index_dir}/dense
     metrics:
@@ -129,6 +130,7 @@ stages:
       - retrieval.document_text
       - retrieval.bm25_tokenizer
       - retrieval.bm25_stopwords
+      - retrieval.repealed_text
     outs:
       - ${paths.index_dir}/bm25
     metrics:
@@ -150,6 +152,7 @@ stages:
       - src/raglaw/retrieval/lexical.py
       - src/raglaw/retrieval/lookup.py
       - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/rerank.py
       - src/raglaw/retrieval/retriever.py
       - src/raglaw/retrieval/scoring.py
       - src/raglaw/retrieval/tokenize.py
@@ -157,6 +160,7 @@ stages:
     params:
       - chunking   # logged with each run, so runs compare by it
       - embedding
+      - reranker
       - retrieval
       - search
       - evaluation

@@ -32,6 +32,11 @@ class IndexManifest(BaseModel):
     document_text: str = Field(
         description="The `retrieval.document_text` variant indexed per chunk (D14)."
     )
+    repealed_text: str = Field(
+        default="note",
+        description="The `retrieval.repealed_text` choice for repealed chunks. "
+        "Defaults to `note`, which every index built before the choice existed holds.",
+    )
 
 
 def write_manifest(directory: Path, manifest: IndexManifest) -> None:

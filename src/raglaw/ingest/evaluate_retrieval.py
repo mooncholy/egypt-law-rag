@@ -36,6 +36,7 @@ from raglaw.retrieval.embeddings import (
     model_tokenizer,
 )
 from raglaw.retrieval.manifest import read_manifest
+from raglaw.retrieval.rerank import CrossEncoderReranker, RerankScorer
 from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import (
     KS,
@@ -218,6 +219,7 @@ def run_evaluate_retrieval(
     evaluation: Evaluation,
     embeddings: Embeddings,
     tokenizer: ModelTokenizer | None = None,
+    reranker: RerankScorer | None = None,
 ) -> dict[str, Any]:
     """
     Score one half of the eval set against the index, writing metrics and a report.
@@ -237,6 +239,7 @@ def run_evaluate_retrieval(
         search=search,
         embeddings=embeddings,
         tokenizer=tokenizer,
+        reranker=reranker,
     ) as retriever:
         scores = evaluate(questions, retriever)
     metrics: dict[str, Any] = {
@@ -293,12 +296,19 @@ def run_params(settings: Settings, *, chunks_sha256: str) -> dict[str, object]:
         "document_text": settings.retrieval.document_text,
         "bm25_tokenizer": settings.retrieval.bm25_tokenizer,
         "bm25_stopwords": settings.retrieval.bm25_stopwords,
+        "repealed_text": settings.retrieval.repealed_text,
         "retrieval_mode": search.mode,
         "article_lookup": search.article_lookup,
         "candidates": search.candidates,
         "rrf_k": search.rrf_k,
         "top_k": search.top_k,
+        "rerank": search.rerank,
+        "rerank_depth": search.rerank_depth,
+        "reranker_model": settings.reranker.model,
+        "reranker_revision": settings.reranker.revision,
+        "cite_expansion": search.cite_expansion,
         "split": settings.evaluation.split,
+        "device": settings.device,
         "chunks_sha256": chunks_sha256,
     }
 
@@ -407,8 +417,13 @@ def main(argv: list[str] | None = None) -> None:
             retrieval=settings.retrieval,
             search=settings.search,
             evaluation=settings.evaluation,
-            embeddings=huggingface_embeddings(settings.embedding),
+            embeddings=huggingface_embeddings(settings.embedding, settings.device),
             tokenizer=tokenizer,
+            reranker=(
+                CrossEncoderReranker(settings.reranker, settings.device)
+                if settings.search.rerank
+                else None
+            ),
         )
         run.log_metrics(flatten_metrics(metrics))
         run.log_artifact(args.report, artifact_path="reports")

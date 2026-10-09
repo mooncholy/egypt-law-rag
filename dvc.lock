@@ -175,8 +175,8 @@ stages:
       size: 1918524
     - path: src/raglaw/ingest/chunk.py
       hash: md5
-      md5: b465efa2aa29c471abaa6c66b6e87a7a
-      size: 22896
+      md5: 4023c155826007d45b56cdc7f3e65127
+      size: 22913
     - path: src/raglaw/ingest/loader.py
       hash: md5
       md5: 2d0f1c38040bd995b3ac2e5f91fc0302
@@ -187,8 +187,8 @@ stages:
       size: 2991
     - path: src/raglaw/retrieval/embeddings.py
       hash: md5
-      md5: 298b0153f49a4f8b3b5293850b97a66d
-      size: 2806
+      md5: a7e0368a51253607fbba36288a973843
+      size: 3516
     - path: src/raglaw/schema.py
       hash: md5
       md5: d036eb970651268b997b486cff28b13f
@@ -223,28 +223,28 @@ stages:
       size: 2086210
     - path: src/raglaw/ingest/bm25.py
       hash: md5
-      md5: 4edeb28c50828ea6cbd3c608eafe9e47
-      size: 5302
+      md5: 9b2a92489e630782f6273841fd84991e
+      size: 5371
     - path: src/raglaw/records.py
       hash: md5
       md5: b470051d287b2c26fc47e23ff0baf566
       size: 2991
     - path: src/raglaw/retrieval/document_text.py
       hash: md5
-      md5: c61ee2b7ff922badeb29a5525718c93e
-      size: 1562
+      md5: 72a918f964ad2ea1b5b7ab7f4e08dcda
+      size: 2304
     - path: src/raglaw/retrieval/embeddings.py
       hash: md5
-      md5: 298b0153f49a4f8b3b5293850b97a66d
-      size: 2806
+      md5: a7e0368a51253607fbba36288a973843
+      size: 3516
     - path: src/raglaw/retrieval/lexical.py
       hash: md5
-      md5: 89347f3771aff908b943cd2d6e072dc7
-      size: 3690
+      md5: d2f384bbf549a82eac195453d6d54f7f
+      size: 3784
     - path: src/raglaw/retrieval/manifest.py
       hash: md5
-      md5: 070370706b2d9b6aa72f1cd78cfb4127
-      size: 2032
+      md5: 4a09952026421d73f918cb65aecacf06
+      size: 2263
     - path: src/raglaw/retrieval/tokenize.py
       hash: md5
       md5: f8b0a5f00d1afce2a4b45dd4f7a46d4b
@@ -266,11 +266,12 @@ stages:
         retrieval.bm25_stopwords: none
         retrieval.bm25_tokenizer: words
         retrieval.document_text: both_with_headings
+        retrieval.repealed_text: note
     outs:
     - path: data/index/bm25
       hash: md5
-      md5: 50449b8562d2c5e6514c9755732e047b.dir
-      size: 1263355
+      md5: c9e550c8210a6ae2a5dceaa959c46c5b.dir
+      size: 1263382
       nfiles: 6
     - path: docs/metrics/bm25.json
       hash: md5
@@ -285,28 +286,28 @@ stages:
       size: 2086210
     - path: src/raglaw/ingest/embed.py
       hash: md5
-      md5: dca3abfc7290576255a0fff8330f656e
-      size: 5755
+      md5: a401fe1b4b4908d8d23551cb01bc4a43
+      size: 6184
     - path: src/raglaw/records.py
       hash: md5
       md5: b470051d287b2c26fc47e23ff0baf566
       size: 2991
     - path: src/raglaw/retrieval/dense.py
       hash: md5
-      md5: b28981d6899a9ff2d9c333cec3262539
-      size: 3693
+      md5: 559c9b542127d382119ab417767c942a
+      size: 3778
     - path: src/raglaw/retrieval/document_text.py
       hash: md5
-      md5: c61ee2b7ff922badeb29a5525718c93e
-      size: 1562
+      md5: 72a918f964ad2ea1b5b7ab7f4e08dcda
+      size: 2304
     - path: src/raglaw/retrieval/embeddings.py
       hash: md5
-      md5: 298b0153f49a4f8b3b5293850b97a66d
-      size: 2806
+      md5: a7e0368a51253607fbba36288a973843
+      size: 3516
     - path: src/raglaw/retrieval/manifest.py
       hash: md5
-      md5: 070370706b2d9b6aa72f1cd78cfb4127
-      size: 2032
+      md5: 4a09952026421d73f918cb65aecacf06
+      size: 2263
     - path: src/raglaw/schema.py
       hash: md5
       md5: d036eb970651268b997b486cff28b13f
@@ -318,16 +319,17 @@ stages:
           revision: 5617a9f61b028005a4858fdac845db406aefb181
           batch_size: 32
         retrieval.document_text: both_with_headings
+        retrieval.repealed_text: note
     outs:
     - path: data/index/dense
       hash: md5
-      md5: 3c47c179f2798027a00ed3915c73ca5f.dir
-      size: 15176811
+      md5: 9dd195e3780da424289c84380466bdf9.dir
+      size: 15176838
       nfiles: 4
     - path: docs/metrics/embed.json
       hash: md5
-      md5: 8ae0a54154c8641c23b41acff37ce0c2
-      size: 208
+      md5: 649ccd5e26b235cb1c8f2be8a56f7cc5
+      size: 235
   evaluate_retrieval:
     cmd: python -m raglaw.ingest.evaluate_retrieval
     deps:
@@ -337,50 +339,54 @@ stages:
       size: 58262
     - path: data/index/bm25
       hash: md5
-      md5: 50449b8562d2c5e6514c9755732e047b.dir
-      size: 1263355
+      md5: c9e550c8210a6ae2a5dceaa959c46c5b.dir
+      size: 1263382
       nfiles: 6
     - path: data/index/dense
       hash: md5
-      md5: 3c47c179f2798027a00ed3915c73ca5f.dir
-      size: 15176811
+      md5: 9dd195e3780da424289c84380466bdf9.dir
+      size: 15176838
       nfiles: 4
     - path: src/raglaw/ingest/evaluate_retrieval.py
       hash: md5
-      md5: aa63e3546d56f33b06ef8a06fc01f859
-      size: 14491
+      md5: 131cefa6ccf8e286c88c58feca27ba55
+      size: 15156
     - path: src/raglaw/retrieval/dense.py
       hash: md5
-      md5: b28981d6899a9ff2d9c333cec3262539
-      size: 3693
+      md5: 559c9b542127d382119ab417767c942a
+      size: 3778
     - path: src/raglaw/retrieval/embeddings.py
       hash: md5
-      md5: 298b0153f49a4f8b3b5293850b97a66d
-      size: 2806
+      md5: a7e0368a51253607fbba36288a973843
+      size: 3516
     - path: src/raglaw/retrieval/fusion.py
       hash: md5
       md5: 5e91f15a95a0c53f4de5d687452e9fbd
       size: 1344
     - path: src/raglaw/retrieval/lexical.py
       hash: md5
-      md5: 89347f3771aff908b943cd2d6e072dc7
-      size: 3690
+      md5: d2f384bbf549a82eac195453d6d54f7f
+      size: 3784
     - path: src/raglaw/retrieval/lookup.py
       hash: md5
-      md5: 8014f69bed9183f115566277fd9f14bb
-      size: 1339
+      md5: 03d84fb13db06433db3fa8482069e1c4
+      size: 3253
     - path: src/raglaw/retrieval/manifest.py
       hash: md5
-      md5: 070370706b2d9b6aa72f1cd78cfb4127
-      size: 2032
+      md5: 4a09952026421d73f918cb65aecacf06
+      size: 2263
+    - path: src/raglaw/retrieval/rerank.py
+      hash: md5
+      md5: a8299dca5f22da75986718022311c453
+      size: 1629
     - path: src/raglaw/retrieval/retriever.py
       hash: md5
-      md5: 328a7da150587529145c4d469fa5b30e
-      size: 10534
+      md5: 1aba2f17b8ac28b0e66450cc340f4449
+      size: 13593
     - path: src/raglaw/retrieval/scoring.py
       hash: md5
-      md5: 2d2b97e5facebf5b00d6d4815cc3548d
-      size: 15740
+      md5: 01db56ffbf6ae4fed52f0d5d8fe442be
+      size: 15756
     - path: src/raglaw/retrieval/tokenize.py
       hash: md5
       md5: f8b0a5f00d1afce2a4b45dd4f7a46d4b
@@ -404,26 +410,35 @@ stages:
         evaluation:
           split: tuning
           target_recall_at_5: 0.9
+        reranker:
+          model: BAAI/bge-reranker-v2-m3
+          revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+          max_length: 1024
+          batch_size: 8
         retrieval:
           document_text: both_with_headings
           bm25_tokenizer: words
           bm25_stopwords: none
+          repealed_text: note
         search:
           mode: hybrid
           article_lookup: true
           candidates: 50
           rrf_k: 60
           top_k: 10
+          rerank: false
+          rerank_depth: 30
+          cite_expansion: false
     outs:
     - path: docs/metrics/retrieval.json
       hash: md5
-      md5: 09596d8bf15fd4368f9f1c7c028b7d4c
-      size: 4225
+      md5: 8605ef9b7f3505440169d75fded37999
+      size: 4281
     - path: docs/reports/retrieval_misses.md
       hash: md5
       md5: 7d8f4a43742b28214729b6fbcc6a427e
       size: 14341
     - path: docs/reports/retrieval_questions.json
       hash: md5
-      md5: e57c329cfb21bc5b2699a11186636aac
-      size: 43410
+      md5: fcd9c56ce0e2435a2271cff72e1034b2
+      size: 45372

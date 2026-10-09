@@ -17,12 +17,13 @@ A DVC pipeline turns it into a validated corpus of articles and chunks, and a Fa
 - [uv](https://docs.astral.sh/uv/) **0.12.20**, which is pinned in `pyproject.toml`. uv installs Python 3.14 itself.
 - For the data and the tracking store only: an AWS profile with access to the project bucket.
   - Unit tests don't need it. They run on synthetic inputs, including a small PDF generated at test time.
+- Optional: an NVIDIA GPU (driver with CUDA 13 support) to embed and rerank faster. See [GPU (optional)](#gpu-optional).
 
 ### Setup
 
 ```bash
 git clone <repo-url> && cd egypt-law-rag
-uv sync                      # dev + ingest groups, from uv.lock
+uv sync                      # dev, ingest, embed and CPU-only torch, from uv.lock
 cp .env.example .env         # then set RAGLAW_AWS_PROFILE (and RAGLAW_LLM_API_KEY if you have one)
 uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type post-checkout
 uv run dvc pull              # fetches data/raw/civil_code.pdf from S3
@@ -42,6 +43,19 @@ uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0
 ```
 
 `GET /health` reports `degraded` until an LLM key and the retrieval index are present. It still answers 200, so a container healthcheck stays green.
+
+### GPU (optional)
+
+The embedding and reranking models run on CPU by default, which CI and the Docker image rely on. On CPU, embedding the corpus takes about 15 minutes and reranking about 15 s per question. On a machine with an NVIDIA GPU:
+
+```bash
+uv sync --no-group torch-cpu --group torch-gpu   # swaps in torch built for CUDA 13
+echo "RAGLAW_DEVICE=cuda" >> .env                # the device is per machine
+alias uvg='uv run --no-group torch-cpu --group torch-gpu'
+uvg dvc repro                                    # every command goes through uvg
+```
+
+A plain `uv run` resyncs the default groups and puts the CPU build back, so on that machine every command goes through `uvg`. A stage set to `cuda` without a GPU fails at startup instead of falling back to CPU. GPU arithmetic differs from CPU in the last digits, so retrieval runs are only compared on one device: `scripts/compare_retrieval.py` leaves out runs on another device than the baseline's.
 
 ### Where things live
 

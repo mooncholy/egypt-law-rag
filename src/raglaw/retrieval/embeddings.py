@@ -18,8 +18,29 @@ from langchain_core.embeddings import Embeddings
 
 from raglaw.config import Embedding
 
-# Every embedding runs on CPU: the project installs CPU-only torch.
-DEVICE = "cpu"
+
+class DeviceError(RuntimeError):
+    """The configured device isn't available in this environment."""
+
+
+def check_device(device: str) -> None:
+    """
+    Fail before loading a model if ``device`` can't be used.
+
+    exceptions:
+    - DeviceError: ``cuda`` without a usable GPU, e.g. with the default
+      CPU-only torch installed
+    """
+    if device != "cuda":
+        return
+    import torch  # embed group only
+
+    if not torch.cuda.is_available():
+        raise DeviceError(
+            "RAGLAW_DEVICE=cuda, but torch sees no GPU. Install the CUDA build "
+            "with `uv sync --no-group torch-cpu --group torch-gpu` (README), "
+            "or set RAGLAW_DEVICE=cpu."
+        )
 
 
 class ModelTokenizer(Protocol):
@@ -32,17 +53,19 @@ class ModelTokenizer(Protocol):
     def __call__(self, text: str) -> Any: ...
 
 
-def huggingface_embeddings(embedding: Embedding) -> Embeddings:
+def huggingface_embeddings(embedding: Embedding, device: str = "cpu") -> Embeddings:
     """
     Load the pinned local embedding model, importing it only when called.
 
     returns:
-    - embeddings (Embeddings): ``HuggingFaceEmbeddings`` on CPU, normalized,
-      encoding ``embedding.batch_size`` texts per batch
+    - embeddings (Embeddings): ``HuggingFaceEmbeddings`` on ``device``,
+      normalized, encoding ``embedding.batch_size`` texts per batch
 
     exceptions:
     - ImportError: the ``embed`` dependency group isn't installed
+    - DeviceError: ``device`` isn't available
     """
+    check_device(device)
     from langchain_huggingface import HuggingFaceEmbeddings  # embed group only
 
     # BAAI's revision ships only pytorch_model.bin. Without this flag,
@@ -52,7 +75,7 @@ def huggingface_embeddings(embedding: Embedding) -> Embeddings:
     return HuggingFaceEmbeddings(
         model_name=embedding.model,
         model_kwargs={
-            "device": DEVICE,
+            "device": device,
             "revision": embedding.revision,
             "model_kwargs": {"use_safetensors": False},
         },

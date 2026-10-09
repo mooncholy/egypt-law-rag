@@ -109,6 +109,21 @@ class Embedding(BaseModel):
     batch_size: int = Field(gt=0, description="Texts embedded per batch.")
 
 
+class Reranker(BaseModel):
+    """The cross-encoder that re-scores the top fused candidates (`search.rerank`)."""
+
+    model: NonEmptyStr = Field(description="Hugging Face model id.")
+    revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] = Field(
+        description="The model's pinned commit, so a rerun scores the same way."
+    )
+    max_length: int = Field(
+        gt=0,
+        description="Longest question-plus-chunk input, in tokens; the longest "
+        "document text is 905, so 1024 truncates nothing.",
+    )
+    batch_size: int = Field(gt=0, description="Question-chunk pairs scored per batch.")
+
+
 class Semantic(BaseModel):
     """The ``structural_semantic`` strategy's threshold; its model is ``embedding``."""
 
@@ -167,6 +182,15 @@ class Retrieval(BaseModel):
         "negations. Arabic terms are never dropped.",
     )
 
+    repealed_text: Literal["note", "heading"] = Field(
+        default="note",
+        description="What a repealed article's search text holds besides its "
+        "heading paths. `note` (default): the printed repeal note. `heading`: "
+        "only `Article N repealed`, so the decree's wording doesn't drown the "
+        "heading, which is the only text naming the subject. The stored text "
+        "is never changed.",
+    )
+
     @model_validator(mode="after")
     def _stopwords_need_words(self) -> Self:
         if self.bm25_tokenizer == "model_subwords" and self.bm25_stopwords != "none":
@@ -197,11 +221,26 @@ class Search(BaseModel):
         "list. Larger values flatten the weight of the top ranks.",
     )
     top_k: int = Field(gt=0, description="Chunks returned per question.")
+    rerank: bool = Field(
+        default=False,
+        description="Re-score the top `rerank_depth` fused chunks with the "
+        "`reranker` cross-encoder and reorder them by its score.",
+    )
+    rerank_depth: int = Field(
+        default=30, gt=0, description="How many fused chunks the reranker re-scores."
+    )
+    cite_expansion: bool = Field(
+        default=False,
+        description="After each returned chunk, insert the articles its text "
+        "cites by number (`المادتين ٢٢١ ، ٢٢٢`, `Articles 221 and 222`).",
+    )
 
     @model_validator(mode="after")
     def _enough_candidates(self) -> Self:
         if self.candidates < self.top_k:
             raise ValueError("candidates must be at least top_k")
+        if self.rerank_depth < self.top_k:
+            raise ValueError("rerank_depth must be at least top_k")
         return self
 
 
@@ -258,6 +297,7 @@ class Settings(BaseSettings):
     tracking: Tracking = Field(description="MLflow run grouping.")
     chunking: Chunking = Field(description="Chunking strategy and limits.")
     embedding: Embedding = Field(description="The pinned embedding model.")
+    reranker: Reranker = Field(description="The pinned reranking model.")
     retrieval: Retrieval = Field(description="What the index holds per chunk.")
     search: Search = Field(description="How a question searches the index.")
     evaluation: Evaluation = Field(description="How retrieval is scored.")
@@ -288,6 +328,13 @@ class Settings(BaseSettings):
         description="Root for run artifacts: `s3://<bucket>/mlflow`, or `file://` in "
         "tests. Each experiment writes under `<root>/<experiment>`. Unset, MLflow "
         "keeps artifacts beside its database.",
+    )
+    device: Literal["cpu", "cuda"] = Field(
+        default="cpu",
+        description="Where the embedding and reranking models run on this "
+        "machine. `cuda` needs the `torch-gpu` dependency group (README). Runs "
+        "being compared must share a device: GPU arithmetic differs from CPU in "
+        "the last digits.",
     )
     aws_profile: NonEmptyStr | None = Field(
         default=None,

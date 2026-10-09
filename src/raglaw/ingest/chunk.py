@@ -570,7 +570,7 @@ def main(argv: list[str] | None = None) -> None:
     ) as run:
         run.log_params(run_params(chunking, settings.embedding))
         embeddings = (
-            huggingface_embeddings(settings.embedding)
+            huggingface_embeddings(settings.embedding, settings.device)
             if chunking.strategy == "structural_semantic"
             else None
         )

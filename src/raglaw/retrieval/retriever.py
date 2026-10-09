@@ -7,8 +7,13 @@ For one question, ``HybridRetriever``:
 2. ranks chunks by the dense index (cosine to the query's embedding), by BM25
    (the query tokenized as the index was), or both fused by reciprocal rank
    fusion, as ``search.mode`` says;
-3. returns the looked-up parts, then the ranked chunks not already listed, cut
-   to ``search.top_k``.
+3. with ``search.rerank``, re-scores the top ``rerank_depth`` ranked chunks with
+   a cross-encoder and reorders them by its score;
+4. returns the looked-up parts, then the ranked chunks not already listed; with
+   ``search.cite_expansion``, each chunk is followed by the articles its text
+   cites (the Arabic text's citations; the English only when the Arabic cites
+   none, since the English carries print errors such as Article 170's "22");
+5. cuts the list to ``search.top_k``.
 
 Opening an index checks both manifests against each other and against the
 config, so a query is never embedded or tokenized differently from the
@@ -35,8 +40,9 @@ from raglaw.retrieval.dense import COLLECTION, DenseManifest, qdrant_client
 from raglaw.retrieval.embeddings import ModelTokenizer
 from raglaw.retrieval.fusion import reciprocal_rank_fusion
 from raglaw.retrieval.lexical import Bm25Manifest, load_bm25
-from raglaw.retrieval.lookup import article_references
+from raglaw.retrieval.lookup import article_references, cited_articles
 from raglaw.retrieval.manifest import read_manifest
+from raglaw.retrieval.rerank import RerankScorer
 from raglaw.retrieval.tokenize import bm25_tokenizer
 
 logger = logging.getLogger(__name__)
@@ -73,11 +79,12 @@ def check_manifests(
             f"config names {embedding.model} at {embedding.revision}"
         )
     for name, built in (("dense", dense), ("BM25", lexical)):
-        if built.document_text != retrieval.document_text:
-            problems.append(
-                f"the {name} index holds document_text={built.document_text!r}, "
-                f"the config {retrieval.document_text!r}"
-            )
+        for key in ("document_text", "repealed_text"):
+            if getattr(built, key) != getattr(retrieval, key):
+                problems.append(
+                    f"the {name} index holds {key}={getattr(built, key)!r}, the "
+                    f"config {getattr(retrieval, key)!r}"
+                )
     if lexical.bm25_tokenizer != retrieval.bm25_tokenizer:
         problems.append(
             f"BM25 was built with bm25_tokenizer={lexical.bm25_tokenizer!r}, the "
@@ -97,6 +104,17 @@ def check_manifests(
         raise IndexMismatchError(f"{'; '.join(problems)}; {REBUILD}")
 
 
+def _citations(meta: dict[str, Any]) -> list[int]:
+    """The articles a chunk cites, outside its own; none for a repealed note."""
+    if meta["is_repealed"]:
+        return []
+    own = range(
+        meta["article_number"], (meta.get("range_end") or meta["article_number"]) + 1
+    )
+    cited = cited_articles(meta["text_ar"]) or cited_articles(meta["text_en"])
+    return [n for n in cited if n not in own]
+
+
 class HybridRetriever(BaseRetriever):
     """Search both index halves for a question; a LangChain retriever.
 
@@ -106,8 +124,9 @@ class HybridRetriever(BaseRetriever):
     Each returned ``Document`` is a chunk: its document text as
     ``page_content``, its ``Chunk`` record as metadata, plus
     ``metadata["retrieval"]``: ``rank`` (1-based), ``dense_score`` (cosine),
-    ``bm25_score`` and ``rrf_score`` (None where that list didn't hold it, or
-    the mode doesn't use it), and ``lookup`` (fetched by article number).
+    ``bm25_score``, ``rrf_score`` and ``rerank_score`` (None where that list
+    didn't hold it, or the config doesn't use it), ``lookup`` (fetched by
+    article number) and ``cited_by`` (the chunk whose citation inserted it).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -121,6 +140,8 @@ class HybridRetriever(BaseRetriever):
     _chunk_ids: list[str] = PrivateAttr()
     _payloads: dict[str, tuple[str, dict[str, Any]]] = PrivateAttr()
     _parts: dict[int, list[str]] = PrivateAttr()
+    _cites: dict[str, list[int]] = PrivateAttr()
+    _reranker: RerankScorer | None = PrivateAttr(default=None)
 
     @classmethod
     def from_index(
@@ -133,12 +154,14 @@ class HybridRetriever(BaseRetriever):
         search: Search,
         embeddings: Embeddings,
         tokenizer: ModelTokenizer | None = None,
+        reranker: RerankScorer | None = None,
     ) -> Self:
         """
         Open both index halves after checking them against the config.
 
         ``embeddings`` must be the model the index was built with;
-        ``tokenizer`` (the model's own) is needed only for ``model_subwords``.
+        ``tokenizer`` (the model's own) is needed only for ``model_subwords``,
+        and ``reranker`` only for ``search.rerank``.
 
         returns:
         - retriever (HybridRetriever): holding the Qdrant lock until ``close``
@@ -146,7 +169,10 @@ class HybridRetriever(BaseRetriever):
         exceptions:
         - IndexMismatchError: see ``check_manifests``; also when the
           collection's points differ from the manifest's chunks
+        - ValueError: ``search.rerank`` without a reranker
         """
+        if search.rerank and reranker is None:
+            raise ValueError("search.rerank needs a reranker")
         dense = read_manifest(dense_dir, DenseManifest)
         lexical = read_manifest(bm25_dir, Bm25Manifest)
         check_manifests(dense, lexical, embedding, retrieval)
@@ -164,6 +190,7 @@ class HybridRetriever(BaseRetriever):
             raise
         retriever._client = client
         retriever._store = QdrantVectorStore(client, COLLECTION, embedding=embeddings)
+        retriever._reranker = reranker
         return retriever
 
     def _load_payloads(self, client: QdrantClient, chunk_ids: list[str]) -> None:
@@ -189,6 +216,7 @@ class HybridRetriever(BaseRetriever):
                 parts.setdefault(number, []).append((meta["part_index"], chunk_id))
         self._payloads = payloads
         self._parts = {n: [c for _, c in sorted(ps)] for n, ps in parts.items()}
+        self._cites = {c: _citations(meta) for c, (_, meta) in payloads.items()}
 
     def close(self) -> None:
         """Release the Qdrant client and its directory lock."""
@@ -217,6 +245,36 @@ class HybridRetriever(BaseRetriever):
             if s > 0
         ]
 
+    def _reranked(self, query: str, ranked: list[str]) -> tuple[list[str], dict]:
+        """Reorder the top ``rerank_depth`` chunks by the reranker's score."""
+        if not self.search.rerank or self._reranker is None:
+            return ranked, {}
+        head = ranked[: self.search.rerank_depth]
+        scores = self._reranker.score(query, [self._payloads[c][0] for c in head])
+        order = sorted(range(len(head)), key=lambda i: (-scores[i], i))
+        return [head[i] for i in order] + ranked[len(head) :], dict(
+            zip(head, scores, strict=True)
+        )
+
+    def _expanded(self, order: list[str]) -> tuple[list[str], dict[str, str]]:
+        """Insert, after each chunk, the chunks of the articles it cites."""
+        if not self.search.cite_expansion:
+            return order, {}
+        out: list[str] = []
+        cited_by: dict[str, str] = {}
+        for chunk_id in order:
+            if chunk_id in out:
+                continue
+            out.append(chunk_id)
+            for number in self._cites[chunk_id]:
+                for cited in self._parts.get(number, []):
+                    if cited not in out:
+                        out.append(cited)
+                        cited_by[cited] = chunk_id
+            if len(out) >= self.search.top_k:
+                break
+        return out, cited_by
+
     def _looked_up(self, query: str) -> list[str]:
         if not self.search.article_lookup:
             return []
@@ -243,8 +301,10 @@ class HybridRetriever(BaseRetriever):
             ranked = [c for c, _ in fused]
         else:
             ranked = [c for c, _ in (dense if mode == "dense" else lexical)]
+        ranked, rerank_scores = self._reranked(query, ranked)
         looked_up = self._looked_up(query)
-        order = list(dict.fromkeys(looked_up + ranked))[: self.search.top_k]
+        order, cited_by = self._expanded(list(dict.fromkeys(looked_up + ranked)))
+        order = order[: self.search.top_k]
         dense_scores, bm25_scores = dict(dense), dict(lexical)
         documents = []
         for rank, chunk_id in enumerate(order, start=1):
@@ -254,7 +314,9 @@ class HybridRetriever(BaseRetriever):
                 "dense_score": dense_scores.get(chunk_id),
                 "bm25_score": bm25_scores.get(chunk_id),
                 "rrf_score": rrf.get(chunk_id),
+                "rerank_score": rerank_scores.get(chunk_id),
                 "lookup": chunk_id in looked_up,
+                "cited_by": cited_by.get(chunk_id),
             }
             documents.append(
                 Document(

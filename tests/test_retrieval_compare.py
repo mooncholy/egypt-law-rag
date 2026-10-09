@@ -5,6 +5,7 @@ from raglaw.retrieval.compare import (
     comparison_report,
     group_deltas,
     params_changed,
+    params_unlogged,
     question_changes,
 )
 
@@ -129,3 +130,24 @@ def test_a_run_identical_to_the_baseline_says_so():
 
     assert "- Fixed at 5 (0): none" in report
     assert "No group moved." in report
+
+
+def test_a_param_an_older_run_never_logged_is_not_a_change():
+    """Every switch added later defaults to the behaviour before it existed."""
+    base = {"retrieval_mode": "hybrid", "rerank": "False"}
+    older = {"retrieval_mode": "dense"}
+
+    assert params_changed(base, older) == ["retrieval_mode=dense"]
+    assert params_unlogged(base, older) == ["rerank"]
+
+
+def test_the_report_names_what_an_older_run_did_not_log():
+    baseline = summary(
+        "baseline", BASE, 0.5, {"retrieval_mode": "hybrid", "rerank": "False"}
+    )
+    older = summary("dense-only", RUN, 0.75, {"retrieval_mode": "dense"})
+
+    report = comparison_report(baseline, [older])
+
+    assert "| dense-only | retrieval_mode=dense |" in report
+    assert "- Not logged (the run predates them): rerank" in report

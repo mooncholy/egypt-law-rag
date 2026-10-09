@@ -1,10 +1,11 @@
 {
   "chunks_indexed": 1150,
-  "device": "cpu",
+  "device": "cuda",
   "document_text": "both_with_headings",
   "embedding_dim": 1024,
   "max_chunk_tokens": 905,
   "max_tokens": 8192,
-  "seconds": 896.8,
+  "repealed_text": "note",
+  "seconds": 42.9,
   "truncated_chunks": 0
 }

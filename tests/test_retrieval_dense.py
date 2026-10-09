@@ -97,6 +97,7 @@ def test_the_manifest_records_what_the_vectors_were_built_from(
         embedding_model=embedding_config.model,
         embedding_revision=embedding_config.revision,
         embedding_dim=3,
+        repealed_text="note",
     )
 
 

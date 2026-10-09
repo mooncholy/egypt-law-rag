@@ -197,12 +197,19 @@ def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
         "bm25_tokenizer": "words",
         "bm25_stopwords": "none",
         "repealed": "per_article",
+        "repealed_text": "note",
         "retrieval_mode": "hybrid",
         "article_lookup": True,
         "candidates": 50,
         "rrf_k": 60,
         "top_k": 10,
+        "rerank": False,
+        "rerank_depth": 30,
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "reranker_revision": tracking_settings.reranker.revision,
+        "cite_expansion": False,
         "split": "tuning",
+        "device": "cpu",
         "chunks_sha256": "0" * 64,
     }
 
@@ -256,7 +263,7 @@ def test_two_runs_on_the_real_index_give_identical_metrics(tmp_path, repo_root):
 
     settings = Settings(_env_file=None)
     index = repo_root / settings.paths.index_dir
-    embeddings = huggingface_embeddings(settings.embedding)
+    embeddings = huggingface_embeddings(settings.embedding, settings.device)
     outputs = []
     for run in ("a", "b"):
         run_evaluate_retrieval(

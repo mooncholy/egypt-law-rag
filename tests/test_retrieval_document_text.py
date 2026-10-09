@@ -59,3 +59,31 @@ def test_the_text_without_headings_holds_both_languages_only():
 def test_an_unknown_variant_is_rejected():
     with pytest.raises(ValueError, match="document text"):
         document_text(chunk(), "english_only")
+
+
+def test_a_repealed_article_can_be_searched_by_its_headings_alone():
+    """The decree's wording is dropped from the search text, never from the record."""
+    repealed = chunk(
+        article_number=54,
+        chunk_id="art-54-p1",
+        citation="Article 54 | المادة ٥٤",
+        heading_path=["SECTION II Persons", "Associations"],
+        heading_path_ar=["الفصل الثاني الأشخاص", "الجمعيات"],
+        is_repealed=True,
+        text_ar="ألغيت المواد من ٥٤ إلى ٨٠ بالقرار الجمهوري رقم ٣٨٤",
+        text_en="Articles 54-80 have been repealed by Presidential Decree.",
+    )
+
+    assert document_text(repealed, "both_with_headings", repealed_text="heading") == (
+        "الفصل الثاني الأشخاص > الجمعيات\n"
+        "المادة ٥٤ ملغاة\n"
+        "SECTION II Persons > Associations\n"
+        "Article 54 repealed"
+    )
+    assert "القرار" in document_text(repealed, "both_with_headings")  # note, by default
+
+
+def test_the_heading_variant_leaves_other_articles_alone():
+    assert document_text(chunk(), "both_with_headings", repealed_text="heading") == (
+        document_text(chunk(), "both_with_headings")
+    )
