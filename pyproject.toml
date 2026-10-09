@@ -21,20 +21,31 @@ build-backend = "uv_build"
 
 [tool.uv]
 # Plain `uv sync` / `uv run` keep the pipeline installed, including the
-# embedding model the `index` stage needs; the Docker image opts out with
-# `uv sync --no-default-groups`.
-default-groups = ["dev", "ingest", "embed"]
+# embedding model the `embed` stage needs, on CPU-only torch; the Docker image
+# opts out with `uv sync --no-default-groups`. A machine with an NVIDIA GPU
+# swaps torch builds with `--no-group torch-cpu --group torch-gpu` (README).
+default-groups = ["dev", "ingest", "embed", "torch-cpu"]
 required-version = "==0.12.20"
+# One torch build per environment: CPU-only by default, CUDA 13 on request.
+conflicts = [[{ group = "torch-cpu" }, { group = "torch-gpu" }]]
 
-# The embedding model's torch comes from the CPU-only index, so a sync never
-# pulls CUDA builds.
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+# CUDA 13.0 builds: the oldest torch line with Python 3.14 wheels for this
+# torch version, and it covers Blackwell GPUs (compute capability 12.0).
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
+torch = [
+    { index = "pytorch-cpu", group = "torch-cpu" },
+    { index = "pytorch-cu130", group = "torch-gpu" },
+]
 
 [tool.uv.build-backend]
 module-name = "raglaw"
@@ -58,13 +69,19 @@ ingest = [
     "pikepdf>=10.15.0",
     "pymupdf>=1.28.2",
 ]
-# The pinned embedding model (bge-m3): the semantic chunking variant now, the
-# `index` stage next. Kept out of `dev`, so the lint job stays light.
+# The pinned embedding model (bge-m3) and the search index (Qdrant, BM25): the
+# semantic chunking variant and the `embed` and `bm25` stages. Kept out of `dev`, so the
+# lint job stays light.
 embed = [
+    "bm25s>=0.3.13",
     "langchain-huggingface>=1.2.2",
+    "langchain-qdrant>=1.1.0",
+    "qdrant-client>=1.19.1",
     "sentence-transformers>=6.1.0",
-    "torch>=2.14.1",
 ]
+# The torch build the embed group runs on; exactly one of the two is installed.
+torch-cpu = ["torch>=2.14.1"]
+torch-gpu = ["torch>=2.14.1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

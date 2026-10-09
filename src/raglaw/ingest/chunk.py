@@ -44,10 +44,11 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
 
-from raglaw.config import Chunking, Settings
+from raglaw.config import Chunking, Embedding, Settings
 from raglaw.ingest.loader import CivilCodeArticleLoader
 from raglaw.logging_setup import log_anomaly
 from raglaw.records import write_records
+from raglaw.retrieval.embeddings import huggingface_embeddings
 from raglaw.schema import Chunk, LogEvent
 from raglaw.tracking import sha256_file, stage_run
 
@@ -79,6 +80,62 @@ class ChunkError(RuntimeError):
 def citation(number: int) -> str:
     """How an answer cites an article, in both languages."""
     return f"Article {number} | المادة {str(number).translate(AR_DIGITS)}"
+
+
+def range_citation(first: int, last: int) -> str:
+    """How an answer cites a repealed range, in both languages."""
+    ar = [str(n).translate(AR_DIGITS) for n in (first, last)]
+    return f"Articles {first}-{last} | المواد من {ar[0]} إلى {ar[1]}"
+
+
+def merge_repealed_ranges(chunks: list[Chunk]) -> tuple[list[Chunk], int]:
+    """
+    Replace each run of consecutive repealed articles sharing one note by one chunk.
+
+    Assembly expands a repeal row into one record per article (R19), each
+    holding the same note; ``chunking.repealed: per_range`` indexes the range
+    once instead.
+
+    returns:
+    - chunks (list[Chunk]): in order, each range as ``art-{first}-{last}``
+      with ``range_end``
+    - merged (int): how many ranges were merged
+    """
+    runs: list[list[Chunk]] = []
+    for c in chunks:
+        prev = runs[-1] if runs else None
+        if (
+            prev is not None
+            and c.is_repealed
+            and prev[0].is_repealed
+            and c.article_number == prev[-1].article_number + 1
+            and (c.text_ar, c.text_en) == (prev[0].text_ar, prev[0].text_en)
+        ):
+            prev.append(c)
+        else:
+            runs.append([c])
+    out = []
+    for run in runs:
+        if len(run) == 1:
+            out.append(run[0])
+            continue
+        first, last = run[0].article_number, run[-1].article_number
+        out.append(
+            run[0].model_copy(
+                update={
+                    "chunk_id": f"art-{first}-{last}",
+                    "citation": range_citation(first, last),
+                    "source_pages": sorted({p for c in run for p in c.source_pages}),
+                    "range_end": last,
+                }
+            )
+        )
+    return out, sum(len(run) > 1 for run in runs)
+
+
+def covered_articles(chunk: Chunk) -> range:
+    """The articles a chunk stands for: one, or a whole repealed range."""
+    return range(chunk.article_number, (chunk.range_end or chunk.article_number) + 1)
 
 
 def paragraph_numbers(text: str) -> list[int]:
@@ -213,33 +270,6 @@ class ParagraphSemanticSplitter(TextSplitter):
         return parts
 
 
-def huggingface_embeddings(chunking: Chunking) -> Embeddings:
-    """
-    The pinned local embedding model, imported only when the strategy needs it.
-
-    returns:
-    - embeddings (Embeddings): ``HuggingFaceEmbeddings`` on CPU, normalized
-
-    exceptions:
-    - ImportError: the ``embed`` dependency group isn't installed
-    """
-    from langchain_huggingface import HuggingFaceEmbeddings  # embed group only
-
-    # BAAI's revision ships only pytorch_model.bin. Without this flag,
-    # transformers fetches model.safetensors from an unmerged bot pull request
-    # (refs/pr/130) instead of the pinned revision (D12). torch loads the .bin
-    # with weights_only=True, which refuses pickled code.
-    return HuggingFaceEmbeddings(
-        model_name=chunking.semantic.model,
-        model_kwargs={
-            "device": "cpu",
-            "revision": chunking.semantic.revision,
-            "model_kwargs": {"use_safetensors": False},
-        },
-        encode_kwargs={"normalize_embeddings": True},
-    )
-
-
 def build_splitter(
     chunking: Chunking, documents: list[Document], embeddings: Embeddings | None = None
 ) -> TextSplitter:
@@ -248,14 +278,18 @@ def build_splitter(
 
     returns:
     - splitter (TextSplitter): ready to split each article's Arabic text
+
+    exceptions:
+    - ValueError: the semantic strategy was asked for without embeddings
     """
     if chunking.strategy == "structural":
         return structural_splitter(chunking.max_chars)
+    if embeddings is None:
+        raise ValueError("structural_semantic needs embeddings to split by meaning")
     splitter = ParagraphSemanticSplitter(
-        embeddings or huggingface_embeddings(chunking),
+        embeddings,
         chunking.semantic.breakpoint_percentile,
         chunking.max_chars,
-        chunking.semantic.batch_size,
     )
     splitter.fit([d.page_content for d in documents if not d.metadata["is_repealed"]])
     return splitter
@@ -429,7 +463,10 @@ def chunk_documents(
         chunks += parts
         counts["oversize_paragraph_anomalies"] += oversize
         counts["split_articles"] += len(parts) > 1
-    covered = len({c.article_number for c in chunks})
+    merged = 0
+    if chunking.repealed == "per_range":
+        chunks, merged = merge_repealed_ranges(chunks)
+    covered = len({n for c in chunks for n in covered_articles(c)})
     if covered != len(documents):
         raise ChunkError(f"{len(documents) - covered} articles have no chunk")
     metrics: dict[str, Any] = {
@@ -444,6 +481,7 @@ def chunk_documents(
         "chunks_with_untranslated_text": sum(
             bool(c.only_in_en or c.only_in_ar) for c in chunks
         ),
+        "repealed_ranges_merged": merged,
     }
     metrics |= quality_metrics(chunks, documents)
     if isinstance(splitter, ParagraphSemanticSplitter):
@@ -488,27 +526,28 @@ def run_chunk(
     return metrics
 
 
-def run_params(chunking: Chunking) -> dict[str, object]:
+def run_params(chunking: Chunking, embedding: Embedding) -> dict[str, object]:
     """
     The chunking config a run is compared by, under the names used across runs.
 
     Only the semantic variant uses an embedding model, so only its runs record
-    one; the index stage records the model it embeds chunks with.
+    one; the embed stage records the model it embeds chunks with.
 
     returns:
-    - params (dict[str, object]): strategy, chunk size and overlap, plus the
-      embedding model, its revision and the breakpoint percentile for the
+    - params (dict[str, object]): strategy, chunk size and overlap, how
+      repealed ranges are chunked, plus the embedding model, its revision and the breakpoint percentile for the
       semantic variant
     """
     params: dict[str, object] = {
         "strategy": chunking.strategy,
         "chunk_size": chunking.max_chars,
         "chunk_overlap": CHUNK_OVERLAP,
+        "repealed": chunking.repealed,
     }
     if chunking.strategy == "structural_semantic":
         params |= {
-            "embedding_model": chunking.semantic.model,
-            "embedding_revision": chunking.semantic.revision,
+            "embedding_model": embedding.model,
+            "embedding_revision": embedding.revision,
             "breakpoint_percentile": chunking.semantic.breakpoint_percentile,
         }
     return params
@@ -529,11 +568,21 @@ def main(argv: list[str] | None = None) -> None:
         output_model=Chunk,
         settings=settings,
     ) as run:
-        run.log_params(run_params(chunking))
+        run.log_params(run_params(chunking, settings.embedding))
+        embeddings = (
+            huggingface_embeddings(settings.embedding, settings.device)
+            if chunking.strategy == "structural_semantic"
+            else None
+        )
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "split_articles.md"
             metrics = run_chunk(
-                args.articles, args.out, args.metrics, chunking, report_out=report
+                args.articles,
+                args.out,
+                args.metrics,
+                chunking,
+                embeddings,
+                report_out=report,
             )
             run.log_artifact(report, artifact_path="reports")
         run.log_metrics(

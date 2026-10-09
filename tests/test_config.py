@@ -5,7 +5,16 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from raglaw.config import Experiments, Paths, RootHeading, Settings
+from raglaw.config import (
+    Embedding,
+    Evaluation,
+    Experiments,
+    Paths,
+    Retrieval,
+    RootHeading,
+    Search,
+    Settings,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -92,6 +101,7 @@ VALID_PATHS = {
     "metrics_dir": "docs/metrics",
     "reports_dir": "docs/reports",
     "analysis_dir": "docs/analysis/source_pdf",
+    "index_dir": "data/index",
     "logs_dir": "logs",
 }
 
@@ -126,3 +136,83 @@ def test_experiment_name_must_be_safe_as_an_s3_prefix(bad):
 def test_root_heading_must_not_be_blank():
     with pytest.raises(ValidationError, match="en"):
         RootHeading(ar="باب تمهيدي / أحكام عامة", en="   ")
+
+
+def test_one_embedding_block_serves_chunking_and_index(clean_env):
+    settings = Settings(_env_file=None)
+
+    assert settings.embedding.model == "BAAI/bge-m3"
+    assert "model" not in settings.chunking.semantic.model_dump()
+
+
+@pytest.mark.parametrize(
+    "bad", ["main", "5617a9f", "5617A9F61B028005A4858FDAC845DB406AEFB181"]
+)
+def test_embedding_revision_must_be_a_full_commit_sha(bad):
+    with pytest.raises(ValidationError, match="revision"):
+        Embedding(model="BAAI/bge-m3", revision=bad, batch_size=32)
+
+
+def test_search_needs_at_least_top_k_candidates():
+    with pytest.raises(ValidationError, match="candidates"):
+        Search(mode="hybrid", article_lookup=True, candidates=5, rrf_k=60, top_k=10)
+
+
+def test_stopwords_apply_only_to_word_tokenizers():
+    """Subword pieces aren't words, so no stopword list can filter them."""
+    with pytest.raises(ValidationError, match="bm25_stopwords"):
+        Retrieval(
+            document_text="both_with_headings",
+            bm25_tokenizer="model_subwords",
+            bm25_stopwords="nltk",
+        )
+
+
+def test_the_variant_switches_default_to_off():
+    retrieval = Retrieval(document_text="both_with_headings", bm25_tokenizer="words")
+
+    assert retrieval.bm25_stopwords == "none"
+    assert Settings(_env_file=None).chunking.repealed == "per_article"
+
+
+@pytest.mark.parametrize("bad", [0, 1.5])
+def test_the_recall_target_is_a_share(bad):
+    with pytest.raises(ValidationError, match="target_recall_at_5"):
+        Evaluation(split="tuning", target_recall_at_5=bad)
+
+
+def test_the_new_search_switches_default_to_off():
+    """The models' defaults; params.yaml may turn a switch on (the champion does)."""
+    fields = Search.model_fields
+
+    assert (fields["rerank"].default, fields["cite_expansion"].default) == (
+        False,
+        False,
+    )
+    assert Retrieval.model_fields["repealed_text"].default == "note"
+
+
+def test_the_reranker_is_pinned_like_the_embedder():
+    reranker = Settings(_env_file=None).reranker
+
+    assert reranker.model == "BAAI/bge-reranker-v2-m3"
+    assert len(reranker.revision) == 40
+
+
+def test_rerank_depth_must_cover_top_k():
+    with pytest.raises(ValidationError, match="rerank_depth"):
+        Search(
+            mode="hybrid",
+            article_lookup=True,
+            candidates=50,
+            rrf_k=60,
+            top_k=10,
+            rerank=True,
+            rerank_depth=5,
+        )
+
+
+def test_the_device_is_per_machine_and_defaults_to_cpu(clean_env, monkeypatch):
+    assert Settings(_env_file=None).device == "cpu"
+    monkeypatch.setenv("RAGLAW_DEVICE", "cuda")
+    assert Settings(_env_file=None).device == "cuda"

@@ -4,11 +4,12 @@ A retrieval-augmented generation (RAG) chatbot that answers questions about the 
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
 
-**Status:** the corpus is built; retrieval is next.
+**Status:** the corpus and retrieval are built; `/ask` is next.
 - Done: `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
+- Done: `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval on the eval set before any LLM is involved.
+- The registered retriever (`models:/civil-code-retriever@champion`) fuses dense and BM25 search and reranks the top 30 with a cross-encoder. It finds the governing articles in the top 5 for 79% of held-out questions (recall@5 0.788; the target is 0.9).
 - Not built yet: `validate`, which checks the corpus against the gold sample.
-- Next: embeddings, hybrid retrieval and its evaluation, then `/ask`.
-- `/ask` answers 501 until retrieval is built.
+- `/ask` answers 501 until it calls the retriever and an LLM.
 
 ## Quickstart
 
@@ -17,12 +18,13 @@ A DVC pipeline turns it into a validated corpus of articles and chunks, and a Fa
 - [uv](https://docs.astral.sh/uv/) **0.12.20**, which is pinned in `pyproject.toml`. uv installs Python 3.14 itself.
 - For the data and the tracking store only: an AWS profile with access to the project bucket.
   - Unit tests don't need it. They run on synthetic inputs, including a small PDF generated at test time.
+- Optional: an NVIDIA GPU (driver with CUDA 13 support) to embed and rerank faster. See [GPU (optional)](#gpu-optional).
 
 ### Setup
 
 ```bash
 git clone <repo-url> && cd egypt-law-rag
-uv sync                      # dev + ingest groups, from uv.lock
+uv sync                      # dev, ingest, embed and CPU-only torch, from uv.lock
 cp .env.example .env         # then set RAGLAW_AWS_PROFILE (and RAGLAW_LLM_API_KEY if you have one)
 uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type post-checkout
 uv run dvc pull              # fetches data/raw/civil_code.pdf from S3
@@ -35,6 +37,8 @@ uv run pytest -m unit --cov              # what CI runs; no data needed
 uv run pytest -m "profile or corpus"     # needs `dvc pull` and `dvc repro`
 uv run dvc repro                         # run the pipeline
 uv run dvc metrics show                  # each stage's checks and counts
+uv run python scripts/compare_retrieval.py   # retrieval runs vs the baseline, question by question
+uv run python -m raglaw.retrieval.champion   # register the `champion` run (and its held-out run) as the retriever
 # One MLflow run per stage execution. Log artifacts live in S3, so the UI needs
 # the same profile as RAGLAW_AWS_PROFILE in .env (it doesn't read .env itself):
 AWS_PROFILE=<your profile> uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
@@ -43,14 +47,29 @@ uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0
 
 `GET /health` reports `degraded` until an LLM key and the retrieval index are present. It still answers 200, so a container healthcheck stays green.
 
+### GPU (optional)
+
+The embedding and reranking models run on CPU by default, which CI and the Docker image rely on. On CPU, embedding the corpus takes about 15 minutes and reranking about 15 s per question. On a machine with an NVIDIA GPU:
+
+```bash
+uv sync --no-group torch-cpu --group torch-gpu   # swaps in torch built for CUDA 13
+echo "RAGLAW_DEVICE=cuda" >> .env                # the device is per machine
+alias uvg='uv run --no-group torch-cpu --group torch-gpu'
+uvg dvc repro                                    # every command goes through uvg
+```
+
+A plain `uv run` resyncs the default groups and puts the CPU build back, so on that machine every command goes through `uvg`. A stage set to `cuda` without a GPU fails at startup instead of falling back to CPU. GPU arithmetic differs from CPU in the last digits, so retrieval runs are only compared on one device: `scripts/compare_retrieval.py` leaves out runs on another device than the baseline's.
+
 ### Where things live
 
 | Path | What |
 | --- | --- |
 | `params.yaml` | Tracked parameters (paths, chunking, root heading), shared with `dvc.yaml` |
 | `.env` | Per-machine and secret values only (key, bucket, MLflow URI, AWS profile) |
-| `dvc.yaml`, `dvc.lock` | The pipeline: `profile → extract → repair → assemble → validate → chunk` |
+| `dvc.yaml`, `dvc.lock` | The pipeline: `profile → extract → repair → assemble → validate → chunk → embed, bm25 → evaluate_retrieval` |
 | `src/raglaw/ingest/` | One module per stage, runnable as `python -m raglaw.ingest.<stage>` |
+| `src/raglaw/retrieval/` | Query-time retrieval: tokenizer, article lookup, RRF, the hybrid retriever, the reranker, scoring and the `champion` model |
+| `docs/reports/retrieval_misses.md`, `retrieval_comparison.md` | What the current config misses, and every retrieval variant against the baseline |
 | `src/raglaw/schema.py`, `records.py` | Record models and their versioned file format |
 | `src/raglaw/api/` | The FastAPI service |
 | `data/errata.yaml` | Owner-approved fixes for one-off source errors |
@@ -63,7 +82,7 @@ uv run uvicorn raglaw.api.main:app --reload                # API on http://127.0
 ## Evaluation data
 
 - **Gold sample** (`data/gold/articles_gold.json`): 20 articles transcribed from the printed pages, which `validate` compares the corpus against.
-- **Retrieval eval set** (`data/gold/retrieval_eval.jsonl`): 122 Arabic and English questions, each with the articles that govern the answer.
+- **Retrieval eval set** (`data/gold/retrieval_eval.jsonl`): 142 Arabic and English questions, each with the articles that govern the answer; 20 are asked in both languages (`pair_id`).
 - **Truth point:** both sets were made by an LLM, not a legal professional, and aren't spot-checked yet. Read [docs/reports/evaluation_data.md](docs/reports/evaluation_data.md) before relying on a score computed from them.
 
 ## Contributing

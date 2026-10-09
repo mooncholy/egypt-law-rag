@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from raglaw.config import Chunking, Semantic
+from raglaw.config import Chunking, Embedding, Semantic
 from raglaw.ingest.chunk import (
     ChunkError,
     ParagraphSemanticSplitter,
@@ -19,16 +19,20 @@ from raglaw.ingest.loader import CivilCodeArticleLoader
 from raglaw.records import read_records, write_records
 from raglaw.schema import Article, Chunk, LogEvent
 
-SEMANTIC = Semantic(
+SEMANTIC = Semantic(breakpoint_percentile=90)
+EMBEDDING = Embedding(
     model="BAAI/bge-m3",
     revision="5617a9f61b028005a4858fdac845db406aefb181",
-    breakpoint_percentile=90,
     batch_size=8,
 )
 
 
-def chunking(strategy: str = "structural", max_chars: int = 1000) -> Chunking:
-    return Chunking(strategy=strategy, max_chars=max_chars, semantic=SEMANTIC)
+def chunking(
+    strategy: str = "structural", max_chars: int = 1000, repealed: str = "per_article"
+) -> Chunking:
+    return Chunking(
+        strategy=strategy, max_chars=max_chars, semantic=SEMANTIC, repealed=repealed
+    )
 
 
 def article(n: int, text_ar: str, **overrides) -> Article:
@@ -161,6 +165,63 @@ def test_a_repealed_article_is_one_chunk(tmp_path):
     assert [(c.chunk_id, c.is_repealed) for c in chunks] == [("art-54-p1", True)]
 
 
+NOTE = "المواد من ٥٤ إلى ٥٦ ملغاة"
+
+
+def repealed(n: int, note: str = NOTE) -> Article:
+    return article(n, note, is_repealed=True, text_en="Articles 54-56 repealed")
+
+
+@pytest.mark.unit
+def test_per_range_merges_a_repealed_range_into_one_chunk(tmp_path):
+    docs = documents(
+        tmp_path,
+        article(53, "نص."),
+        repealed(54),
+        repealed(55),
+        repealed(56),
+        article(57, "نص آخر."),
+    )
+
+    chunks, metrics = chunk_documents(docs, chunking(repealed="per_range"))
+
+    assert [c.chunk_id for c in chunks] == ["art-53-p1", "art-54-56", "art-57-p1"]
+    merged = chunks[1]
+    assert (merged.article_number, merged.range_end) == (54, 56)
+    assert merged.citation == "Articles 54-56 | المواد من ٥٤ إلى ٥٦"
+    assert merged.text_ar == NOTE and merged.is_repealed
+    assert metrics["articles_covered"] == 5
+    assert metrics["repealed_ranges_merged"] == 1
+
+
+@pytest.mark.unit
+def test_per_range_merges_only_consecutive_articles_with_one_note(tmp_path):
+    docs = documents(
+        tmp_path, repealed(54), repealed(55), repealed(56, "نص ملغى آخر"), repealed(58)
+    )
+
+    chunks, _ = chunk_documents(docs, chunking(repealed="per_range"))
+
+    assert [(c.chunk_id, c.range_end) for c in chunks] == [
+        ("art-54-55", 55),
+        ("art-56-p1", None),  # another note
+        ("art-58-p1", None),  # not consecutive
+    ]
+
+
+@pytest.mark.unit
+def test_per_article_keeps_one_chunk_per_repealed_article(tmp_path):
+    docs = documents(tmp_path, repealed(54), repealed(55))
+
+    chunks, metrics = chunk_documents(docs, chunking())
+
+    assert [(c.chunk_id, c.range_end) for c in chunks] == [
+        ("art-54-p1", None),
+        ("art-55-p1", None),
+    ]
+    assert metrics["repealed_ranges_merged"] == 0
+
+
 @pytest.mark.unit
 def test_lost_text_stops_the_stage(tmp_path, monkeypatch):
     monkeypatch.setattr(
@@ -207,6 +268,15 @@ def test_semantic_chunking_is_deterministic(tmp_path, stub_embeddings):
     second, _ = chunk_documents(docs, chunking("structural_semantic"), embeddings)
 
     assert first == second
+
+
+@pytest.mark.unit
+def test_the_semantic_strategy_needs_embeddings(tmp_path):
+    with pytest.raises(ValueError, match="embeddings"):
+        chunk_documents(
+            documents(tmp_path, article(1, "(١( أ\n(٢( ب")),
+            chunking("structural_semantic"),
+        )
 
 
 @pytest.mark.unit
@@ -318,19 +388,20 @@ def test_the_stage_writes_chunks_and_metrics(tmp_path):
 
 @pytest.mark.unit
 def test_structural_run_records_size_and_overlap_but_no_embedding_model():
-    assert run_params(chunking(max_chars=800)) == {
+    assert run_params(chunking(max_chars=800), EMBEDDING) == {
         "strategy": "structural",
         "chunk_size": 800,
         "chunk_overlap": 0,
+        "repealed": "per_article",
     }
 
 
 @pytest.mark.unit
 def test_semantic_run_records_the_pinned_embedding_model():
-    params = run_params(chunking("structural_semantic"))
+    params = run_params(chunking("structural_semantic"), EMBEDDING)
 
     assert params["embedding_model"] == "BAAI/bge-m3"
-    assert params["embedding_revision"] == SEMANTIC.revision
+    assert params["embedding_revision"] == EMBEDDING.revision
     assert params["breakpoint_percentile"] == 90
     assert params["chunk_overlap"] == 0
 

@@ -19,6 +19,10 @@ CONSOLE_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 # itself when run as ``python -m raglaw.ingest.<stage>``. Everything else stays
 # at INFO, so boto3 and MLflow internals don't flood the file.
 DEBUG_LOGGERS = ("raglaw", "__main__")
+# Loggers kept to WARNING. httpx logs every Hugging Face Hub request at INFO
+# (one line per file probed on each model load); the revision that matters is in
+# the index manifest, so those lines are noise in a stage log.
+QUIET_LOGGERS = ("httpx",)
 _HANDLER_TAG = "_raglaw_pipeline"
 
 
@@ -52,6 +56,8 @@ def setup_logging(stage: str, logs_dir: Path | None = None) -> Path:
     root.setLevel(logging.INFO)
     for name in DEBUG_LOGGERS:
         logging.getLogger(name).setLevel(logging.DEBUG)
+    for name in QUIET_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
     for handler in (console, file_handler):
         setattr(handler, _HANDLER_TAG, True)
         root.addHandler(handler)

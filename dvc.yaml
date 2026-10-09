@@ -1,4 +1,5 @@
-# The corpus build: profile -> extract -> repair -> assemble -> validate -> chunk.
+# The corpus build: profile -> extract -> repair -> assemble -> validate -> chunk,
+# then the search index: embed and bm25, scored by evaluate_retrieval.
 # Paths come from params.yaml through ${...}; each stage lists the code that
 # defines what it computes, so a code change reruns it.
 stages:
@@ -76,12 +77,101 @@ stages:
       - ${paths.corpus_dir}/articles.json
       - src/raglaw/ingest/chunk.py
       - src/raglaw/ingest/loader.py
+      - src/raglaw/retrieval/embeddings.py
       - src/raglaw/schema.py
       - src/raglaw/records.py
     params:
       - chunking
+      - embedding
     outs:
       - ${paths.corpus_dir}/chunks.json
     metrics:
       - ${paths.metrics_dir}/chunks.json:
+          cache: false
+
+  # The search index, in two halves under ${paths.index_dir}, so a BM25
+  # tokenizer change takes seconds and never re-embeds (15 min on CPU).
+  # `device` comes from the environment, not params.yaml, so DVC can't see it:
+  # the dense manifest records it instead, and `dvc repro -f embed` rebuilds
+  # the index on another device.
+  embed:
+    cmd: python -m raglaw.ingest.embed
+    deps:
+      - ${paths.corpus_dir}/chunks.json
+      - src/raglaw/ingest/embed.py
+      - src/raglaw/retrieval/dense.py
+      - src/raglaw/retrieval/document_text.py
+      - src/raglaw/retrieval/embeddings.py
+      - src/raglaw/retrieval/manifest.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - embedding
+      - retrieval.document_text
+      - retrieval.repealed_text
+    outs:
+      - ${paths.index_dir}/dense
+    metrics:
+      - ${paths.metrics_dir}/embed.json:
+          cache: false
+
+  bm25:
+    cmd: python -m raglaw.ingest.bm25
+    deps:
+      - ${paths.corpus_dir}/chunks.json
+      - src/raglaw/ingest/bm25.py
+      - src/raglaw/retrieval/document_text.py
+      - src/raglaw/retrieval/embeddings.py  # the model tokenizer, for model_subwords
+      - src/raglaw/retrieval/lexical.py
+      - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/tokenize.py
+      - src/raglaw/text/normalize.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - embedding  # names the tokenizer model_subwords uses
+      - retrieval.document_text
+      - retrieval.bm25_tokenizer
+      - retrieval.bm25_stopwords
+      - retrieval.repealed_text
+    outs:
+      - ${paths.index_dir}/bm25
+    metrics:
+      - ${paths.metrics_dir}/bm25.json:
+          cache: false
+
+  # Scores one half of the eval set (evaluation.split, D15) before any LLM is
+  # involved. One MLflow run per config, in the `retrieval` experiment.
+  evaluate_retrieval:
+    cmd: python -m raglaw.ingest.evaluate_retrieval
+    deps:
+      - ${paths.index_dir}/dense
+      - ${paths.index_dir}/bm25
+      - ${paths.gold_dir}/retrieval_eval.jsonl
+      - src/raglaw/ingest/evaluate_retrieval.py
+      - src/raglaw/retrieval/dense.py
+      - src/raglaw/retrieval/embeddings.py
+      - src/raglaw/retrieval/fusion.py
+      - src/raglaw/retrieval/lexical.py
+      - src/raglaw/retrieval/lookup.py
+      - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/rerank.py
+      - src/raglaw/retrieval/retriever.py
+      - src/raglaw/retrieval/scoring.py
+      - src/raglaw/retrieval/tokenize.py
+      - src/raglaw/text/normalize.py
+    params:
+      - chunking   # logged with each run, so runs compare by it
+      - embedding
+      - reranker
+      - retrieval
+      - search
+      - evaluation
+    metrics:
+      - ${paths.metrics_dir}/retrieval.json:
+          cache: false
+    outs:
+      - ${paths.reports_dir}/retrieval_misses.md:
+          cache: false
+      - ${paths.reports_dir}/retrieval_questions.json:
           cache: false

@@ -45,6 +45,15 @@ def test_attaches_console_at_info_and_file_at_debug(pipeline_log):
     assert [h.level for h in files] == [logging.DEBUG]
 
 
+def test_http_request_lines_stay_out_of_the_logs(pipeline_log):
+    """httpx logs every Hugging Face Hub request at INFO; only its warnings show."""
+    logging.getLogger("httpx").info('HTTP Request: HEAD https://huggingface.co "200"')
+    logging.getLogger("httpx").warning("Connection reset")
+
+    lines = read_jsonl(pipeline_log)
+    assert [line["message"] for line in lines] == ["Connection reset"]
+
+
 def test_calling_twice_adds_no_duplicate_handlers(pipeline_log, tmp_path):
     second = setup_logging("test-stage", logs_dir=tmp_path)
 

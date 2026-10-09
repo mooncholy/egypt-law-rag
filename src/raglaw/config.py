@@ -1,7 +1,14 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, BaseModel, Field, SecretStr, StringConstraints
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    Field,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -49,6 +56,11 @@ class Paths(BaseModel):
         description="Evidence behind the source analysis report, written by "
         "`profile` (gitignored; pinned by its `.sha256` file)."
     )
+    index_dir: RepoPath = Field(
+        description="The search index: `dense/` (the Qdrant collection, built by "
+        "`embed`) and `bm25/` (built by `bm25`), each with its manifest "
+        "(DVC-tracked)."
+    )
     logs_dir: RepoPath = Field(
         description="One JSONL log per stage run (gitignored; attached to MLflow)."
     )
@@ -71,29 +83,56 @@ ExperimentName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9._-]
 class Experiments(BaseModel):
     """One MLflow experiment per kind of work, since runs are compared within one.
 
-    Later kinds (retrieval and answer evaluation) add a field each here.
+    Later kinds (answer evaluation) add a field each here; ``stage_run`` takes
+    the field's name.
     """
 
     corpus: ExperimentName = Field(
         description="Every `dvc repro` stage run (`stage_run`). Lowercase "
         "letters, digits, `.`, `_` and `-` only."
     )
+    retrieval: ExperimentName = Field(
+        description="Every `evaluate_retrieval` run, one per retrieval config compared."
+    )
 
 
-class Semantic(BaseModel):
-    """The ``structural_semantic`` strategy's embedding model and threshold."""
+class Embedding(BaseModel):
+    """The one embedding model, shared by the semantic chunking variant and `embed`.
+
+    Kept in one place so chunking and retrieval can't embed with different models.
+    """
 
     model: NonEmptyStr = Field(description="Hugging Face model id.")
     revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] = Field(
         description="The model's pinned commit, so a rebuild embeds the same way."
     )
+    batch_size: int = Field(gt=0, description="Texts embedded per batch.")
+
+
+class Reranker(BaseModel):
+    """The cross-encoder that re-scores the top fused candidates (`search.rerank`)."""
+
+    model: NonEmptyStr = Field(description="Hugging Face model id.")
+    revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] = Field(
+        description="The model's pinned commit, so a rerun scores the same way."
+    )
+    max_length: int = Field(
+        gt=0,
+        description="Longest question-plus-chunk input, in tokens; the longest "
+        "document text is 905, so 1024 truncates nothing.",
+    )
+    batch_size: int = Field(gt=0, description="Question-chunk pairs scored per batch.")
+
+
+class Semantic(BaseModel):
+    """The ``structural_semantic`` strategy's threshold; its model is ``embedding``."""
+
     breakpoint_percentile: float = Field(
         gt=0,
         lt=100,
         description="Neighbouring paragraphs split where their distance is above "
         "this percentile of all such distances in the corpus.",
     )
-    batch_size: int = Field(gt=0, description="Paragraphs embedded per batch.")
 
 
 class Chunking(BaseModel):
@@ -107,6 +146,117 @@ class Chunking(BaseModel):
         gt=0, description="Longest Arabic text in one chunk; a paragraph is never cut."
     )
     semantic: Semantic = Field(description="Settings for `structural_semantic`.")
+    repealed: Literal["per_article", "per_range"] = Field(
+        default="per_article",
+        description="`per_article` (default): one chunk per repealed article, each "
+        "holding the range's note. `per_range`: one chunk per repealed range "
+        "(54-80, 389-417), covering every article in it, so 27 identical notes "
+        "don't crowd search results or dilute the range's terms.",
+    )
+
+
+DocumentText = Literal["both_with_headings", "ar_only", "both_without_headings"]
+Bm25Tokenizer = Literal["words", "words_light_stem", "model_subwords"]
+
+
+class Retrieval(BaseModel):
+    """How chunks are indexed and searched (Phase 6)."""
+
+    document_text: DocumentText = Field(
+        description="What is embedded and BM25-indexed per chunk (D14). "
+        "`both_with_headings` (default): Arabic heading path, Arabic text, English "
+        "heading path, English text. `ar_only`: the Arabic half. "
+        "`both_without_headings`: both texts, no heading paths."
+    )
+    bm25_tokenizer: Bm25Tokenizer = Field(
+        description="How BM25 splits text into terms. `words` (default): folded "
+        "words (`fold_tokens`). `words_light_stem`: the same, with light Arabic "
+        "prefix stripping. `model_subwords`: the embedding model's own subword "
+        "tokenizer, on unfolded text."
+    )
+    bm25_stopwords: Literal["none", "lucene", "nltk"] = Field(
+        default="none",
+        description="English words BM25 drops from documents and queries. `none` "
+        "(default); `lucene`: Lucene's 33 articles and conjunctions; `nltk`: "
+        "NLTK's 179, which also hold question words (what, does, how) and "
+        "negations. Arabic terms are never dropped.",
+    )
+
+    repealed_text: Literal["note", "heading"] = Field(
+        default="note",
+        description="What a repealed article's search text holds besides its "
+        "heading paths. `note` (default): the printed repeal note. `heading`: "
+        "only `Article N repealed`, so the decree's wording doesn't drown the "
+        "heading, which is the only text naming the subject. The stored text "
+        "is never changed.",
+    )
+
+    @model_validator(mode="after")
+    def _stopwords_need_words(self) -> Self:
+        if self.bm25_tokenizer == "model_subwords" and self.bm25_stopwords != "none":
+            raise ValueError(
+                "bm25_stopwords applies to the word tokenizers only; subword "
+                "pieces aren't words"
+            )
+        return self
+
+
+class Search(BaseModel):
+    """How a question searches the index (query time; the index never rebuilds for it)."""
+
+    mode: Literal["hybrid", "dense", "bm25"] = Field(
+        description="`hybrid` fuses the dense and BM25 rankings by RRF; `dense` "
+        "and `bm25` use one retriever alone, to measure what fusion adds."
+    )
+    article_lookup: bool = Field(
+        description="When a question names an article (`المادة ٢٢٢`, `Article "
+        "147`), fetch it directly and rank it first."
+    )
+    candidates: int = Field(
+        gt=0, description="Hits each retriever returns before fusion."
+    )
+    rrf_k: int = Field(
+        ge=0,
+        description="RRF's rank offset: a hit scores `1 / (rrf_k + rank)` per "
+        "list. Larger values flatten the weight of the top ranks.",
+    )
+    top_k: int = Field(gt=0, description="Chunks returned per question.")
+    rerank: bool = Field(
+        default=False,
+        description="Re-score the top `rerank_depth` fused chunks with the "
+        "`reranker` cross-encoder and reorder them by its score.",
+    )
+    rerank_depth: int = Field(
+        default=30, gt=0, description="How many fused chunks the reranker re-scores."
+    )
+    cite_expansion: bool = Field(
+        default=False,
+        description="After each returned chunk, insert the articles its text "
+        "cites by number (`المادتين ٢٢١ ، ٢٢٢`, `Articles 221 and 222`).",
+    )
+
+    @model_validator(mode="after")
+    def _enough_candidates(self) -> Self:
+        if self.candidates < self.top_k:
+            raise ValueError("candidates must be at least top_k")
+        if self.rerank_depth < self.top_k:
+            raise ValueError("rerank_depth must be at least top_k")
+        return self
+
+
+class Evaluation(BaseModel):
+    """How retrieval is scored on the eval set (Phase 6)."""
+
+    split: Literal["tuning", "heldout"] = Field(
+        description="Which half of the eval set to score (D15): `tuning` while "
+        "choosing a config; `heldout` once, for the chosen one."
+    )
+    target_recall_at_5: float = Field(
+        gt=0,
+        le=1,
+        description="The owner's recall@5 target (D17); each run reports whether "
+        "it is met.",
+    )
 
 
 class Tracking(BaseModel):
@@ -146,6 +296,11 @@ class Settings(BaseSettings):
     root_heading: RootHeading = Field(description="The fixed root of heading paths.")
     tracking: Tracking = Field(description="MLflow run grouping.")
     chunking: Chunking = Field(description="Chunking strategy and limits.")
+    embedding: Embedding = Field(description="The pinned embedding model.")
+    reranker: Reranker = Field(description="The pinned reranking model.")
+    retrieval: Retrieval = Field(description="What the index holds per chunk.")
+    search: Search = Field(description="How a question searches the index.")
+    evaluation: Evaluation = Field(description="How retrieval is scored.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(
@@ -173,6 +328,13 @@ class Settings(BaseSettings):
         description="Root for run artifacts: `s3://<bucket>/mlflow`, or `file://` in "
         "tests. Each experiment writes under `<root>/<experiment>`. Unset, MLflow "
         "keeps artifacts beside its database.",
+    )
+    device: Literal["cpu", "cuda"] = Field(
+        default="cpu",
+        description="Where the embedding and reranking models run on this "
+        "machine. `cuda` needs the `torch-gpu` dependency group (README). Runs "
+        "being compared must share a device: GPU arithmetic differs from CPU in "
+        "the last digits.",
     )
     aws_profile: NonEmptyStr | None = Field(
         default=None,
