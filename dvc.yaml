@@ -166,3 +166,5 @@ stages:
     outs:
       - ${paths.reports_dir}/retrieval_misses.md:
           cache: false
+      - ${paths.reports_dir}/retrieval_questions.json:
+          cache: false

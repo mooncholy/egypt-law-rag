@@ -254,6 +254,36 @@ class QuestionScore:
     def top_article(self) -> int | None:
         return self.retrieved.articles[0] if self.retrieved.articles else None
 
+    def to_record(self) -> dict[str, Any]:
+        """
+        Flatten the score for a per-question file, which runs are compared by.
+
+        returns:
+        - record (dict[str, Any]): the question's id and groups, its expected
+          articles, the rank of the first one found (None if none), a hit per
+          k (keys as strings, for JSON), what came back (a range as
+          ``first-last``) and the rank-1 scores
+        """
+        q, found = self.question, [r for r in self.ranks.values() if r is not None]
+        ranges = self.retrieved.ranges
+        return {
+            "id": q.id,
+            "kind": q.kind,
+            "language": q.language,
+            "register": q.speech_register,
+            "pair_id": q.pair_id,
+            "in_scope": q.in_scope,
+            "match": q.match,
+            "expected": q.expected_articles,
+            "first_rank": min(found) if found else None,
+            "hits": {str(k): hit for k, hit in self.hits.items()},
+            "returned": [
+                f"{a}-{ranges[a]}" if a in ranges else str(a)
+                for a in self.retrieved.articles
+            ],
+            "top_scores": self.retrieved.top_scores,
+        }
+
 
 def score_question(
     question: EvalQuestion, retrieved: Retrieved, ks: Sequence[int] = KS

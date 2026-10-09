@@ -18,7 +18,9 @@ Run as ``python -m raglaw.ingest.evaluate_retrieval``.
 
 import argparse
 import hashlib
+import json
 import logging
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -48,7 +50,7 @@ from raglaw.retrieval.scoring import (
     summarize,
 )
 from raglaw.schema import LogEvent
-from raglaw.tracking import sha256_file, stage_run
+from raglaw.tracking import ParamsDiff, params_diff, sha256_file, stage_run
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +210,7 @@ def run_evaluate_retrieval(
     bm25_dir: Path,
     metrics_out: Path,
     report_out: Path,
+    questions_out: Path,
     *,
     embedding: Embedding,
     retrieval: Retrieval,
@@ -218,6 +221,9 @@ def run_evaluate_retrieval(
 ) -> dict[str, Any]:
     """
     Score one half of the eval set against the index, writing metrics and a report.
+
+    ``questions_out`` receives one record per question (``to_record``), which
+    ``scripts/compare_retrieval.py`` compares across runs.
 
     returns:
     - metrics (dict[str, Any]): what was written to ``metrics_out``
@@ -244,9 +250,14 @@ def run_evaluate_retrieval(
         **summarize(scores),
         "bilingual": bilingual_agreement(scores),
     }
-    for path in (metrics_out, report_out):
+    for path in (metrics_out, report_out, questions_out):
         path.parent.mkdir(parents=True, exist_ok=True)
     metrics_out.write_text(dump(metrics), encoding="utf-8")
+    records = sorted((s.to_record() for s in scores), key=lambda r: r["id"])
+    questions_out.write_text(
+        json.dumps(records, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     recall = metrics["overall"]["recall_at_5"]
     title = (
         f"{search.mode}, {evaluation.split} half; recall@5 {recall:.3f} against "
@@ -292,6 +303,47 @@ def run_params(settings: Settings, *, chunks_sha256: str) -> dict[str, object]:
     }
 
 
+# params.yaml sections that define a retrieval config; a change elsewhere (e.g.
+# paths) doesn't make a run another variant.
+CONFIG_SECTIONS = ("chunking", "embedding", "retrieval", "search", "evaluation")
+
+
+def _entries(values: list[str]) -> str:
+    return ", ".join(values) or "none"
+
+
+def run_identity(
+    exp_name: str | None, baseline_rev: str | None, diff: ParamsDiff | None
+) -> tuple[str, dict[str, str]]:
+    """
+    Name a run after the variant it measures, and tag what made it one.
+
+    Inside ``dvc exp run``, DVC passes the experiment's name and baseline
+    commit. Outside, a run with no changed params is the ``baseline``; any
+    other is ``workspace``. The tags are a label only: the comparison script
+    diffs the runs' logged params itself.
+
+    returns:
+    - name (str): the run name
+    - tags (dict[str, str]): ``changed`` and ``params_added`` (``key=value``
+      against the baseline commit; ``unknown`` without git) and
+      ``baseline_rev``
+    """
+    if diff is None:
+        changed = added = "unknown"
+    else:
+        changed, added = _entries(diff.changed), _entries(diff.added)
+    if exp_name:
+        name = exp_name
+    else:
+        name = "baseline" if diff is not None and not diff.changed else "workspace"
+    return name, {
+        "changed": changed,
+        "params_added": added,
+        "baseline_rev": baseline_rev or "HEAD",
+    }
+
+
 def _input_hash(*paths: Path) -> str:
     """One hash over the eval set and both manifests, naming what was scored."""
     digest = hashlib.sha256()
@@ -314,7 +366,18 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument(
         "--report", type=Path, default=paths.reports_dir / "retrieval_misses.md"
     )
+    ap.add_argument(
+        "--questions",
+        type=Path,
+        default=paths.reports_dir / "retrieval_questions.json",
+    )
     args = ap.parse_args(argv)
+    baseline_rev = os.environ.get("DVC_EXP_BASELINE_REV")
+    run_name, tags = run_identity(
+        os.environ.get("DVC_EXP_NAME"),
+        baseline_rev,
+        params_diff(baseline_rev or "HEAD", sections=CONFIG_SECTIONS),
+    )
     dense_dir, bm25_dir = args.index / "dense", args.index / "bm25"
     tokenizer = (
         model_tokenizer(settings.embedding)
@@ -328,6 +391,8 @@ def main(argv: list[str] | None = None) -> None:
         ),
         settings=settings,
         experiment="retrieval",
+        run_name=run_name,
+        tags=tags,
     ) as run:
         manifest = read_manifest(dense_dir, DenseManifest)
         run.log_params(run_params(settings, chunks_sha256=manifest.chunks_sha256))
@@ -337,6 +402,7 @@ def main(argv: list[str] | None = None) -> None:
             bm25_dir,
             args.metrics,
             args.report,
+            args.questions,
             embedding=settings.embedding,
             retrieval=settings.retrieval,
             search=settings.search,
@@ -346,6 +412,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         run.log_metrics(flatten_metrics(metrics))
         run.log_artifact(args.report, artifact_path="reports")
+        run.log_artifact(args.questions, artifact_path="questions")
 
 
 if __name__ == "__main__":

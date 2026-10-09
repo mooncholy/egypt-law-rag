@@ -404,3 +404,45 @@ def test_the_real_eval_set_splits_into_two_balanced_halves(repo_root):
                 sum(getattr(q, attr) == value for q in half) for half in split.values()
             ]
             assert abs(sizes[0] - sizes[1]) <= 2, (attr, value)  # a pair moves two
+
+
+# --- One record per question (the comparison's input) --------------------------------
+
+
+def test_a_question_score_becomes_one_flat_record(make_question):
+    question = make_question(
+        "q001", [54, 55], match="any", kind="repealed", pair_id="p1"
+    )
+    documents = [hit(7, 1, dense=0.6), hit(54, 2)]
+    documents[1].metadata["range_end"] = 80
+
+    record = score_question(
+        question, Retrieved.from_documents(documents), KS
+    ).to_record()
+
+    assert record == {
+        "id": "q001",
+        "kind": "repealed",
+        "language": "en",
+        "register": "english",
+        "pair_id": "p1",
+        "in_scope": True,
+        "match": "any",
+        "expected": [54, 55],
+        "first_rank": 2,
+        "hits": {"1": False, "3": True, "5": True, "10": True},
+        "returned": ["7", "54-80"],
+        "top_scores": {"dense_score": 0.6, "bm25_score": None, "rrf_score": None},
+    }
+
+
+def test_an_out_of_scope_record_has_no_rank_or_hits(make_question):
+    record = score_question(
+        make_question("q001", [], kind="out_of_scope"), retrieved([3]), KS
+    ).to_record()
+
+    assert (record["in_scope"], record["first_rank"], record["hits"]) == (
+        False,
+        None,
+        {},
+    )

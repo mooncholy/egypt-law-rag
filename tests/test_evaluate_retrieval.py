@@ -8,10 +8,12 @@ from raglaw.ingest.evaluate_retrieval import (
     flatten_metrics,
     misses_report,
     run_evaluate_retrieval,
+    run_identity,
     run_params,
 )
 from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import Retrieved, split_questions
+from raglaw.tracking import ParamsDiff
 
 SEARCH = Search(mode="hybrid", article_lookup=True, candidates=50, rrf_k=60, top_k=10)
 
@@ -131,6 +133,7 @@ def test_the_stage_scores_one_half_and_writes_metrics_and_report(
         search_index.bm25_dir,
         tmp_path / "retrieval.json",
         tmp_path / "misses.md",
+        tmp_path / "questions.json",
         embedding=embedding_config,
         retrieval=search_index.retrieval,
         search=SEARCH,
@@ -144,6 +147,8 @@ def test_the_stage_scores_one_half_and_writes_metrics_and_report(
     assert metrics["overall"]["questions"] == sum(q.in_scope for q in tuning)
     assert metrics["mode"] == "hybrid"
     assert (tmp_path / "misses.md").read_text("utf-8").startswith("# Retrieval misses")
+    records = json.loads((tmp_path / "questions.json").read_text("utf-8"))
+    assert [r["id"] for r in records] == [q.id for q in tuning]
 
 
 @pytest.mark.unit
@@ -160,6 +165,7 @@ def test_two_runs_on_one_index_give_identical_files(
             search_index.bm25_dir,
             tmp_path / f"{run}.json",
             tmp_path / f"{run}.md",
+            tmp_path / f"{run}-questions.json",
             embedding=embedding_config,
             retrieval=search_index.retrieval,
             search=SEARCH,
@@ -170,6 +176,7 @@ def test_two_runs_on_one_index_give_identical_files(
             (
                 (tmp_path / f"{run}.json").read_bytes(),
                 (tmp_path / f"{run}.md").read_bytes(),
+                (tmp_path / f"{run}-questions.json").read_bytes(),
             )
         )
 
@@ -200,6 +207,44 @@ def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
     }
 
 
+@pytest.mark.unit
+def test_a_dvc_experiment_names_its_run():
+    name, tags = run_identity(
+        "dense-only",
+        "abc123",
+        ParamsDiff(changed=["search.mode=dense"], added=[], removed=[]),
+    )
+
+    assert name == "dense-only"
+    assert tags == {
+        "changed": "search.mode=dense",
+        "params_added": "none",
+        "baseline_rev": "abc123",
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("changed", "expected"), [([], "baseline"), (["search.rrf_k=10"], "workspace")]
+)
+def test_outside_an_experiment_the_run_is_the_baseline_unless_params_changed(
+    changed, expected
+):
+    name, tags = run_identity(
+        None, None, ParamsDiff(changed=changed, added=[], removed=[])
+    )
+
+    assert name == expected
+    assert tags["baseline_rev"] == "HEAD"
+
+
+@pytest.mark.unit
+def test_without_git_the_change_is_unknown():
+    name, tags = run_identity(None, None, None)
+
+    assert (name, tags["changed"]) == ("workspace", "unknown")
+
+
 # --- Corpus: the real index (C18) ------------------------------------------------------
 
 
@@ -220,6 +265,7 @@ def test_two_runs_on_the_real_index_give_identical_metrics(tmp_path, repo_root):
             index / "bm25",
             tmp_path / f"{run}.json",
             tmp_path / f"{run}.md",
+            tmp_path / f"{run}-questions.json",
             embedding=settings.embedding,
             retrieval=settings.retrieval,
             search=settings.search,

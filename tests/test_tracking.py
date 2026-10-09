@@ -271,3 +271,58 @@ def test_a_stage_can_run_in_another_experiment(tracking_settings, mlflow_client)
     retrieval = mlflow_client.get_experiment_by_name(experiments.retrieval)
     assert recorded.info.experiment_id == retrieval.experiment_id
     assert retrieval.artifact_location.endswith(f"/{experiments.retrieval}")
+
+
+def test_a_run_can_carry_its_own_name_and_tags(tracking_settings, mlflow_client):
+    with stage_run(
+        "evaluate_retrieval",
+        input_hash="x",
+        settings=tracking_settings,
+        experiment="retrieval",
+        run_name="dense-only",
+        tags={"changed": "search.mode=dense"},
+    ) as run:
+        pass
+
+    recorded = mlflow_client.get_run(run.run_id)
+    assert recorded.info.run_name == "dense-only"
+    assert recorded.data.tags["changed"] == "search.mode=dense"
+    assert recorded.data.tags["stage"] == "evaluate_retrieval"
+
+
+GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+
+
+def commit(repo, message):
+    for args in (["add", "."], ["commit", "-q", "--no-verify", "-m", message]):
+        subprocess.run([*GIT, *args], cwd=repo, check=True, capture_output=True)
+
+
+def test_params_diff_names_what_changed_since_a_revision(git_repo):
+    params = git_repo / "params.yaml"
+    params.write_text(
+        "paths:\n  logs_dir: logs\n"
+        "search:\n  mode: hybrid\n  rrf_k: 60\n"
+        "retrieval:\n  document_text: both\n  old_key: 1\n"
+    )
+    commit(git_repo, "params")
+    params.write_text(
+        "paths:\n  logs_dir: elsewhere\n"
+        "search:\n  mode: dense\n  rrf_k: 60\n"
+        "retrieval:\n  document_text: both\n  bm25_stopwords: nltk\n"
+    )
+
+    diff = tracking.params_diff("HEAD", sections=("search", "retrieval"))
+
+    assert diff == tracking.ParamsDiff(
+        changed=["search.mode=dense"],
+        added=["retrieval.bm25_stopwords=nltk"],
+        removed=["retrieval.old_key"],
+    )
+
+
+def test_params_diff_is_none_outside_git(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "params.yaml").write_text("search:\n  mode: dense\n")
+
+    assert tracking.params_diff("HEAD", sections=("search",)) is None

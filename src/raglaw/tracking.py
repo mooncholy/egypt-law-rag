@@ -12,11 +12,13 @@ import logging
 import os
 import subprocess
 import time
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+
+import yaml
 
 # MLflow logs a hint about its tracing tools on import; this pipeline doesn't
 # trace, and the line would land in every stage's console and log file.
@@ -101,6 +103,52 @@ def git_state() -> tuple[str, bool | None]:
     return sha, bool(changes)
 
 
+@dataclass(frozen=True)
+class ParamsDiff:
+    """How ``params.yaml`` differs from a revision, as dotted ``key=value`` entries."""
+
+    changed: list[str]  # present in both, with another value
+    added: list[str]  # only in the working file
+    removed: list[str]  # only in the revision (keys only)
+
+
+def _flatten(node: object, prefix: str = "") -> dict[str, object]:
+    if not isinstance(node, dict):
+        return {prefix[:-1]: node}
+    flat: dict[str, object] = {}
+    for key, value in node.items():
+        flat |= _flatten(value, f"{prefix}{key}.")
+    return flat
+
+
+def params_diff(
+    rev: str, sections: Sequence[str], path: Path = Path("params.yaml")
+) -> ParamsDiff | None:
+    """
+    Compare the working ``params.yaml`` with its version at ``rev``, within ``sections``.
+
+    returns:
+    - diff (ParamsDiff | None): sorted entries per kind of change; None outside
+      a git checkout, or when the file isn't in ``rev``
+    """
+    try:
+        committed = yaml.safe_load(_git("show", f"{rev}:{path.as_posix()}"))
+    except OSError, subprocess.CalledProcessError:
+        return None
+    current = yaml.safe_load(path.read_text(encoding="utf-8"))
+    then, now = (
+        {k: v for k, v in _flatten(d).items() if k.split(".")[0] in sections}
+        for d in (committed or {}, current or {})
+    )
+    return ParamsDiff(
+        changed=sorted(
+            f"{k}={now[k]}" for k in now.keys() & then.keys() if now[k] != then[k]
+        ),
+        added=sorted(f"{k}={now[k]}" for k in now.keys() - then.keys()),
+        removed=sorted(then.keys() - now.keys()),
+    )
+
+
 def _git(*args: str) -> str:
     result = subprocess.run(["git", *args], capture_output=True, text=True, check=True)
     return result.stdout.strip()
@@ -168,6 +216,8 @@ def stage_run(
     output_model: type[Record] | None = None,
     settings: Settings | None = None,
     experiment: Literal["corpus", "retrieval"] = "corpus",
+    run_name: str | None = None,
+    tags: Mapping[str, str] | None = None,
 ) -> Generator[StageRun]:
     """
     Run one pipeline stage inside its own MLflow run.
@@ -181,6 +231,8 @@ def stage_run(
     ``output_schema`` param; a stage that writes only metrics passes none.
     ``experiment`` names the ``tracking.experiments`` field the run goes to:
     ``corpus`` for the corpus build, ``retrieval`` for retrieval evaluation.
+    ``run_name`` labels the run (default: the stage), e.g. after the variant
+    it measures, and ``tags`` are added to the stage's own.
 
     returns:
     - run (StageRun): the run's id, its log file, and ``log_metrics``
@@ -200,8 +252,9 @@ def stage_run(
     )
     run = client.create_run(
         experiment_id,
-        run_name=stage,
+        run_name=run_name or stage,
         tags={
+            **(tags or {}),
             "stage": stage,
             "git_dirty": "unknown" if dirty is None else str(dirty).lower(),
         },

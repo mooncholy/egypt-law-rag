@@ -347,8 +347,8 @@ stages:
       nfiles: 4
     - path: src/raglaw/ingest/evaluate_retrieval.py
       hash: md5
-      md5: 56ddf5095b2e1f5f460b5cbc81672d97
-      size: 12150
+      md5: aa63e3546d56f33b06ef8a06fc01f859
+      size: 14491
     - path: src/raglaw/retrieval/dense.py
       hash: md5
       md5: b28981d6899a9ff2d9c333cec3262539
@@ -379,8 +379,8 @@ stages:
       size: 10534
     - path: src/raglaw/retrieval/scoring.py
       hash: md5
-      md5: aab71179da505433c7d03af73c5facec
-      size: 14548
+      md5: 2d2b97e5facebf5b00d6d4815cc3548d
+      size: 15740
     - path: src/raglaw/retrieval/tokenize.py
       hash: md5
       md5: f8b0a5f00d1afce2a4b45dd4f7a46d4b
@@ -423,3 +423,7 @@ stages:
       hash: md5
       md5: 7d8f4a43742b28214729b6fbcc6a427e
       size: 14341
+    - path: docs/reports/retrieval_questions.json
+      hash: md5
+      md5: e57c329cfb21bc5b2699a11186636aac
+      size: 43410
