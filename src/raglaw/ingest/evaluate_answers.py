@@ -255,7 +255,8 @@ def run_evaluate_answers(
 def check_endpoints(settings: Settings) -> None:
     """
     exceptions:
-    - EndpointError: naming each generator or judge setting that is missing
+    - EndpointError: naming each generator or judge setting that is missing,
+      or the judge being the generator (D23: it would grade itself)
     """
     values = {
         "RAGLAW_LLM_BASE_URL": settings.llm_base_url,
@@ -269,6 +270,11 @@ def check_endpoints(settings: Settings) -> None:
         raise EndpointError(
             f"evaluate_answers calls a generator and a judge; set {', '.join(missing)} "
             "in .env"
+        )
+    if settings.judge_model == settings.llm_model:
+        raise EndpointError(
+            f"the judge and the generator are both {settings.llm_model}; D23 needs "
+            "a judge that doesn't grade its own answers"
         )
 
 

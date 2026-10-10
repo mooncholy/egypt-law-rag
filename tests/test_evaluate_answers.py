@@ -89,6 +89,25 @@ def test_the_stage_stops_without_a_generator_or_a_judge(tracking_settings):
         check_endpoints(tracking_settings)
 
 
+def test_the_generator_never_judges_itself(tracking_settings):
+    endpoint = {
+        "llm_base_url": "http://localhost:11434/v1",
+        "judge_base_url": "http://localhost:11434/v1",
+    }
+    same = tracking_settings.model_copy(
+        update=endpoint
+        | {
+            "llm_model": "m",
+            "judge_model": "m",
+            "llm_api_key": "k",
+            "judge_api_key": "k",
+        }
+    )
+
+    with pytest.raises(EndpointError, match="grade its own"):
+        check_endpoints(same)
+
+
 def test_a_run_is_compared_by_its_answer_config_and_judge(tracking_settings):
     settings = tracking_settings.model_copy(
         update={"llm_model": "qwen2.5:3b-instruct-fp16", "judge_model": "judge-model"}
