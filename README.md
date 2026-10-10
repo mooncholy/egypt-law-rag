@@ -1,2 +1,162 @@
 # egypt-law-rag
-A RAG implementation of a chatbot used to answer questions regarding the civil laws in Egypt.
+
+A retrieval-augmented generation (RAG) chatbot that answers questions about the Egyptian Civil Code.
+The source is a bilingual PDF (170 pages, English and Arabic side by side).
+A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
+
+**Status:** the corpus, retrieval and `/ask` are built; containers are next.
+- Done: `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
+- Done: `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval on the eval set before any LLM is involved.
+- The registered retriever (`models:/civil-code-retriever@production`) fuses dense and BM25 search and reranks the top 30 with a cross-encoder. It finds the governing articles in the top 5 for 79% of held-out questions (recall@5 0.788; the target is 0.9).
+- `/ask` answers from the registered retriever and an LLM, citing only articles it retrieved. When the rank-1 reranker score is below a threshold, it replies that the Code doesn't address the question, without calling the LLM.
+- Not built yet: `validate`, which checks the corpus against the gold sample.
+
+## Quickstart
+
+### Prerequisites
+
+- [uv](https://docs.astral.sh/uv/) **0.12.20**, which is pinned in `pyproject.toml`. uv installs Python 3.14 itself.
+- For the data and the tracking store only: an AWS profile with access to the project bucket.
+  - Unit tests don't need it. They run on synthetic inputs, including a small PDF generated at test time.
+- Optional: an NVIDIA GPU (driver with CUDA 13 support) to embed and rerank faster. See [GPU (optional)](#gpu-optional).
+
+### Setup
+
+```bash
+git clone <repo-url> && cd egypt-law-rag
+uv sync                      # dev, ingest, embed and CPU-only torch, from uv.lock
+cp .env.example .env         # then set RAGLAW_AWS_PROFILE, and the RAGLAW_LLM_* values to answer questions
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type post-checkout
+uv run dvc pull              # fetches data/raw/civil_code.pdf from S3
+```
+
+### Run
+
+```bash
+uv run pytest -m unit --cov              # what CI runs; no data needed
+uv run pytest -m "profile or corpus"     # needs `dvc pull` and `dvc repro`
+uv run dvc repro                         # run the pipeline
+uv run dvc metrics show                  # each stage's checks and counts
+uv run python scripts/compare_retrieval.py   # retrieval runs vs the baseline, question by question
+uv run python -m raglaw.retrieval.champion register   # the `champion` run (and its held-out run) becomes the `candidate`
+uv run python -m raglaw.retrieval.champion promote    # `production` moves to it, unless its held-out recall@5 is lower
+# One MLflow run per stage execution. Log artifacts live in S3, so the UI needs
+# the same profile as RAGLAW_AWS_PROFILE in .env (it doesn't read .env itself):
+AWS_PROFILE=<your profile> uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+
+### Ask a question
+
+`/ask` needs three things running: the `models` service (the embedder and reranker, so the API itself has no torch), the `production` version of the registered retriever with the index it was scored on (`dvc pull`), and an OpenAI-compatible LLM endpoint set in `.env` (`RAGLAW_LLM_BASE_URL`, `RAGLAW_LLM_MODEL`, `RAGLAW_LLM_API_KEY`).
+
+```bash
+uv run uvicorn raglaw.serving.models_app:app --port 8001    # models service; loads both models once
+uv run uvicorn raglaw.api.main:app --port 8000              # API on http://127.0.0.1:8000/docs
+curl -s localhost:8000/health
+curl -s localhost:8000/ask -H 'Content-Type: application/json' \
+  -d '{"question": "ما هي سن الرشد في القانون المدني؟"}'
+# stop the API first (Qdrant's local mode locks the index to one process), then:
+uv run python scripts/check_answers.py   # C19: 20 real questions end to end, to docs/reports/answer_check.md
+```
+
+`GET /health` reports `degraded`, with the reason per component (`llm`, `models`, `retriever`), until all three are ready, and `documents_indexed` from the index's manifest. It still answers 200, so a container healthcheck stays green. Run the API with one worker: Qdrant's local mode locks the index directory to one process.
+
+### Tracking server (optional)
+
+By default runs and the registry live in the local `mlflow.db`. The shared server keeps them in Postgres and proxies artifacts to the project bucket, so a client needs only its URL (Docker required):
+
+```bash
+docker compose --env-file .env -f docker/compose.tracking.yml up -d --build
+# in .env: RAGLAW_MLFLOW_TRACKING_URI=http://localhost:5000, RAGLAW_MLFLOW_ARTIFACT_ROOT blank
+```
+
+The UI is on http://localhost:5000. The API serves whichever version the `production` alias names, read at startup: moving the alias (`promote`, or `set_registered_model_alias` for a rollback) and restarting the API changes the served config, with no code change and no rebuild.
+
+### GPU (optional)
+
+The embedding and reranking models run on CPU by default, which CI and the Docker image rely on. On CPU, embedding the corpus takes about 15 minutes and reranking about 15 s per question. On a machine with an NVIDIA GPU:
+
+```bash
+uv sync --no-group torch-cpu --group torch-gpu   # swaps in torch built for CUDA 13
+echo "RAGLAW_DEVICE=cuda" >> .env                # the device is per machine
+alias uvg='uv run --no-group torch-cpu --group torch-gpu'
+uvg dvc repro                                    # every command goes through uvg
+```
+
+A plain `uv run` resyncs the default groups and puts the CPU build back, so on that machine every command goes through `uvg`. A stage set to `cuda` without a GPU fails at startup instead of falling back to CPU. GPU arithmetic differs from CPU in the last digits, so retrieval runs are only compared on one device: `scripts/compare_retrieval.py` leaves out runs on another device than the baseline's.
+
+### Where things live
+
+| Path | What |
+| --- | --- |
+| `params.yaml` | Tracked parameters (paths, chunking, root heading), shared with `dvc.yaml` |
+| `.env` | Per-machine and secret values only (key, bucket, MLflow URI, AWS profile) |
+| `dvc.yaml`, `dvc.lock` | The pipeline: `profile → extract → repair → assemble → validate → chunk → embed, bm25 → evaluate_retrieval` |
+| `src/raglaw/ingest/` | One module per stage, runnable as `python -m raglaw.ingest.<stage>` |
+| `src/raglaw/retrieval/` | Query-time retrieval: tokenizer, article lookup, RRF, the hybrid retriever, the reranker, scoring and the `champion` model |
+| `docs/reports/retrieval_misses.md`, `retrieval_comparison.md` | What the current config misses, and every retrieval variant against the baseline |
+| `src/raglaw/schema.py`, `records.py` | Record models and their versioned file format |
+| `src/raglaw/api/` | The FastAPI service: `/ask` and `/health` |
+| `src/raglaw/rag.py`, `src/raglaw/prompts/` | The answer pipeline (retrieve, no-answer gate, prompt, citation check) and its versioned prompts |
+| `src/raglaw/serving/models_app.py`, `src/raglaw/retrieval/remote.py` | The `models` service, and the API's HTTP clients for it |
+| `docs/reports/answer_check.md` | 20 real questions answered end to end (`scripts/check_answers.py`) |
+| `data/errata.yaml` | Owner-approved fixes for one-off source errors |
+| `docs/reports/0_source_pdf_analysis.md` | The source facts (P1 to P26) and the rules (R1 to R23) built on them |
+| `docs/reports/evaluation_data.md` | How the evaluation data was made, and its limits |
+| `docs/normalization.md` | Arabic normalization rules, shared by ingestion and query time |
+| `docs/metrics/` | Stage metrics read by `dvc metrics` |
+| `data/gold/` | The gold sample and the retrieval eval set (see [Evaluation data](#evaluation-data)) |
+
+## Evaluation data
+
+- **Gold sample** (`data/gold/articles_gold.json`): 20 articles transcribed from the printed pages, which `validate` compares the corpus against.
+- **Retrieval eval set** (`data/gold/retrieval_eval.jsonl`): 142 Arabic and English questions, each with the articles that govern the answer; 20 are asked in both languages (`pair_id`).
+- **Truth point:** both sets were made by an LLM, not a legal professional, and aren't spot-checked yet. Read [docs/reports/evaluation_data.md](docs/reports/evaluation_data.md) before relying on a score computed from them.
+
+## Contributing
+
+### Workflow
+
+1. Branch off `main`, one branch per phase or feature (e.g., `phase-1-corpus`).
+2. Write the tests first. The rules in `docs/reports/0_source_pdf_analysis.md` are the spec. Never change an expected value or a threshold to make a test pass. If the data contradicts a rule, stop and raise it with the evidence (page, row index and the extracted text).
+3. Commit with a conventional prefix: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+4. Open a PR to `main`. CI must be green.
+
+### What CI checks
+
+| Job | Command | Needs |
+| --- | --- | --- |
+| lint | `pre-commit run --all-files` | dev group only |
+| test | `pytest -m unit --cov` (80% coverage gate) | no S3 access |
+| runtime | serves `/health` with `uv sync --no-default-groups` | API dependencies only |
+
+The runtime job fails if the API imports anything outside the runtime dependencies. Those include retrieval, the registry client (`mlflow-skinny`) and the LLM client, but not torch: keep `pymupdf`, `torch`, `sentence-transformers` and other pipeline imports out of `raglaw.api`, `raglaw.rag` and `raglaw.schema`. The models live in the `models` service.
+
+### Test markers
+
+| Marker | Runs on | Where |
+| --- | --- | --- |
+| `unit` | Synthetic inputs, including a PDF generated by `tests/conftest.py` | CI and locally |
+| `profile` | The full PDF, via `docs/metrics/source_profile.json` | Locally, after `dvc pull` |
+| `corpus` | The built corpus, via the `validate` metrics | Locally, after `dvc repro` |
+
+`profile` and `corpus` tests skip themselves when the PDF isn't pulled. All pytest fixtures go in `tests/conftest.py`, never in test modules.
+
+### Pipeline rules
+
+- **Segment by table rows only.** Article boundaries come from the PDF's table rows, never from a regex over page or document text.
+- **Repairs come from a rule or an errata entry.** No other edits to source text. A new errata entry needs owner approval and must match a whole line.
+- **Surface anomalies, never absorb them.** Log each one with `log_anomaly` at WARNING, and count it in the stage's metrics.
+- **Log, never `print`.** Ruff enforces this (`T20`).
+- **Wrap every stage in `stage_run`.** Pass the input hash and the model it writes (`output_model=`), so its MLflow run records both.
+- **List a stage's code in its `dvc.yaml` dependencies.** Include `src/raglaw/schema.py` for any stage that writes records, so a code change reruns it.
+- **Keep data out of git.** Everything under `data/` is tracked by DVC, except `data/errata.yaml`. The pre-push hook runs `dvc push`.
+- **Schema versions are automatic.** A model's version is a fingerprint of its fields, types and constraints (`Record.schema_fingerprint()`). Never set one by hand. Reading a file written under another fingerprint fails, and `dvc repro` rebuilds it.
+- **Keep the analysis evidence byte-identical.** Changes to `src/raglaw/ingest/measure.py` must keep `docs/analysis/source_pdf/` (rewritten by `dvc repro profile`) passing `sha256sum -c docs/reports/0_source_pdf_analysis.sha256`. The `profile` tests check this.
+
+### Configuration
+
+- **New project parameter:** add it to `params.yaml` and to `Settings` in `src/raglaw/config.py`.
+- **New per-machine or secret value:** add it to `.env.example` and `Settings`.
+
+`tests/test_config.py` fails if a setting lives in both files or in neither.

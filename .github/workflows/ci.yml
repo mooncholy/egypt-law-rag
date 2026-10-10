@@ -1,0 +1,86 @@
+# CI contract: every change headed for an integration branch is proven, with
+# no credentials, to be clean, reproducible from uv.lock, tested, and servable
+# from the runtime dependencies alone. All three jobs must pass to merge.
+#
+# - Inputs are only what's committed. No secrets, no S3, no `dvc pull` (D6):
+#   tests needing the full PDF (`profile`, `corpus`) skip themselves.
+# - Python comes from .python-version, uv from [tool.uv] required-version, and
+#   every install uses --locked, so a stale uv.lock fails the run.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, feat-civil-law-chatbot]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or PR supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint (pre-commit hooks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          # Read the cache `test` saves (its full install covers this job's); only
+          # one job writes, since all three share the same uv.lock-based key.
+          save-cache: false
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      # pre-commit alone; the hooks install their own tools.
+      - run: uv sync --locked --only-group dev
+      # The same hooks as a local commit, over every file. The DVC hook needs
+      # the data and DVC itself, neither of which CI has.
+      - run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: dvc-pre-commit
+
+  test:
+    name: test (unit, coverage gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      # The 80% threshold lives in [tool.coverage.report]; --cov applies it.
+      - run: uv run --no-sync pytest -m unit --cov
+
+  runtime:
+    name: runtime (API on runtime deps only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          # Read the cache `test` saves (its full install covers this job's); only
+          # one job writes, since all three share the same uv.lock-based key.
+          save-cache: false
+      - run: uv sync --locked --no-default-groups
+      # Fails if the API imports anything outside the runtime group, or can't
+      # serve. No LLM, models service or registry here, so it reports "degraded".
+      - name: Serve /health
+        run: |
+          uv run --no-sync uvicorn raglaw.api.main:app --port 8000 &
+          for _ in $(seq 1 30); do
+            curl -sf localhost:8000/health >/dev/null && break
+            sleep 1
+          done
+          curl -sf localhost:8000/health | tee /dev/stderr \
+            | uv run --no-sync python -c "import json, sys; assert json.load(sys.stdin)['status'] in ('healthy', 'degraded')"

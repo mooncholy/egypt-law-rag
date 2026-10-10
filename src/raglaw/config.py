@@ -1,0 +1,402 @@
+from pathlib import Path
+from typing import Annotated, Literal, Self
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    Field,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
+
+
+def _inside_repo(path: Path) -> Path:
+    """Reject absolute paths and ``..``: dvc.yaml names the same paths from the root."""
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("must be relative to the repo root and stay inside it")
+    return path
+
+
+RepoPath = Annotated[Path, AfterValidator(_inside_repo)]
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class Paths(BaseModel):
+    """Where the pipeline reads and writes, relative to the repo root."""
+
+    raw_pdf: RepoPath = Field(
+        description="The source PDF, placed by `dvc pull` (DVC-tracked)."
+    )
+    errata: RepoPath = Field(
+        description="Owner-approved fixes for one-off source errors (git-tracked YAML)."
+    )
+    interim_dir: RepoPath = Field(
+        description="Row-level outputs of `extract` and `repair` (DVC-tracked)."
+    )
+    corpus_dir: RepoPath = Field(
+        description="`articles.json` and `chunks.json` (DVC-tracked)."
+    )
+    gold_dir: RepoPath = Field(
+        description="The 30 hand-corrected gold articles (DVC-tracked)."
+    )
+    metrics_dir: RepoPath = Field(
+        description="Stage metrics as JSON, read by `dvc metrics` (git-tracked)."
+    )
+    reports_dir: RepoPath = Field(
+        description="Generated and hand-written reports (git-tracked)."
+    )
+    analysis_dir: RepoPath = Field(
+        description="Evidence behind the source analysis report, written by "
+        "`profile` (gitignored; pinned by its `.sha256` file)."
+    )
+    index_dir: RepoPath = Field(
+        description="The search index: `dense/` (the Qdrant collection, built by "
+        "`embed`) and `bm25/` (built by `bm25`), each with its manifest "
+        "(DVC-tracked)."
+    )
+    logs_dir: RepoPath = Field(
+        description="One JSONL log per stage run (gitignored; attached to MLflow)."
+    )
+
+
+class RootHeading(BaseModel):
+    """The page 1 heading that opens every heading path (P7)."""
+
+    ar: NonEmptyStr = Field(description="The heading as printed on page 1.")
+    en: NonEmptyStr = Field(
+        description="English label; the source has none, so the owner supplies it "
+        "(D7). `TODO` until then."
+    )
+
+
+# An experiment's name is also its S3 prefix under the artifact root.
+ExperimentName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9._-]*$")]
+
+
+class Experiments(BaseModel):
+    """One MLflow experiment per kind of work, since runs are compared within one.
+
+    Later kinds (answer evaluation) add a field each here; ``stage_run`` takes
+    the field's name.
+    """
+
+    corpus: ExperimentName = Field(
+        description="Every `dvc repro` stage run (`stage_run`). Lowercase "
+        "letters, digits, `.`, `_` and `-` only."
+    )
+    retrieval: ExperimentName = Field(
+        description="Every `evaluate_retrieval` run, one per retrieval config compared."
+    )
+
+
+class Embedding(BaseModel):
+    """The one embedding model, shared by the semantic chunking variant and `embed`.
+
+    Kept in one place so chunking and retrieval can't embed with different models.
+    """
+
+    model: NonEmptyStr = Field(description="Hugging Face model id.")
+    revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] = Field(
+        description="The model's pinned commit, so a rebuild embeds the same way."
+    )
+    batch_size: int = Field(gt=0, description="Texts embedded per batch.")
+
+
+class Reranker(BaseModel):
+    """The cross-encoder that re-scores the top fused candidates (`search.rerank`)."""
+
+    model: NonEmptyStr = Field(description="Hugging Face model id.")
+    revision: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] = Field(
+        description="The model's pinned commit, so a rerun scores the same way."
+    )
+    max_length: int = Field(
+        gt=0,
+        description="Longest question-plus-chunk input, in tokens; the longest "
+        "document text is 905, so 1024 truncates nothing.",
+    )
+    batch_size: int = Field(gt=0, description="Question-chunk pairs scored per batch.")
+
+
+class Semantic(BaseModel):
+    """The ``structural_semantic`` strategy's threshold; its model is ``embedding``."""
+
+    breakpoint_percentile: float = Field(
+        gt=0,
+        lt=100,
+        description="Neighbouring paragraphs split where their distance is above "
+        "this percentile of all such distances in the corpus.",
+    )
+
+
+class Chunking(BaseModel):
+    """How articles become retrievable chunks (Phase 5)."""
+
+    strategy: Literal["structural", "structural_semantic"] = Field(
+        description="`structural` splits at paragraph markers only; "
+        "`structural_semantic` also splits where meaning shifts."
+    )
+    max_chars: int = Field(
+        gt=0, description="Longest Arabic text in one chunk; a paragraph is never cut."
+    )
+    semantic: Semantic = Field(description="Settings for `structural_semantic`.")
+    repealed: Literal["per_article", "per_range"] = Field(
+        default="per_article",
+        description="`per_article` (default): one chunk per repealed article, each "
+        "holding the range's note. `per_range`: one chunk per repealed range "
+        "(54-80, 389-417), covering every article in it, so 27 identical notes "
+        "don't crowd search results or dilute the range's terms.",
+    )
+
+
+DocumentText = Literal["both_with_headings", "ar_only", "both_without_headings"]
+Bm25Tokenizer = Literal["words", "words_light_stem", "model_subwords"]
+
+
+class Retrieval(BaseModel):
+    """How chunks are indexed and searched (Phase 6)."""
+
+    document_text: DocumentText = Field(
+        description="What is embedded and BM25-indexed per chunk (D14). "
+        "`both_with_headings` (default): Arabic heading path, Arabic text, English "
+        "heading path, English text. `ar_only`: the Arabic half. "
+        "`both_without_headings`: both texts, no heading paths."
+    )
+    bm25_tokenizer: Bm25Tokenizer = Field(
+        description="How BM25 splits text into terms. `words` (default): folded "
+        "words (`fold_tokens`). `words_light_stem`: the same, with light Arabic "
+        "prefix stripping. `model_subwords`: the embedding model's own subword "
+        "tokenizer, on unfolded text."
+    )
+    bm25_stopwords: Literal["none", "lucene", "nltk"] = Field(
+        default="none",
+        description="English words BM25 drops from documents and queries. `none` "
+        "(default); `lucene`: Lucene's 33 articles and conjunctions; `nltk`: "
+        "NLTK's 179, which also hold question words (what, does, how) and "
+        "negations. Arabic terms are never dropped.",
+    )
+
+    repealed_text: Literal["note", "heading"] = Field(
+        default="note",
+        description="What a repealed article's search text holds besides its "
+        "heading paths. `note` (default): the printed repeal note. `heading`: "
+        "only `Article N repealed`, so the decree's wording doesn't drown the "
+        "heading, which is the only text naming the subject. The stored text "
+        "is never changed.",
+    )
+
+    @model_validator(mode="after")
+    def _stopwords_need_words(self) -> Self:
+        if self.bm25_tokenizer == "model_subwords" and self.bm25_stopwords != "none":
+            raise ValueError(
+                "bm25_stopwords applies to the word tokenizers only; subword "
+                "pieces aren't words"
+            )
+        return self
+
+
+class Search(BaseModel):
+    """How a question searches the index (query time; the index never rebuilds for it)."""
+
+    mode: Literal["hybrid", "dense", "bm25"] = Field(
+        description="`hybrid` fuses the dense and BM25 rankings by RRF; `dense` "
+        "and `bm25` use one retriever alone, to measure what fusion adds."
+    )
+    article_lookup: bool = Field(
+        description="When a question names an article (`المادة ٢٢٢`, `Article "
+        "147`), fetch it directly and rank it first."
+    )
+    candidates: int = Field(
+        gt=0, description="Hits each retriever returns before fusion."
+    )
+    rrf_k: int = Field(
+        ge=0,
+        description="RRF's rank offset: a hit scores `1 / (rrf_k + rank)` per "
+        "list. Larger values flatten the weight of the top ranks.",
+    )
+    top_k: int = Field(gt=0, description="Chunks returned per question.")
+    rerank: bool = Field(
+        default=False,
+        description="Re-score the top `rerank_depth` fused chunks with the "
+        "`reranker` cross-encoder and reorder them by its score.",
+    )
+    rerank_depth: int = Field(
+        default=30, gt=0, description="How many fused chunks the reranker re-scores."
+    )
+    cite_expansion: bool = Field(
+        default=False,
+        description="After each returned chunk, insert the articles its text "
+        "cites by number (`المادتين ٢٢١ ، ٢٢٢`, `Articles 221 and 222`).",
+    )
+
+    @model_validator(mode="after")
+    def _enough_candidates(self) -> Self:
+        if self.candidates < self.top_k:
+            raise ValueError("candidates must be at least top_k")
+        if self.rerank_depth < self.top_k:
+            raise ValueError("rerank_depth must be at least top_k")
+        return self
+
+
+class Evaluation(BaseModel):
+    """How retrieval is scored on the eval set (Phase 6)."""
+
+    split: Literal["tuning", "heldout"] = Field(
+        description="Which half of the eval set to score (D15): `tuning` while "
+        "choosing a config; `heldout` once, for the chosen one."
+    )
+    target_recall_at_5: float = Field(
+        gt=0,
+        le=1,
+        description="The owner's recall@5 target (D17); each run reports whether "
+        "it is met.",
+    )
+
+
+class Answer(BaseModel):
+    """How ``/ask`` turns retrieved articles into an answer (Phase 7)."""
+
+    prompt_version: Annotated[str, StringConstraints(pattern=r"^v\d+$")] = Field(
+        description="The system prompt, `src/raglaw/prompts/answer_<version>.md`. "
+        "A new wording is a new file, so every answer names the prompt it used."
+    )
+    no_answer_threshold: float = Field(
+        ge=0,
+        le=1,
+        description="Below this rank-1 reranker score, the Code is taken not to "
+        "address the question and no LLM is called (D21). A question that names "
+        "an article it finds is always answered.",
+    )
+    max_sources: int = Field(
+        gt=0,
+        description="Retrieved articles given to the LLM, in rank order, and so "
+        "the most an answer can cite. recall@5 is what retrieval was tuned on.",
+    )
+    temperature: float = Field(
+        ge=0, le=2, description="Sampling temperature; 0 for repeatable answers."
+    )
+
+
+HttpUrl = Annotated[str, StringConstraints(pattern=r"^https?://\S+$")]
+
+
+class Tracking(BaseModel):
+    """How MLflow groups the project's runs."""
+
+    experiments: Experiments = Field(
+        description="The experiment for each kind of work."
+    )
+
+
+class Settings(BaseSettings):
+    """Every configurable value in the project, from two sources.
+
+    - ``params.yaml`` (tracked): project structure and parameters, shared with
+      ``dvc.yaml``. Changing one is a reviewed commit, never a local override.
+    - The environment or ``.env`` (untracked): per-machine and secret values,
+      under the ``RAGLAW_`` prefix (``llm_api_key`` ← ``RAGLAW_LLM_API_KEY``).
+
+    ``params.yaml`` ranks above the environment, so a path can't be changed
+    for one machine only. Both files are read from the working directory:
+    the repo root for ``dvc repro`` and tests, the app directory in Docker.
+    """
+
+    # env_ignore_empty: a blank ``KEY=`` in .env means "use the default", so a
+    # copied .env.example never turns a value into "".
+    model_config = SettingsConfigDict(
+        env_prefix="RAGLAW_",
+        env_file=".env",
+        env_ignore_empty=True,
+        yaml_file="params.yaml",
+        yaml_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # From params.yaml
+    paths: Paths = Field(description="Pipeline inputs and outputs.")
+    root_heading: RootHeading = Field(description="The fixed root of heading paths.")
+    tracking: Tracking = Field(description="MLflow run grouping.")
+    chunking: Chunking = Field(description="Chunking strategy and limits.")
+    embedding: Embedding = Field(description="The pinned embedding model.")
+    reranker: Reranker = Field(description="The pinned reranking model.")
+    retrieval: Retrieval = Field(description="What the index holds per chunk.")
+    search: Search = Field(description="How a question searches the index.")
+    evaluation: Evaluation = Field(description="How retrieval is scored.")
+    answer: Answer = Field(description="How /ask answers from retrieved articles.")
+
+    # From the environment or .env
+    llm_api_key: SecretStr | None = Field(
+        default=None,
+        description="Key for the OpenAI-compatible LLM backend. Optional so the "
+        "service still starts without it: /health reports the gap and /ask "
+        "answers 503.",
+    )
+    llm_base_url: HttpUrl | None = Field(
+        default=None,
+        description="The OpenAI-compatible endpoint (D20): a local vLLM such as "
+        "`http://localhost:8002/v1`, or a hosted API's base URL.",
+    )
+    llm_model: NonEmptyStr | None = Field(
+        default=None, description="The model name that endpoint serves (D20)."
+    )
+    models_url: HttpUrl = Field(
+        default="http://localhost:8001",
+        description="The `models` service (D18), which embeds questions and "
+        "reranks chunks so the API needs no torch.",
+    )
+    s3_bucket: (
+        Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")]
+        | None
+    ) = Field(
+        default=None,
+        description="The project bucket (prefixes `dvc/`, `mlflow/`, `eval/`). S3 "
+        "naming rules: 3–63 lowercase letters, digits, dots and hyphens.",
+    )
+    mlflow_tracking_uri: NonEmptyStr = Field(
+        default="sqlite:///mlflow.db",
+        description="Where MLflow keeps run records: a local, gitignored sqlite file.",
+    )
+    mlflow_artifact_root: (
+        Annotated[str, StringConstraints(pattern=r"^(s3|file)://\S+$")] | None
+    ) = Field(
+        default=None,
+        description="Root for run artifacts: `s3://<bucket>/mlflow`, or `file://` in "
+        "tests. Each experiment writes under `<root>/<experiment>`. Unset, MLflow "
+        "keeps artifacts beside its database.",
+    )
+    device: Literal["cpu", "cuda"] = Field(
+        default="cpu",
+        description="Where the embedding and reranking models run on this "
+        "machine. `cuda` needs the `torch-gpu` dependency group (README). Runs "
+        "being compared must share a device: GPU arithmetic differs from CPU in "
+        "the last digits.",
+    )
+    aws_profile: NonEmptyStr | None = Field(
+        default=None,
+        description="The ~/.aws profile boto3 uses for MLflow's S3 artifacts. DVC "
+        "reads its own from `.dvc/config.local`, which boto3 doesn't see.",
+    )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Rank sources: explicit arguments, then params.yaml, then env and .env."""
+        return (
+            init_settings,
+            YamlConfigSettingsSource(settings_cls),
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
