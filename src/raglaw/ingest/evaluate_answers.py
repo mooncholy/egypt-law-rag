@@ -43,7 +43,7 @@ from raglaw.ingest.evaluate_retrieval import (
     run_identity,
 )
 from raglaw.ingest.evaluate_retrieval import run_params as retrieval_params
-from raglaw.llm import ChatModel
+from raglaw.llm import ChatModel, LLMError
 from raglaw.rag import Answer, AnswerPipeline
 from raglaw.tracking import params_diff, sha256_file, stage_run
 
@@ -51,6 +51,8 @@ logger = logging.getLogger(__name__)
 
 # Answers shown in the report, lowest faithfulness first.
 REPORT_WORST = 10
+# Seconds to wait before each retry of a failed generator call.
+GENERATOR_RETRY_WAITS = (10, 30)
 
 
 class EndpointError(RuntimeError):
@@ -190,10 +192,30 @@ def report(rows: Sequence[dict[str, Any]], summary: dict[str, Any], header: str)
     return "\n".join(lines)
 
 
+async def _answer(pipeline: AnswerPipeline, question: str) -> Answer:
+    """
+    One answer, retrying a failed generator call after each wait in
+    ``GENERATOR_RETRY_WAITS``: one slow reply shouldn't discard a whole run.
+
+    exceptions:
+    - LLMError: the generator still failed after every retry; the run stops,
+      since dropping a question would make configs incomparable
+    """
+    for wait in (*GENERATOR_RETRY_WAITS, None):
+        try:
+            return await pipeline.answer(question)
+        except LLMError as exc:
+            if wait is None:
+                raise
+            logger.warning("Generator failed (%s); retrying in %s s", exc, wait)
+            await asyncio.sleep(wait)
+    raise AssertionError("unreachable")
+
+
 async def _answer_all(
     pipeline: AnswerPipeline, items: Sequence[AnswerItem]
 ) -> list[Answer]:
-    return [await pipeline.answer(item.question.question) for item in items]
+    return [await _answer(pipeline, item.question.question) for item in items]
 
 
 def run_evaluate_answers(

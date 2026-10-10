@@ -11,6 +11,7 @@ from raglaw.ingest.evaluate_answers import (
     run_evaluate_answers,
     run_params,
 )
+from raglaw.llm import LLMError
 from raglaw.retrieval.scoring import EvalQuestion
 
 pytestmark = pytest.mark.unit
@@ -82,6 +83,55 @@ def test_answers_are_scored_and_refusals_counted(
     assert rows[0]["contexts"][0].startswith("### Article 44")
     assert rows[1]["scores"] == {}
     assert "## Lowest faithfulness (1)" in out["report.md"].read_text()
+
+
+class FlakyLLM:
+    """Fails ``failures`` times, then answers like ``stub_llm``."""
+
+    def __init__(self, failures: int, reply: str) -> None:
+        self.failures, self.reply, self.calls = failures, reply, 0
+
+    async def complete(self, messages, *, temperature):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise LLMError("Request timed out.")
+        return self.reply
+
+
+@pytest.mark.parametrize(("failures", "succeeds"), [(2, True), (3, False)])
+def test_a_failed_generator_call_is_retried_before_the_run_stops(
+    two_questions,
+    retrieved,
+    make_chunk,
+    tracking_settings,
+    tmp_path,
+    monkeypatch,
+    failures,
+    succeeds,
+):
+    monkeypatch.setattr(evaluate_answers, "ragas_scores", fake_scores)
+    monkeypatch.setattr(evaluate_answers, "GENERATOR_RETRY_WAITS", (0, 0))
+    llm = FlakyLLM(failures, "Article 44.")
+
+    def run():
+        return run_evaluate_answers(
+            two_questions[:1],
+            lambda _: retrieved([make_chunk(44)]),
+            llm,
+            judge=None,
+            embeddings=None,
+            settings=tracking_settings,
+            metrics_out=tmp_path / "m.json",
+            report_out=tmp_path / "r.md",
+            questions_out=tmp_path / "q.json",
+        )
+
+    if succeeds:
+        assert run()["answered"] == 1
+    else:
+        with pytest.raises(LLMError, match="timed out"):
+            run()
+    assert llm.calls == min(failures + 1, 3)
 
 
 def test_the_stage_stops_without_a_generator_or_a_judge(tracking_settings):
