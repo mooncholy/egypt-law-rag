@@ -1,0 +1,65 @@
+# The shared MLflow tracking server (Phase 8): runs and the Model Registry in
+# Postgres, artifacts proxied to the project bucket, so clients (and the API
+# container) need no AWS credentials, only the server URL.
+#
+#   docker compose --env-file .env -f docker/compose.tracking.yml up -d --build
+#   # then, in .env: RAGLAW_MLFLOW_TRACKING_URI=http://localhost:5000 and a
+#   # blank RAGLAW_MLFLOW_ARTIFACT_ROOT (the server decides where artifacts go)
+#
+# Reads RAGLAW_S3_BUCKET and RAGLAW_AWS_PROFILE from .env; the server reads
+# that profile from ~/.aws, mounted read-only.
+name: raglaw-tracking
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_USER: mlflow
+      # Reachable only on this compose network (no published port), so the
+      # password guards nothing outside it.
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    volumes:
+      - mlflow-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  mlflow:
+    build: ./mlflow
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      # psycopg2 named explicitly: SQLAlchemy 2.1 defaults postgresql:// to psycopg 3.
+      - --backend-store-uri=postgresql+psycopg2://mlflow:mlflow@postgres:5432/mlflow
+      - --serve-artifacts
+      - --artifacts-destination=s3://${RAGLAW_S3_BUCKET:?set RAGLAW_S3_BUCKET in .env}/mlflow
+      # The API container (Phase 10) calls it as mlflow:5000.
+      - --allowed-hosts=localhost:5000,127.0.0.1:5000,mlflow:5000
+    environment:
+      AWS_PROFILE: ${RAGLAW_AWS_PROFILE:?set RAGLAW_AWS_PROFILE in .env}
+      # The bucket's regional endpoint. Clients download artifacts through
+      # presigned URLs; signed for the global endpoint, the bucket answers
+      # them with a redirect the client doesn't follow.
+      MLFLOW_S3_ENDPOINT_URL: https://s3.eu-north-1.amazonaws.com
+    volumes:
+      - ${HOME}/.aws:/home/mlflow/.aws:ro
+    ports:
+      - "127.0.0.1:5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  mlflow-db:

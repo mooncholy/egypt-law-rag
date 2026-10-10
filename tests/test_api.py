@@ -13,12 +13,9 @@ from raglaw.api.main import (
     retriever_component,
 )
 from raglaw.config import Settings
-from raglaw.ingest.evaluate_retrieval import run_params
 from raglaw.llm import LLMError, OpenAIChat
 from raglaw.rag import AnswerPipeline
-from raglaw.retrieval.champion import register_champion
 from raglaw.retrieval.remote import ModelsServiceError
-from raglaw.tracking import stage_run
 
 pytestmark = pytest.mark.unit
 
@@ -241,50 +238,42 @@ def test_without_a_registered_champion_the_retriever_isnt_ready(
     assert status.detail.startswith("champion not loaded: MlflowException")
 
 
-def registered(settings):
-    """``settings`` with a champion registered from a run scored on its index."""
-    with stage_run(
-        "evaluate_retrieval",
-        input_hash="x",
-        settings=settings,
-        experiment="retrieval",
-        run_name="champion",
-    ) as run:
-        run.log_params(run_params(settings, chunks_sha256="0" * 64))
-    register_champion(settings, run.run_id)
-    return settings
-
-
 def test_without_the_models_service_the_retriever_isnt_ready(
-    champion_settings, closed_url
+    champion_settings, closed_url, in_production
 ):
+    in_production(champion_settings)
     closed = {"models_url": closed_url}
-    status, _ = retriever_component(
-        registered(champion_settings).model_copy(update=closed)
-    )
+    status, _ = retriever_component(champion_settings.model_copy(update=closed))
 
     assert not status.ready
     assert "ModelsServiceError" in status.detail
 
 
 def test_a_models_service_embedding_to_another_size_leaves_it_unready(
-    champion_settings, stub_embeddings
+    champion_settings, stub_embeddings, in_production
 ):
+    in_production(champion_settings)
     four_dims = stub_embeddings({}, default=[1.0, 0.0, 0.0, 0.0])
 
-    status, _ = retriever_component(registered(champion_settings), embeddings=four_dims)
+    status, _ = retriever_component(champion_settings, embeddings=four_dims)
 
     assert not status.ready
     assert "QdrantVectorStoreError" in status.detail
 
 
-def test_the_retriever_is_the_registered_champion(champion_settings, search_index):
+def test_the_retriever_is_the_production_version_and_names_it(
+    champion_settings, search_index, in_production
+):
+    version = in_production(champion_settings)
+
     status, champion = retriever_component(
-        registered(champion_settings), embeddings=search_index.embeddings
+        champion_settings, embeddings=search_index.embeddings
     )
     try:
         assert status.ready
-        assert status.detail.startswith("models:/civil-code-retriever@champion")
+        assert status.detail.startswith(
+            f"models:/civil-code-retriever@production (version {version.version})"
+        )
         assert champion.documents_indexed == 5
     finally:
         champion.close()
@@ -299,13 +288,14 @@ def test_the_index_size_is_read_from_its_manifest(champion_settings, tmp_path):
 
 
 def test_the_pipeline_is_built_only_when_every_component_is_ready(
-    champion_settings, search_index, monkeypatch, models_client
+    champion_settings, search_index, monkeypatch, models_client, in_production
 ):
+    in_production(champion_settings)
     pinned = models_client.get("/health").json()
     monkeypatch.setattr(main, "models_health", lambda url: pinned)
     # model_copy skips validation, so the key goes in as the SecretStr it becomes
     llm = LLM_SETTINGS | {"llm_api_key": SecretStr(LLM_SETTINGS["llm_api_key"])}
-    settings = registered(champion_settings).model_copy(update=llm)
+    settings = champion_settings.model_copy(update=llm)
 
     service = load_service(settings, embeddings=search_index.embeddings)
     try:
@@ -316,7 +306,7 @@ def test_the_pipeline_is_built_only_when_every_component_is_ready(
         service.close()
 
     MlflowClient(settings.mlflow_tracking_uri).delete_registered_model_alias(
-        "civil-code-retriever", "champion"
+        "civil-code-retriever", "production"
     )
     unready = load_service(settings, embeddings=search_index.embeddings)
     assert unready.pipeline is None
@@ -324,8 +314,9 @@ def test_the_pipeline_is_built_only_when_every_component_is_ready(
 
 
 def test_unreachable_artifacts_leave_the_retriever_unready(
-    champion_settings, monkeypatch
+    champion_settings, monkeypatch, in_production
 ):
+    in_production(champion_settings)
     from botocore.exceptions import NoCredentialsError
 
     def no_credentials(*args, **kwargs):
@@ -333,7 +324,7 @@ def test_unreachable_artifacts_leave_the_retriever_unready(
 
     monkeypatch.setattr("mlflow.pyfunc.load_model", no_credentials)
 
-    status, _ = retriever_component(registered(champion_settings))
+    status, _ = retriever_component(champion_settings)
 
     assert not status.ready
     assert "NoCredentialsError" in status.detail

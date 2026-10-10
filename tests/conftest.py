@@ -6,28 +6,33 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pymupdf
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from mlflow.entities.model_registry import ModelVersion
 from mlflow.tracking import MlflowClient
 
 from raglaw.api.main import Service, create_app
 from raglaw.api.schemas import ComponentStatus
 from raglaw.config import Answer as AnswerConfig
 from raglaw.config import Embedding, Retrieval, Search, Settings
-from raglaw.ingest.evaluate_retrieval import evaluate
+from raglaw.ingest.evaluate_retrieval import evaluate, run_params
 from raglaw.logging_conf import extra_fields
 from raglaw.logging_setup import close_logging, setup_logging
 from raglaw.rag import AnswerPipeline
 from raglaw.records import write_records
+from raglaw.retrieval.champion import MODEL_NAME, promote, register_champion
 from raglaw.retrieval.dense import build_dense
 from raglaw.retrieval.document_text import document_text
 from raglaw.retrieval.lexical import build_bm25
@@ -36,6 +41,7 @@ from raglaw.retrieval.scoring import EvalQuestion, QuestionScore
 from raglaw.retrieval.tokenize import bm25_tokenizer
 from raglaw.schema import Chunk
 from raglaw.serving.models_app import create_models_app
+from raglaw.tracking import stage_run
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # Settings reads params.yaml from the working directory, so tests run from the
@@ -505,6 +511,52 @@ def champion_settings(
     )
 
 
+@pytest.fixture
+def evaluation_run() -> Callable[..., str]:
+    """Log a finished retrieval run with ``settings``' config, as
+    ``evaluate_retrieval`` logs it, scoring ``recall_at_5`` and ``mrr`` (any
+    param can be overridden: ``split="heldout"`` makes a held-out run); returns
+    its id."""
+
+    def _run(
+        settings: Settings,
+        recall_at_5: float = 0.7,
+        mrr: float = 0.7,
+        **param_overrides: Any,
+    ) -> str:
+        with stage_run(
+            "evaluate_retrieval",
+            input_hash="x",
+            settings=settings,
+            experiment="retrieval",
+            run_name="champion",
+        ) as run:
+            run.log_params(
+                run_params(settings, chunks_sha256="0" * 64) | param_overrides
+            )
+            run.log_metrics({"overall.recall_at_5": recall_at_5, "overall.mrr": mrr})
+        return run.run_id
+
+    return _run
+
+
+@pytest.fixture
+def in_production(evaluation_run: Callable[..., str]) -> Callable[..., ModelVersion]:
+    """Register a run with ``settings``' config, scored ``heldout_recall`` on the
+    held-out half, and promote it to ``production``.
+
+    Every caller uses the same default score, so on the shared session
+    registry each promotion is "not lower" than the last.
+    """
+
+    def _promote(settings: Settings, heldout_recall: float = 0.8) -> ModelVersion:
+        heldout = evaluation_run(settings, recall_at_5=heldout_recall, split="heldout")
+        register_champion(settings, evaluation_run(settings), heldout_run_id=heldout)
+        return promote(settings)
+
+    return _promote
+
+
 # --- Evaluation --------------------------------------------------------------
 
 
@@ -661,6 +713,60 @@ def tracking_settings(
             ),
         }
     )
+
+
+@pytest.fixture(scope="session")
+def mlflow_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """A real MLflow tracking server, as Phase 8 runs in compose: a sqlite
+    backend instead of Postgres, and artifacts proxied to a local directory
+    instead of S3. Yields its URL."""
+    root = tmp_path_factory.mktemp("mlflow-server")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    process = subprocess.Popen(
+        [
+            sys.executable, "-m", "mlflow", "server",
+            "--host", "127.0.0.1",
+            "--port", str(port),
+            "--backend-store-uri", f"sqlite:///{root / 'mlflow.db'}",
+            "--serve-artifacts",
+            "--artifacts-destination", (root / "artifacts").as_uri(),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )  # fmt: skip
+    url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 90
+    while True:
+        try:
+            if httpx.get(f"{url}/health", timeout=1).status_code == 200:
+                break
+        except httpx.HTTPError:
+            pass
+        if process.poll() is not None or time.monotonic() > deadline:
+            process.kill()
+            pytest.fail(f"mlflow server didn't start on {url}")
+        time.sleep(0.5)
+    yield url
+    process.terminate()
+    process.wait(timeout=20)
+
+
+@pytest.fixture
+def server_settings(
+    champion_settings: Settings, mlflow_server: str
+) -> Iterator[Settings]:
+    """``champion_settings`` tracking to ``mlflow_server``, with no artifact
+    root, so the server proxies artifacts as in compose. The registered model
+    is deleted first, so each test starts with an empty registry."""
+    settings = champion_settings.model_copy(
+        update={"mlflow_tracking_uri": mlflow_server, "mlflow_artifact_root": None}
+    )
+    client = MlflowClient(mlflow_server)
+    if client.search_registered_models(f"name = '{MODEL_NAME}'"):
+        client.delete_registered_model(MODEL_NAME)
+    yield settings
 
 
 @pytest.fixture
