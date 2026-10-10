@@ -91,7 +91,7 @@ class FlakyLLM:
     def __init__(self, failures: int, reply: str) -> None:
         self.failures, self.reply, self.calls = failures, reply, 0
 
-    async def complete(self, messages, *, temperature):
+    async def complete(self, messages, *, temperature, max_tokens):
         self.calls += 1
         if self.calls <= self.failures:
             raise LLMError("Request timed out.")

@@ -284,6 +284,11 @@ class Answer(BaseModel):
     temperature: float = Field(
         ge=0, le=2, description="Sampling temperature; 0 for repeatable answers."
     )
+    max_tokens: int = Field(
+        gt=0,
+        description="The longest reply, in tokens. Real answers stay far below "
+        "it; it stops a reply that repeats itself without end.",
+    )
 
 
 class AnswerEvaluation(BaseModel):

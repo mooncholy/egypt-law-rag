@@ -4,7 +4,10 @@ A local vLLM and a hosted API look the same to the ``openai`` client, so the
 endpoint, model and key are per-machine settings, never code.
 """
 
+import logging
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 # A 3B model answering from five articles needs seconds; a hung endpoint must
 # fail the request instead of holding it.
@@ -19,7 +22,7 @@ class ChatModel(Protocol):
     """Anything that completes a chat: the endpoint, or a stub in tests."""
 
     async def complete(
-        self, messages: list[dict[str, str]], *, temperature: float
+        self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
     ) -> str: ...
 
 
@@ -35,10 +38,12 @@ class OpenAIChat:
         self.model = model
 
     async def complete(
-        self, messages: list[dict[str, str]], *, temperature: float
+        self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
     ) -> str:
         """
-        One chat completion.
+        One chat completion, at most ``max_tokens`` long: at temperature 0 a
+        small model can repeat itself without end, and an uncapped reply then
+        runs until the timeout. A reply cut at the cap is logged.
 
         returns:
         - text (str): the reply, stripped
@@ -50,11 +55,19 @@ class OpenAIChat:
 
         try:
             response = await self.client.chat.completions.create(
-                model=self.model, messages=messages, temperature=temperature
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
         except OpenAIError as exc:
             raise LLMError(f"{self.model} at {self.client.base_url}: {exc}") from exc
-        text = (response.choices[0].message.content or "").strip()
+        choice = response.choices[0]
+        if choice.finish_reason == "length":
+            logger.warning(
+                "Reply cut at max_tokens=%d", max_tokens, extra={"model": self.model}
+            )
+        text = (choice.message.content or "").strip()
         if not text:
             raise LLMError(f"{self.model} returned an empty answer")
         return text

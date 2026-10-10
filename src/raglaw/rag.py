@@ -286,6 +286,7 @@ class AnswerPipeline:
         text = await self.llm.complete(
             build_messages(question, language, articles, self.prompt),
             temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
         )
         given, hallucinated = check_citations(text, articles)
         for number in hallucinated:

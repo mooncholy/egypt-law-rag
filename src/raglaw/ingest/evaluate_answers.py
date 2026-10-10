@@ -85,6 +85,7 @@ def run_params(
         "no_answer_threshold": answer.no_answer_threshold,
         "max_sources": answer.max_sources,
         "temperature": answer.temperature,
+        "max_tokens": answer.max_tokens,
         "judge_model": settings.judge_model,
         "subset": settings.answer_evaluation.subset,
         "questions": questions,

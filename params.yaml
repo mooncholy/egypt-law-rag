@@ -86,6 +86,7 @@ answer:
   no_answer_threshold: 0.1
   max_sources: 5            # articles given to the LLM, in rank order
   temperature: 0.0
+  max_tokens: 1024          # longest real answer ~1,100 characters; stops runaway repetition
 
 # How answers are scored with RAGAS (Phase 9). The generator and the judge are
 # per-machine endpoints in .env; each run logs both.

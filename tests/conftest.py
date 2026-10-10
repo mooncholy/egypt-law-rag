@@ -898,7 +898,7 @@ class StubLLM:
         self.calls: list[list[dict[str, str]]] = []
 
     async def complete(
-        self, messages: list[dict[str, str]], *, temperature: float
+        self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
     ) -> str:
         self.calls.append(messages)
         return self.reply
