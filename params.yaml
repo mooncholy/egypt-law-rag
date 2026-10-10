@@ -28,6 +28,7 @@ tracking:
   experiments:
     corpus: corpus-build   # one run per `dvc repro` stage execution
     retrieval: retrieval   # one run per retrieval config evaluated
+    answers: answers       # one run per answer config scored with RAGAS
 
 chunking:
   strategy: structural
@@ -85,3 +86,9 @@ answer:
   no_answer_threshold: 0.1
   max_sources: 5            # articles given to the LLM, in rank order
   temperature: 0.0
+
+# How answers are scored with RAGAS (Phase 9). The generator and the judge are
+# per-machine endpoints in .env; each run logs both.
+answer_evaluation:
+  subset: full   # | ci: the 20-question stratified subset CI scores
+  ci_size: 20

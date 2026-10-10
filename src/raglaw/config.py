@@ -94,6 +94,9 @@ class Experiments(BaseModel):
     retrieval: ExperimentName = Field(
         description="Every `evaluate_retrieval` run, one per retrieval config compared."
     )
+    answers: ExperimentName = Field(
+        description="Every `evaluate_answers` run: one per config, scored with RAGAS."
+    )
 
 
 class Embedding(BaseModel):
@@ -283,6 +286,17 @@ class Answer(BaseModel):
     )
 
 
+class AnswerEvaluation(BaseModel):
+    """How answers are scored with RAGAS (Phase 9)."""
+
+    subset: Literal["full", "ci"] = Field(
+        description="`full`: every question with a reference answer (the "
+        "tuning half's in-scope questions); `ci`: the fixed stratified subset "
+        "CI scores (Phase 11)."
+    )
+    ci_size: int = Field(gt=0, description="Questions in the CI subset.")
+
+
 HttpUrl = Annotated[str, StringConstraints(pattern=r"^https?://\S+$")]
 
 
@@ -329,6 +343,9 @@ class Settings(BaseSettings):
     search: Search = Field(description="How a question searches the index.")
     evaluation: Evaluation = Field(description="How retrieval is scored.")
     answer: Answer = Field(description="How /ask answers from retrieved articles.")
+    answer_evaluation: AnswerEvaluation = Field(
+        description="How answers are scored with RAGAS."
+    )
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(
@@ -344,6 +361,17 @@ class Settings(BaseSettings):
     )
     llm_model: NonEmptyStr | None = Field(
         default=None, description="The model name that endpoint serves (D20)."
+    )
+    judge_base_url: HttpUrl | None = Field(
+        default=None,
+        description="The RAGAS judge's OpenAI-compatible endpoint (D23): a "
+        "stronger model than the generator, so it doesn't grade itself.",
+    )
+    judge_model: NonEmptyStr | None = Field(
+        default=None, description="The judge model that endpoint serves (D23)."
+    )
+    judge_api_key: SecretStr | None = Field(
+        default=None, description="The judge endpoint's key."
     )
     models_url: HttpUrl = Field(
         default="http://localhost:8001",

@@ -215,7 +215,7 @@ def stage_run(
     input_hash: str,
     output_model: type[Record] | None = None,
     settings: Settings | None = None,
-    experiment: Literal["corpus", "retrieval"] = "corpus",
+    experiment: Literal["corpus", "retrieval", "answers"] = "corpus",
     run_name: str | None = None,
     tags: Mapping[str, str] | None = None,
 ) -> Generator[StageRun]:

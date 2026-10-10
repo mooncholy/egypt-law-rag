@@ -234,6 +234,7 @@ class Answer:
     articles: list[int]  # given to the LLM, in rank order
     rank1_rerank_score: float | None
     hallucinated: list[int] = field(default_factory=list)
+    contexts: list[str] = field(default_factory=list)  # each article as rendered
 
 
 class AnswerPipeline:
@@ -315,4 +316,5 @@ class AnswerPipeline:
             articles=[a.first for a in articles],
             rank1_rerank_score=score,
             hallucinated=hallucinated,
+            contexts=[a.render() for a in articles],
         )
