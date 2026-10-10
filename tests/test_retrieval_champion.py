@@ -22,17 +22,46 @@ def test_a_registered_run_is_the_candidate_with_its_heldout_scores(
     champion_settings, evaluation_run
 ):
     run_id = evaluation_run(champion_settings)
-
-    version = register_champion(
-        champion_settings, run_id, heldout={"recall_at_5": 0.79}
+    heldout_id = evaluation_run(
+        champion_settings, recall_at_5=0.79, mrr=0.8, split="heldout"
     )
+
+    version = register_champion(champion_settings, run_id, heldout_run_id=heldout_id)
 
     client = MlflowClient(champion_settings.mlflow_tracking_uri)
     candidate = client.get_model_version_by_alias(MODEL_NAME, CANDIDATE)
     assert candidate.version == version.version
     assert PRODUCTION not in version.aliases  # nothing serves it before promotion
     assert version.run_id == run_id
-    assert version.tags["heldout_recall_at_5"] == "0.79"
+    assert (
+        version.tags["heldout_run_id"],
+        version.tags["heldout_recall_at_5"],
+        version.tags["heldout_mrr"],
+    ) == (heldout_id, "0.79", "0.8")
+
+
+def test_the_heldout_scores_must_come_from_a_heldout_run(
+    champion_settings, evaluation_run
+):
+    tuning = evaluation_run(champion_settings, recall_at_5=0.99)  # split: tuning
+
+    with pytest.raises(ChampionError, match="not the held-out half"):
+        register_champion(
+            champion_settings, evaluation_run(champion_settings), heldout_run_id=tuning
+        )
+
+
+def test_the_heldout_run_must_have_scored_this_config(
+    champion_settings, evaluation_run
+):
+    other = evaluation_run(
+        champion_settings, recall_at_5=0.99, split="heldout", retrieval_mode="dense"
+    )
+
+    with pytest.raises(ChampionError, match="retrieval_mode"):
+        register_champion(
+            champion_settings, evaluation_run(champion_settings), heldout_run_id=other
+        )
 
 
 def test_loading_serves_the_production_version(

@@ -514,9 +514,16 @@ def champion_settings(
 @pytest.fixture
 def evaluation_run() -> Callable[..., str]:
     """Log a finished retrieval run with ``settings``' config, as
-    ``evaluate_retrieval`` logs it (any param can be overridden); returns its id."""
+    ``evaluate_retrieval`` logs it, scoring ``recall_at_5`` and ``mrr`` (any
+    param can be overridden: ``split="heldout"`` makes a held-out run); returns
+    its id."""
 
-    def _run(settings: Settings, **param_overrides: Any) -> str:
+    def _run(
+        settings: Settings,
+        recall_at_5: float = 0.7,
+        mrr: float = 0.7,
+        **param_overrides: Any,
+    ) -> str:
         with stage_run(
             "evaluate_retrieval",
             input_hash="x",
@@ -527,7 +534,7 @@ def evaluation_run() -> Callable[..., str]:
             run.log_params(
                 run_params(settings, chunks_sha256="0" * 64) | param_overrides
             )
-            run.log_metrics({"overall.recall_at_5": 0.7})
+            run.log_metrics({"overall.recall_at_5": recall_at_5, "overall.mrr": mrr})
         return run.run_id
 
     return _run
@@ -543,11 +550,8 @@ def in_production(evaluation_run: Callable[..., str]) -> Callable[..., ModelVers
     """
 
     def _promote(settings: Settings, heldout_recall: float = 0.8) -> ModelVersion:
-        register_champion(
-            settings,
-            evaluation_run(settings),
-            heldout={"recall_at_5": heldout_recall},
-        )
+        heldout = evaluation_run(settings, recall_at_5=heldout_recall, split="heldout")
+        register_champion(settings, evaluation_run(settings), heldout_run_id=heldout)
         return promote(settings)
 
     return _promote

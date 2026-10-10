@@ -1,12 +1,15 @@
 """U35: the registry lifecycle on a real tracking server (D22)."""
 
 import pytest
+from mlflow.exceptions import MlflowException
+from mlflow.protos.databricks_pb2 import INTERNAL_ERROR
 from mlflow.tracking import MlflowClient
 
 from raglaw.retrieval.champion import (
     CANDIDATE,
     MODEL_NAME,
     PRODUCTION,
+    PROMOTION_TAG,
     PromotionError,
     load_champion,
     promote,
@@ -23,8 +26,14 @@ def aliases(settings) -> dict[str, str]:
 
 
 def candidate(settings, evaluation_run, heldout_recall: float | None):
-    heldout = None if heldout_recall is None else {"recall_at_5": heldout_recall}
-    return register_champion(settings, evaluation_run(settings), heldout=heldout)
+    """Register a run as the candidate, with a held-out run scoring
+    ``heldout_recall`` (None: registered without one)."""
+    heldout = (
+        None
+        if heldout_recall is None
+        else evaluation_run(settings, recall_at_5=heldout_recall, split="heldout")
+    )
+    return register_champion(settings, evaluation_run(settings), heldout_run_id=heldout)
 
 
 def test_u35_a_registered_version_is_the_candidate_until_promoted(
@@ -99,3 +108,33 @@ def test_the_server_proxies_the_models_artifacts(server_settings, evaluation_run
 
     run = MlflowClient(server_settings.mlflow_tracking_uri).get_run(version.run_id)
     assert run.info.artifact_uri.startswith("mlflow-artifacts:")
+
+
+@pytest.mark.parametrize("tag", ["nan", "inf", "1.5", "-0.1", "high"])
+def test_a_score_that_isnt_a_recall_is_never_compared(
+    server_settings, evaluation_run, tag
+):
+    version = candidate(server_settings, evaluation_run, 0.79)
+    MlflowClient(server_settings.mlflow_tracking_uri).set_model_version_tag(
+        MODEL_NAME, version.version, PROMOTION_TAG, tag
+    )
+
+    with pytest.raises(PromotionError, match="not a recall"):
+        promote(server_settings)
+
+
+def test_a_failed_lookup_of_production_stops_the_promotion(
+    server_settings, evaluation_run, monkeypatch
+):
+    candidate(server_settings, evaluation_run, 0.79)
+    lookup = MlflowClient.get_model_version_by_alias
+
+    def flaky(self, name, alias):
+        if alias == PRODUCTION:
+            raise MlflowException("the registry is down", INTERNAL_ERROR)
+        return lookup(self, name, alias)
+
+    monkeypatch.setattr(MlflowClient, "get_model_version_by_alias", flaky)
+
+    with pytest.raises(MlflowException, match="registry is down"):
+        promote(server_settings)  # not read as "no production yet"

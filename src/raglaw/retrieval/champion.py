@@ -21,6 +21,7 @@ with ``python -m raglaw.retrieval.champion promote`` (see ``main``).
 import argparse
 import json
 import logging
+import math
 import os
 import tempfile
 from collections.abc import Sequence
@@ -186,6 +187,34 @@ def _check_run(
         )
 
 
+def _heldout_scores(
+    client: MlflowClient, run_id: str, settings: Settings, index: DenseManifest
+) -> dict[str, str]:
+    """
+    The held-out scores to tag a version with, from a run checked to be the
+    held-out half (D15) of this very config and index.
+
+    returns:
+    - tags (dict[str, str]): ``run_id``, ``recall_at_5`` and ``mrr``
+
+    exceptions:
+    - ChampionError: the run scored another split, another config or index, or
+      logged no overall scores
+    """
+    run = client.get_run(run_id)
+    split = run.data.params.get("split")
+    if split != "heldout":
+        raise ChampionError(
+            f"run {run_id} scored the {split!r} split, not the held-out half"
+        )
+    _check_run(client, run_id, settings, index)
+    try:
+        metrics = {k: run.data.metrics[f"overall.{k}"] for k in ("recall_at_5", "mrr")}
+    except KeyError as exc:
+        raise ChampionError(f"run {run_id} logged no overall {exc.args[0]}") from exc
+    return {"run_id": run_id, **{k: str(v) for k, v in metrics.items()}}
+
+
 def _pip_requirements() -> list[str]:
     """The project, and each package the model imports pinned to its version here."""
     # A local build tag (torch's `+cpu`) names an index, not a PyPI release.
@@ -195,28 +224,36 @@ def _pip_requirements() -> list[str]:
 
 
 def register_champion(
-    settings: Settings, run_id: str, heldout: dict[str, float] | None = None
+    settings: Settings, run_id: str, heldout_run_id: str | None = None
 ) -> ModelVersion:
     """
     Register the config ``run_id`` was scored with as the new ``candidate``.
 
-    ``heldout`` holds the held-out half's scores (D15), kept as version tags;
-    ``promote`` compares its ``recall_at_5``. Nothing serves the version until
-    it is promoted.
+    ``heldout_run_id`` is the same config's one held-out run (D15). Its scores
+    become version tags (``heldout_run_id``, ``heldout_recall_at_5``,
+    ``heldout_mrr``), which ``promote`` compares. Without it the version can't
+    be promoted. Nothing serves the version until it is promoted.
 
     returns:
     - version (ModelVersion): the new version, which ``candidate`` now names
 
     exceptions:
-    - ChampionError: the run's params differ from ``settings``' config, or it
-      searched another index than the one at ``paths.index_dir``
+    - ChampionError: either run's params differ from ``settings``' config, or
+      it searched another index than the one at ``paths.index_dir``; the
+      held-out run scored another split, or logged no overall scores
     """
     if settings.aws_profile:  # run artifacts live in S3
         os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     client = MlflowClient(settings.mlflow_tracking_uri)
     index = Path(settings.paths.index_dir)
-    _check_run(client, run_id, settings, read_manifest(index / "dense", DenseManifest))
+    manifest = read_manifest(index / "dense", DenseManifest)
+    _check_run(client, run_id, settings, manifest)
+    heldout = (
+        _heldout_scores(client, heldout_run_id, settings, manifest)
+        if heldout_run_id
+        else {}
+    )
     with tempfile.TemporaryDirectory() as tmp:
         config = Path(tmp) / "config.json"
         sections = {
@@ -237,9 +274,9 @@ def register_champion(
                 pip_requirements=_pip_requirements(),
             )
     version = mlflow.register_model(info.model_uri, MODEL_NAME)
-    for key, value in (heldout or {}).items():
+    for key, value in heldout.items():
         client.set_model_version_tag(
-            MODEL_NAME, version.version, f"heldout_{key}", str(value)
+            MODEL_NAME, version.version, f"heldout_{key}", value
         )
     client.set_registered_model_alias(MODEL_NAME, CANDIDATE, version.version)
     logger.info(
@@ -248,20 +285,56 @@ def register_champion(
     return client.get_model_version(MODEL_NAME, version.version)
 
 
+def _missing(exc: MlflowException) -> bool:
+    """Whether the registry says the model or the alias doesn't exist. The
+    REST server reports a missing alias as INVALID_PARAMETER_VALUE ("Registered
+    model alias ... not found"), the sqlite store as RESOURCE_DOES_NOT_EXIST."""
+    if exc.error_code == "RESOURCE_DOES_NOT_EXIST":
+        return True
+    return exc.error_code == "INVALID_PARAMETER_VALUE" and (
+        "alias" in exc.message and "not found" in exc.message
+    )
+
+
 def _by_alias(client: MlflowClient, alias: str) -> ModelVersion | None:
+    """
+    The version ``alias`` names, or None when it names none.
+
+    exceptions:
+    - MlflowException: any other registry failure (unreachable, unauthorized),
+      so a lookup that failed is never read as "no such version"
+    """
     try:
         return client.get_model_version_by_alias(MODEL_NAME, alias)
-    except MlflowException:  # no such alias, or no registered model yet
-        return None
+    except MlflowException as exc:
+        if _missing(exc):
+            return None
+        raise
 
 
 def _score(version: ModelVersion) -> float:
-    try:
-        return float(version.tags[PROMOTION_TAG])
-    except (KeyError, ValueError) as exc:
+    """
+    The version's held-out recall@5.
+
+    exceptions:
+    - PromotionError: no tag, or one that isn't a finite recall in [0, 1]
+      (``nan`` would make every comparison false and pass the gate)
+    """
+    tag = version.tags.get(PROMOTION_TAG)
+    if tag is None:
         raise PromotionError(
             f"version {version.version} has no {PROMOTION_TAG} tag to compare"
-        ) from exc
+        )
+    try:
+        value = float(tag)
+    except ValueError:
+        value = math.nan
+    if not (math.isfinite(value) and 0 <= value <= 1):
+        raise PromotionError(
+            f"version {version.version} has {PROMOTION_TAG}={tag!r}, not a recall "
+            "in [0, 1]"
+        )
+    return value
 
 
 def promote(settings: Settings) -> ModelVersion:
@@ -421,16 +494,12 @@ def main(argv: list[str] | None = None) -> None:
     experiment = settings.tracking.experiments.retrieval
     run = _latest_run(client, experiment, args.run)
     heldout = _latest_run(client, experiment, args.heldout_run)
-    metrics = heldout.data.metrics
-    version = register_champion(
-        settings,
-        run.info.run_id,
-        heldout={
-            "run_id": heldout.info.run_id,
-            "recall_at_5": metrics["overall.recall_at_5"],
-            "mrr": metrics["overall.mrr"],
-        },
-    )
+    try:
+        version = register_champion(
+            settings, run.info.run_id, heldout_run_id=heldout.info.run_id
+        )
+    except ChampionError as exc:
+        raise SystemExit(str(exc)) from exc
     logger.info("models:/%s@%s -> version %s", MODEL_NAME, CANDIDATE, version.version)
 
 
