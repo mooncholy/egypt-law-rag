@@ -43,6 +43,10 @@ services:
       - --allowed-hosts=localhost:5000,127.0.0.1:5000,mlflow:5000
     environment:
       AWS_PROFILE: ${RAGLAW_AWS_PROFILE:?set RAGLAW_AWS_PROFILE in .env}
+      # The bucket's regional endpoint. Clients download artifacts through
+      # presigned URLs; signed for the global endpoint, the bucket answers
+      # them with a redirect the client doesn't follow.
+      MLFLOW_S3_ENDPOINT_URL: https://s3.eu-north-1.amazonaws.com
     volumes:
       - ${HOME}/.aws:/home/mlflow/.aws:ro
     ports:
