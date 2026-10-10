@@ -35,7 +35,8 @@ services:
       - server
       - --host=0.0.0.0
       - --port=5000
-      - --backend-store-uri=postgresql://mlflow:mlflow@postgres:5432/mlflow
+      # psycopg2 named explicitly: SQLAlchemy 2.1 defaults postgresql:// to psycopg 3.
+      - --backend-store-uri=postgresql+psycopg2://mlflow:mlflow@postgres:5432/mlflow
       - --serve-artifacts
       - --artifacts-destination=s3://${RAGLAW_S3_BUCKET:?set RAGLAW_S3_BUCKET in .env}/mlflow
       # The API container (Phase 10) calls it as mlflow:5000.
