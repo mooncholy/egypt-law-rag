@@ -5,7 +5,9 @@ from ragas.run_config import RunConfig
 
 from raglaw.answer_eval import (
     AnswerSetError,
+    answer_kind,
     ci_subset,
+    comparison_report,
     ragas_scores,
     read_answer_set,
     summarize,
@@ -236,3 +238,64 @@ def test_u37_the_real_ci_subset_is_20_questions_across_both_languages():
     assert len(subset) == 20
     assert {i.question.language for i in subset} == {"ar", "en"}
     assert {i.question.kind for i in subset} == {i.question.kind for i in items}
+
+
+# --- Comparing runs ------------------------------------------------------------------
+
+
+def _row(qid, answer, language="en", unaddressed=False, faithfulness=1.0, given=(44,)):
+    return {
+        "id": qid,
+        "language": language,
+        "answer": answer,
+        "unaddressed": unaddressed,
+        "expected": [44],
+        "articles": list(given),
+        "scores": {}
+        if unaddressed
+        else {"faithfulness": faithfulness, "context_recall": 1.0},
+    }
+
+
+SUBSTANCE = "Article 44 sets the age of majority at twenty-one Gregorian years."
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("row", "kind"),
+    [
+        (_row("q1", SUBSTANCE), "answer"),
+        (_row("q1", "The articles found do not address this question."), "refusal"),
+        (_row("q1", "المواد المذكورة لا تتناول هذا الموضوع.", "ar"), "refusal"),
+        (
+            _row("q1", "Article 812 | المادة ٨١٢"),
+            "refusal",
+        ),  # a bare label says nothing
+        (_row("q1", "", unaddressed=True), "gate"),
+    ],
+)
+def test_each_reply_is_an_answer_a_refusal_or_a_gate_refusal(row, kind):
+    assert answer_kind(row) == kind
+
+
+@pytest.mark.unit
+def test_the_comparison_counts_refusals_and_compares_shared_questions():
+    a = [
+        _row("q1", SUBSTANCE),
+        _row("q2", "The articles found do not address it.", faithfulness=0.0),
+    ]
+    b = [_row("q1", SUBSTANCE, faithfulness=0.5), _row("q2", "", unaddressed=True)]
+    runs = {
+        "a": ({"overall.faithfulness": 0.5}, a),
+        "b": ({"overall.faithfulness": 0.49}, b),
+    }
+
+    report = comparison_report(runs, repeat=("a", "b"))
+
+    assert (
+        "| a | 0.500 | n/a | n/a | n/a | 2 | 0 | 1 | 1 |" in report
+    )  # refused with 44 given
+    assert "| b | 0.490 | n/a | n/a | n/a | 1 | 1 | 0 | 0 |" in report
+    assert "## On the 1 questions every run answered with substance" in report
+    assert "| b | 0.500 | n/a | 0.500 |" in report
+    assert "a difference of 0.0100 (C20 allows 0.02). 1 of 2 answers" in report
