@@ -3,11 +3,10 @@ import re
 import pytest
 from ragas.run_config import RunConfig
 
+from raglaw.answer_compare import answer_kind, comparison_report
 from raglaw.answer_eval import (
     AnswerSetError,
-    answer_kind,
     ci_subset,
-    comparison_report,
     ragas_scores,
     read_answer_set,
     summarize,

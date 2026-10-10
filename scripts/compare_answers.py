@@ -1,7 +1,7 @@
 """Compare answer evaluation runs in MLflow: RAGAS means, shared questions, refusals.
 
 Reads the newest finished run of each name in the ``answers`` experiment, and
-writes ``docs/reports/answer_comparison.md`` (``raglaw.answer_eval``). With
+writes ``docs/reports/answer_comparison.md`` (``raglaw.answer_compare``). With
 ``--repeat A B`` it also checks C20 on two runs of one config. It sits outside
 ``dvc repro``: its input is MLflow's run history, not a tracked file.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from mlflow.tracking import MlflowClient
 
-from raglaw.answer_eval import comparison_report
+from raglaw.answer_compare import comparison_report
 from raglaw.config import Settings
 
 logger = logging.getLogger("compare_answers")

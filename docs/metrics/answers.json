@@ -1,0 +1,45 @@
+{
+  "answered": 51,
+  "by_language": {
+    "ar": {
+      "answer_relevancy": 0.6856,
+      "context_precision": 0.9088,
+      "context_recall": 0.7681,
+      "faithfulness": 0.5071
+    },
+    "en": {
+      "answer_relevancy": 0.6252,
+      "context_precision": 0.7703,
+      "context_recall": 0.744,
+      "faithfulness": 0.6149
+    }
+  },
+  "hallucinated_citations": 5,
+  "judge_model": "gpt-oss:120b-cloud",
+  "llm_model": "qwen2.5:3b-instruct-fp16",
+  "overall": {
+    "answer_relevancy": 0.6524,
+    "context_precision": 0.8264,
+    "context_recall": 0.7549,
+    "faithfulness": 0.5663
+  },
+  "prompt_version": "v2",
+  "questions": 65,
+  "refused": [
+    "q003",
+    "q016",
+    "q050",
+    "q060",
+    "q064",
+    "q087",
+    "q089",
+    "q100",
+    "q103",
+    "q104",
+    "q106",
+    "q110",
+    "q132",
+    "q138"
+  ],
+  "subset": "full"
+}
