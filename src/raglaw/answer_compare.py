@@ -1,4 +1,5 @@
-"""Compare answer evaluation runs (Phase 9): refusals, shared questions, C20.
+"""Compare answer evaluation runs (Phase 9): refusals, lost faithfulness by
+stage, shared questions, C20.
 
 Kept apart from ``answer_eval`` (a dependency of the ``evaluate_answers``
 stage), as ``retrieval.compare`` is from ``retrieval.scoring``: changing a
@@ -13,13 +14,16 @@ from typing import Any
 
 from raglaw.answer_eval import METRICS
 
-# How the generator says it found nothing, in either language. Its answers are
-# short; one below MIN_ANSWER_CHARS (e.g. a bare article label) says nothing.
+# How the generator says it found nothing, in either language, searched in its
+# first sentence only: an answer may say later that one article doesn't
+# specify a detail. A reply below MIN_ANSWER_CHARS (e.g. a bare article label)
+# says nothing.
 REFUSAL = re.compile(
     r"do(es)? not (address|provide|directly address|specify)|not directly addressed|"
-    r"لا تتناول|لا يتناول|لا يوجد في المقالات|لا تتضمن",
+    r"لا تتناول|لا يتناول|لا يوجد في المقالات|لا تتضمن|لا تجيب",
     re.IGNORECASE,
 )
+FIRST_SENTENCE = re.compile(r"(?<=[.!?؟])\s|\n")
 MIN_ANSWER_CHARS = 40
 
 
@@ -34,9 +38,10 @@ def answer_kind(row: dict[str, Any]) -> str:
     """
     if row["unaddressed"]:
         return "gate"
-    text = row["answer"]
+    text = row["answer"].strip()
+    first = FIRST_SENTENCE.split(text, maxsplit=1)[0]
     return (
-        "refusal" if REFUSAL.search(text) or len(text) < MIN_ANSWER_CHARS else "answer"
+        "refusal" if REFUSAL.search(first) or len(text) < MIN_ANSWER_CHARS else "answer"
     )
 
 
@@ -54,6 +59,27 @@ def expected_given(row: dict[str, Any]) -> bool:
     if row.get("match") == "any":
         return bool(expected & articles)
     return bool(expected) and expected <= articles
+
+
+def loss_stage(row: dict[str, Any]) -> str | None:
+    """
+    Which part of the pipeline a scored answer's lost faithfulness blames
+    (handbook Module 5, Step 14).
+
+    returns:
+    - stage (str | None): ``retrieval`` (the generator wasn't given what the
+      question needs, ``expected_given``), ``refusal`` (it refused although it
+      was), ``generator`` (it answered from it), or None for a gate refusal or
+      an answer without a faithfulness score
+    """
+    if answer_kind(row) == "gate" or row["scores"].get("faithfulness") is None:
+        return None
+    if not expected_given(row):
+        return "retrieval"
+    return "refusal" if answer_kind(row) == "refusal" else "generator"
+
+
+LOSS_STAGES = ("retrieval", "refusal", "generator")
 
 
 def _mean(values: Iterable[float | None]) -> float | None:
@@ -95,6 +121,35 @@ def comparison_report(
             + f" | {sum(not r['unaddressed'] for r in rows)} "
             f"| {sum(r['unaddressed'] for r in rows)} | {len(refused)} | {given} |"
         )
+    lines += [
+        "",
+        "## Where faithfulness is lost",
+        "",
+        (
+            "Points lost are 1 − faithfulness, summed over a run's scored answers; "
+            "each answer's loss is blamed on one stage (`loss_stage`). Gate "
+            "refusals aren't scored, so a run that refuses more loses fewer points."
+        ),
+        "",
+        (
+            "| Run | Scored | Points lost | Retrieval | Generator refused "
+            "| Generator answered |"
+        ),
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for name, (_, rows) in runs.items():
+        lost = dict.fromkeys(LOSS_STAGES, 0.0)
+        scored = 0
+        for r in rows:
+            if stage := loss_stage(r):
+                lost[stage] += 1 - r["scores"]["faithfulness"]
+                scored += 1
+        total = sum(lost.values())
+        cells = " | ".join(
+            f"{lost[s]:.1f} ({lost[s] / total:.0%})" if total else "0.0"
+            for s in LOSS_STAGES
+        )
+        lines.append(f"| {name} | {scored} | {total:.1f} | {cells} |")
     shared = set.intersection(
         *(
             {r["id"] for r in rows if answer_kind(r) == "answer"}

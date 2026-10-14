@@ -3,7 +3,12 @@ import re
 import pytest
 from ragas.run_config import RunConfig
 
-from raglaw.answer_compare import answer_kind, comparison_report, expected_given
+from raglaw.answer_compare import (
+    answer_kind,
+    comparison_report,
+    expected_given,
+    loss_stage,
+)
 from raglaw.answer_eval import (
     AnswerSetError,
     ci_subset,
@@ -266,6 +271,15 @@ SUBSTANCE = "Article 44 sets the age of majority at twenty-one Gregorian years."
         (_row("q1", SUBSTANCE), "answer"),
         (_row("q1", "The articles found do not address this question."), "refusal"),
         (_row("q1", "المواد المذكورة لا تتناول هذا الموضوع.", "ar"), "refusal"),
+        (_row("q1", "المواد المذكورة لا تجيب عن هذا السؤال.", "ar"), "refusal"),
+        (
+            _row("q1", f"{SUBSTANCE} Article 45 does not specify the exceptions."),
+            "answer",
+        ),  # only the first sentence can refuse
+        (
+            _row("q1", "Article 166 does not directly address it. So no answer."),
+            "refusal",
+        ),
         (
             _row("q1", "Article 812 | المادة ٨١٢"),
             "refusal",
@@ -300,6 +314,30 @@ def test_the_expected_articles_count_as_given_by_the_retrieval_rule(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("row", "stage"),
+    [
+        (_row("q1", SUBSTANCE, faithfulness=0.5), "generator"),
+        (
+            _row("q1", "The articles found do not address it.", faithfulness=0.0),
+            "refusal",
+        ),
+        (_row("q1", SUBSTANCE, given=(112,)), "retrieval"),  # 44 never given
+        (_row("q1", "The articles do not address it.", given=(112,)), "retrieval"),
+        (_row("q1", "", unaddressed=True), None),
+        (_row("q1", SUBSTANCE, faithfulness=None), None),  # the judge's reply unparsed
+        # one article of a repealed range is enough: not blamed on retrieval
+        (
+            _row("q1", SUBSTANCE, given=(44,)) | {"expected": [44, 45], "match": "any"},
+            "generator",
+        ),
+    ],
+)
+def test_lost_faithfulness_is_blamed_on_one_stage(row, stage):
+    assert loss_stage(row) == stage
+
+
+@pytest.mark.unit
 def test_the_comparison_counts_refusals_and_compares_shared_questions():
     a = [
         _row("q1", SUBSTANCE),
@@ -317,6 +355,8 @@ def test_the_comparison_counts_refusals_and_compares_shared_questions():
         "| a | 0.500 | n/a | n/a | n/a | 2 | 0 | 1 | 1 |" in report
     )  # refused with 44 given
     assert "| b | 0.490 | n/a | n/a | n/a | 1 | 1 | 0 | 0 |" in report
+    assert "| a | 2 | 1.0 | 0.0 (0%) | 1.0 (100%) | 0.0 (0%) |" in report
+    assert "| b | 1 | 0.5 | 0.0 (0%) | 0.0 (0%) | 0.5 (100%) |" in report
     assert "## On the 1 questions every run answered with substance" in report
     assert "| b | 0.500 | n/a | 0.500 |" in report
     assert "a difference of 0.0100 (C20 allows 0.02). 1 of 2 answers" in report
