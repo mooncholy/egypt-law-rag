@@ -72,7 +72,7 @@ search:
   rerank: true          # re-score the top rerank_depth fused chunks with `reranker`
   rerank_depth: 30
   cite_expansion: true  # insert the articles a returned chunk cites, right after it (+2 questions with reranking)
-  repealed_fallback: false  # match the repealed ranges' former text when the gate would refuse (paths.repealed)
+  repealed_fallback: true   # match the repealed ranges' former text when the gate would refuse (+3 tuning questions, 0 broken)
   repealed_below: 0.1       # the gate's threshold (D21): the fallback runs only below it
   repealed_min_score: 0.01  # a repealed passage's reranker score that counts as a match
 

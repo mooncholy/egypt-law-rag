@@ -1,6 +1,17 @@
-# Retrieval misses: hybrid, tuning half; recall@5 0.785 against the 0.90 target
+# Retrieval misses: hybrid, tuning half; recall@5 0.815 against the 0.90 target
 
-## Missed at 5: 14 of 65
+## Missed at 5: 12 of 65
+
+### q001 (rule, en, english)
+
+```text
+From what age can a person in Egypt sign contracts and manage their own money without a guardian?
+```
+
+- Expected: 44 (rank 6)
+- Match: all
+- Returned: 112, 111, 11, 108, 53, 44, 46, 173, 45, 188
+- Legal basis: Art. 44: majority, and with it full capacity, is 21 completed Gregorian years.
 
 ### q003 (rule, ar, colloquial)
 
@@ -10,7 +21,7 @@
 
 - Expected: 172 (not returned)
 - Match: all
-- Returned: 575, 51, 164, 175, 171, 50, 444, 170, 221, 222
+- Returned: 575, 51, 164, 175, 171, 50, 170, 221, 222, 960
 - Legal basis: Art. 172: a tort claim lapses three years from knowing the injury and the person responsible, fifteen at most.
 
 ### q053 (multi_article, ar, msa)
@@ -21,7 +32,7 @@
 
 - Expected: 375 (rank 1); 374 (not returned)
 - Match: all
-- Returned: 375, 385, 379, 376, 378, 377, 969, 380, 8, 1027
+- Returned: 375, 385, 379, 376, 378, 969, 380, 377, 386, 1027
 - Legal basis: Art. 374: fifteen years; Art. 375: five years for periodic sums such as rent and interest.
 
 ### q054 (multi_article, en, english)
@@ -30,10 +41,10 @@
 A debtor gave away his property to escape his creditors. What must a creditor prove to undo this, and how long does he have?
 ```
 
-- Expected: 237–238, 243 (not returned)
+- Expected: 239 (rank 1); 237–238, 243 (not returned)
 - Match: all
-- Returned: 239, 258, 786, 1063, 1051, 260, 340, 788, 790, 241
-- Legal basis: Arts. 237–238 set the conditions of the actio pauliana; Art. 243 sets three years from knowledge, fifteen at most.
+- Returned: 239, 258, 786, 1063, 1051, 260, 340, 788, 790, 787
+- Legal basis: Arts. 237–238 set the conditions of the actio pauliana; Art. 239: the creditor need only prove the amount of the debt; Art. 243 sets three years from knowledge, fifteen at most.
 
 ### q059 (multi_article, en, english)
 
@@ -41,9 +52,9 @@ A debtor gave away his property to escape his creditors. What must a creditor pr
 What rights does an owner have over his property, and can the state take it from him?
 ```
 
-- Expected: 802 (rank 2); 805 (rank 8)
+- Expected: 802 (rank 2); 805 (rank 7)
 - Match: all
-- Returned: 988, 802, 1078, 803, 991, 874, 1141, 805, 812, 804
+- Returned: 988, 802, 803, 1078, 991, 874, 805, 812, 1141, 804
 - Legal basis: Art. 802: use, enjoyment and disposal; Art. 805: no deprivation except as the law provides and against fair compensation.
 
 ### q062 (multi_article, ar, msa)
@@ -52,32 +63,10 @@ What rights does an owner have over his property, and can the state take it from
 ما مسئولية صاحب العمل عن خطأ موظفه أثناء العمل، وهل يستطيع أن يرجع على الموظف بما دفعه؟
 ```
 
-- Expected: 175 (rank 2); 174 (rank 8)
+- Expected: 175 (rank 2); 174 (not returned)
 - Match: all
-- Returned: 192, 175, 690, 692, 324, 167, 696, 174, 217, 665
+- Returned: 192, 175, 690, 692, 324, 167, 696, 217, 665, 691
 - Legal basis: Art. 174: the master is liable for the servant's acts in the course of employment; Art. 175: he has recourse against the servant.
-
-### q087 (repealed, en, english)
-
-```text
-What does the Civil Code say about how associations are founded and registered?
-```
-
-- Expected: 54–80 (not returned)
-- Match: any
-- Returned: 11, 52, 864, 506, 44, 862, 30, 863, 1019, 865
-- Legal basis: Articles 54–80 (associations and foundations) are printed as repealed; the subject is governed by special legislation.
-
-### q089 (repealed, en, english)
-
-```text
-What are the Civil Code rules on proving a contract by witness testimony?
-```
-
-- Expected: 389–417 (not returned)
-- Match: any
-- Returned: 137, 104, 125, 97, 697, 698, 149, 147, 244, 127
-- Legal basis: Articles 389–417 (proof) are printed as repealed; proof is governed by the Law of Evidence.
 
 ### q098 (one_language_only, ar, msa)
 
@@ -87,7 +76,7 @@ What are the Civil Code rules on proving a contract by witness testimony?
 
 - Expected: 1060 (not returned)
 - Match: all
-- Returned: 1033, 1084, 1061, 1075, 1118, 1036, 1148, 1032, 1109, 1030
+- Returned: 1033, 1084, 1061, 1075, 1118, 1036, 1148, 1109, 1032, 1030
 - Legal basis: Art. 1060: the definition of a third party holder is printed in English only.
 
 ### q100 (one_language_only, ar, colloquial)
@@ -109,7 +98,7 @@ What are the Civil Code rules on proving a contract by witness testimony?
 
 - Expected: 720 (not returned)
 - Match: all
-- Returned: 983, 984, 990, 207, 1103, 166, 164, 641, 1081, 727
+- Returned: 983, 984, 207, 990, 1103, 166, 164, 1081, 504, 727
 - Legal basis: Art. 720: a gratuitous depositary owes the care he gives his own affairs.
 
 ### q110 (lay_term, ar, colloquial)
@@ -120,19 +109,8 @@ What are the Civil Code rules on proving a contract by witness testimony?
 
 - Expected: 834 (rank 6)
 - Match: all
-- Returned: 903, 853, 913, 895, 907, 834, 908, 845, 902, 905
+- Returned: 903, 853, 913, 895, 907, 834, 908, 902, 845, 905
 - Legal basis: Art. 834: every co-owner may demand partition unless bound by law or by an agreement of at most five years.
-
-### q132 (repealed, ar, msa)
-
-```text
-ما قواعد القانون المدني في إثبات العقد بشهادة الشهود؟
-```
-
-- Expected: 389–417 (not returned)
-- Match: any
-- Returned: 137, 244, 125, 145, 147, 773, 129, 95, 148, 43
-- Legal basis: Articles 389–417 (proof) are printed as repealed; proof is governed by the Law of Evidence.
 
 ### q138 (multi_article, en, english)
 
@@ -142,7 +120,7 @@ How far is an employer liable for an employee's fault at work, and can he recove
 
 - Expected: 175 (rank 4); 174 (not returned)
 - Match: all
-- Returned: 977, 696, 192, 175, 692, 665, 768, 221, 690, 695
+- Returned: 977, 696, 192, 175, 665, 692, 768, 221, 690, 695
 - Legal basis: Art. 174: the master is liable for the servant's acts in the course of employment; Art. 175: he has recourse against the servant.
 
 ### q139 (multi_article, en, english)
@@ -153,7 +131,7 @@ My father died owing debts. What are the debts paid from, and when do the heirs 
 
 - Expected: 899 (rank 2); 893 (rank 8)
 - Match: all
-- Returned: 895, 899, 378, 913, 302, 896, 894, 893, 898, 897
+- Returned: 895, 899, 913, 378, 302, 896, 894, 893, 898, 897
 - Legal basis: Art. 893: estate debts are paid from estate assets; Art. 899: heirs take the residue after debts.
 
 ## Pairs that disagree on the top article: 5 of 11
@@ -236,7 +214,7 @@ Under the rules on mortgages, who counts as the holder of the mortgaged property
 What is the prison sentence for theft in Egypt?
 ```
 
-- q115: Article 1000 (dense 0.527, bm25 3.923, rrf 0.032)
+- q115: Article 1000 (dense 0.527, bm25 3.922, rrf 0.032)
 
 ```text
 إزاي أعمل توكيل في الشهر العقاري وبكام؟
@@ -248,13 +226,13 @@ What is the prison sentence for theft in Egypt?
 What is the deadline to appeal a civil court judgment?
 ```
 
-- q119: Article 599 (dense 0.543, bm25 3.844, rrf 0.032)
+- q119: Article 599 (dense 0.539, bm25 3.844, rrf 0.032)
 
 ```text
 هو الإيجار القديم هيتلغي إمتى؟
 ```
 
-- q120: Article 889 (dense 0.435, bm25 none, rrf 0.013)
+- q120: Article 889 (dense 0.435, bm25 none, rrf 0.014)
 
 ```text
 What is the penalty for writing a cheque that bounces?
