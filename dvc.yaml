@@ -148,6 +148,7 @@ stages:
       - ${paths.index_dir}/dense
       - ${paths.index_dir}/bm25
       - ${paths.gold_dir}/retrieval_eval.jsonl
+      - ${paths.repealed}
       - src/raglaw/ingest/evaluate_retrieval.py
       - src/raglaw/retrieval/dense.py
       - src/raglaw/retrieval/embeddings.py
@@ -155,6 +156,7 @@ stages:
       - src/raglaw/retrieval/lexical.py
       - src/raglaw/retrieval/lookup.py
       - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/repealed.py
       - src/raglaw/retrieval/rerank.py
       - src/raglaw/retrieval/retriever.py
       - src/raglaw/retrieval/scoring.py
@@ -186,6 +188,7 @@ stages:
       - ${paths.index_dir}/bm25
       - ${paths.gold_dir}/answer_eval.jsonl
       - ${paths.gold_dir}/retrieval_eval.jsonl
+      - ${paths.repealed}
       - src/raglaw/answer_eval.py
       - src/raglaw/ingest/evaluate_answers.py
       - src/raglaw/ingest/evaluate_retrieval.py
@@ -198,6 +201,7 @@ stages:
       - src/raglaw/retrieval/lexical.py
       - src/raglaw/retrieval/lookup.py
       - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/repealed.py
       - src/raglaw/retrieval/rerank.py
       - src/raglaw/retrieval/retriever.py
       - src/raglaw/retrieval/scoring.py
