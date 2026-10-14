@@ -8,7 +8,8 @@ of its words (Phase 6). ``data/repealed/repealed.json`` holds, per range:
 - **sections** of the 1948 text, each headed by its English and Arabic
   heading. The text is an OCR of the original Code and is noisy; it is used
   only to recognise that a question is about a repealed subject;
-- **the repeal record**: the subject, the date and the repealing law.
+- **the repeal record**: the subject and, where the current Code's repeal
+  note gives them, the date and the repealing law.
 
 The answer to such a question comes from the record and cites the current
 Code's range. The former text is never shown or used to answer.
@@ -54,14 +55,23 @@ class RepealRecord(BaseModel):
     last: int = Field(gt=0, description="The range's last article.")
     subject_en: str = Field(min_length=1)
     subject_ar: str = Field(min_length=1)
-    repealed_on: date = Field(description="The date the repeal took effect.")
-    repealed_by_en: str = Field(min_length=1)
-    repealed_by_ar: str = Field(min_length=1)
-    source: str = Field(
-        min_length=1,
-        description="Where the law and the date come from: the Code's own "
-        "repeal note, or the repealing law when the note gives neither.",
+    repealed_on: date | None = Field(
+        default=None,
+        description="The repeal's date, only when the current Code prints it.",
     )
+    repealed_by_en: str | None = Field(
+        default=None,
+        min_length=1,
+        description="The repealing law, only when the current Code names it.",
+    )
+    repealed_by_ar: str | None = Field(default=None, min_length=1)
+    source: str = Field(min_length=1, description="The Code's repeal note it rests on.")
+
+    @model_validator(mode="after")
+    def _law_in_both_languages(self) -> Self:
+        if (self.repealed_by_en is None) != (self.repealed_by_ar is None):
+            raise ValueError("the repealing law is named in both languages or neither")
+        return self
 
 
 class RepealedSection(BaseModel):
@@ -178,23 +188,28 @@ def _date_ar(d: date) -> str:
 
 def repeal_answer(record: RepealRecord, language: str) -> str:
     """
-    The reply to a question on a repealed subject: the range was repealed as
-    of its date, by its law. Nothing of the former text is stated.
+    The reply to a question on a repealed subject: the range was repealed,
+    with the date and the law when the current Code gives them. Nothing of
+    the former text is stated.
 
     returns:
     - text (str): in the question's language
     """
     if language == "ar":
         first, last = (str(n).translate(AR_DIGITS) for n in (record.first, record.last))
+        when = (
+            f" اعتبارًا من {_date_ar(record.repealed_on)}" if record.repealed_on else ""
+        )
+        by = f" {record.repealed_by_ar}" if record.repealed_by_ar else ""
         return (
             f"كانت أحكام {record.subject_ar} في القانون المدني واردة في المواد من "
-            f"{first} إلى {last}، وقد ألغيت اعتبارًا من {_date_ar(record.repealed_on)} "
-            f"{record.repealed_by_ar}. ولا يتضمن القانون المدني الحالي من هذه المواد "
-            "إلا ما يفيد إلغاءها."
+            f"{first} إلى {last}، وقد ألغيت{when}{by}. ولا يتضمن القانون المدني "
+            "الحالي من هذه المواد إلا ما يفيد إلغاءها."
         )
+    when = f" as of {_date_en(record.repealed_on)}" if record.repealed_on else ""
+    by = f" {record.repealed_by_en}" if record.repealed_by_en else ""
     return (
         f"The Civil Code's provisions on {record.subject_en} were in Articles "
-        f"{record.first}-{record.last}. They were repealed as of "
-        f"{_date_en(record.repealed_on)} {record.repealed_by_en}. The current "
+        f"{record.first}-{record.last}. They were repealed{when}{by}. The current "
         "Code keeps only a note that these articles are repealed."
     )

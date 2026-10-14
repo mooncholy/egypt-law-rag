@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from raglaw.retrieval.repealed import (
     RepealedMatcher,
     RepealedSet,
+    RepealRecord,
     passages,
     repeal_answer,
 )
@@ -53,6 +54,23 @@ def test_every_section_belongs_to_a_range_and_every_range_has_one(
 ):
     with pytest.raises(ValidationError, match=message):
         RepealedSet.model_validate(repealed_set.model_dump() | change)
+
+
+def test_without_a_date_or_law_in_the_code_the_reply_states_neither(repealed_set):
+    """Articles 389-417: the Code prints only `ملغاة` (owner ruling, 2026-10-15)."""
+    record = repealed_set.ranges[0].model_copy(
+        update={"repealed_on": None, "repealed_by_en": None, "repealed_by_ar": None}
+    )
+
+    assert "They were repealed. The current Code" in repeal_answer(record, "en")
+    assert "وقد ألغيت. ولا يتضمن" in repeal_answer(record, "ar")
+
+
+def test_a_law_named_in_one_language_only_is_rejected(repealed_set):
+    record = repealed_set.ranges[0].model_dump() | {"repealed_by_ar": None}
+
+    with pytest.raises(ValidationError, match="both languages or neither"):
+        RepealRecord.model_validate(record)
 
 
 def test_the_reply_states_the_range_the_date_and_the_law(repealed_set):

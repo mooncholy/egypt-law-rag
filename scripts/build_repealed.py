@@ -10,9 +10,9 @@ Andersen translation of Law 131 of 1948, which prints the ranges as repealed)
 and its Arabic heading (the 1948 heading, spelled out where the OCR dropped
 letters).
 
-The repeal records come from the current Code's repeal note where it gives the
-law and the date (Articles 54-80), else from the repealing law (Articles
-389-417, which the Code marks only ``ملغاة``). They are the owner's to confirm.
+The repeal records hold only what the current Code's repeal note prints: the
+law and the date for Articles 54-80, nothing for Articles 389-417, which the
+Code marks only ``ملغاة`` (owner ruling, 2026-10-15).
 
 Run as ``uv run python scripts/build_repealed.py <djvu.txt> [--out PATH]``, then
 ``uv run dvc add data/repealed/repealed.json``. It sits outside ``dvc repro``:
@@ -91,7 +91,7 @@ RANGES = (
         "repealed_by_en": "by Presidential Decree-Law No. 348 of 1956",
         "repealed_by_ar": "بالقرار الجمهوري بالقانون رقم ٣٤٨ لسنة ١٩٥٦",
         "source": (
-            "The Code's repeal note for Articles 54-80 (Official Gazette no. 88 "
+            "The Code's repeal note for Articles 54-80 on page 7 (Official Gazette no. 88 "
             "bis (c), 3/11/1956; that law was itself repealed by Presidential "
             "Decree No. 32 of 1964). The note prints the law's number as 348; "
             "other sources give 384"
@@ -102,17 +102,7 @@ RANGES = (
         "last": 417,
         "subject_en": "the proof of obligations",
         "subject_ar": "إثبات الالتزام",
-        "repealed_on": "1968-11-30",
-        "repealed_by_en": (
-            "by the Law of Evidence in Civil and Commercial Matters (Law No. 25 of 1968)"
-        ),
-        "repealed_by_ar": "بقانون الإثبات في المواد المدنية والتجارية رقم ٢٥ لسنة ١٩٦٨",
-        "source": (
-            "The Code marks Articles 389-417 only as repealed. Law No. 25 of 1968, "
-            "Article 1, repealed Chapter VI of Book I of Part I of the Civil Code; "
-            "published in the Official Gazette no. 22 on 30 May 1968 and in force "
-            "six months later"
-        ),
+        "source": "The Code's note on page 53: Articles 389-417 repealed (no law or date)",
     },
 )
 

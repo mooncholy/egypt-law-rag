@@ -295,9 +295,9 @@ class AnswerPipeline:
             contexts=[
                 note.page_content,
                 (
-                    f"Articles {record.first}-{record.last} ({record.subject_en}) "
-                    f"were repealed as of {record.repealed_on.isoformat()} "
-                    f"{record.repealed_by_en}. Source: {record.source}"
+                    f"Repeal record for Articles {record.first}-{record.last} "
+                    f"({record.subject_en}): {repeal_answer(record, 'en')} "
+                    f"Source: {record.source}"
                 ),
             ],
         )
