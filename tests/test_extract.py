@@ -59,6 +59,7 @@ def test_counts_off_their_baselines_fail_the_stage():
                 "lam_alef_swaps": 3_499,
                 "rtl_digit_runs_reordered": 1_167,
                 "stray_zero_width_alefs": 26,
+                "punctuation_moved": 160,
             }
         )
 
@@ -86,6 +87,7 @@ def test_extract_counts_equal_their_baselines(stage_metrics):
     assert counts["rows_missing_a_side"] == 0
     assert counts["lam_alef_swaps"] == profile.RAW_DEFECTS["lam_alef_signatures"]
     assert counts["rtl_digit_runs_reordered"] == profile.RAW_DEFECTS["rtl_digit_runs"]
+    assert counts["punctuation_moved"] == 160  # R30, P33
 
 
 @pytest.mark.unit

@@ -15,7 +15,8 @@ constantly (P30): ``الفصل الثان`` and ``ي`` on the same baseline. Pie
 boxes overlap vertically are joined back into one line in reading order, as
 stored, before the line is stripped, so the spaces at each seam survive. An
 Arabic piece often stores a space before characters drawn to its right
-(``' مصادر'`` is drawn ``'مصادر '``); each space is moved to where it is drawn.
+(``' مصادر'`` is drawn ``'مصادر '``); each space is moved to where it is drawn,
+and so is a punctuation mark that ends a line (R30, P33).
 
 - **Stray zero-width alefs (D11, P28):** after the swap, a zero-width alef that
   follows no ``ل`` belongs to no letter. It is invisible on the page and
@@ -40,6 +41,8 @@ ZERO_WIDTH = 0.01  # a glyph narrower than this (in points) is drawn with no adv
 SAME_LINE_OVERLAP = 0.5
 # Characters of left-to-right runs inside right-to-left text.
 LEFT_TO_RIGHT = re.compile(r"[A-Za-z0-9]")
+# Marks that can end an Arabic line, and so can be stored away from it (P33).
+MOVABLE_PUNCTUATION = frozenset(".،؛:؟!")
 PRIVATE_USE = re.compile(r"[-]")
 
 
@@ -50,6 +53,7 @@ class CellText:
     lines: list[str]
     pieces_merged: int = 0
     spaces_moved: int = 0
+    punctuation_moved: int = 0
     lam_alef_swaps: int = 0
     digit_runs_reordered: int = 0
     stray_zero_width_alefs: int = 0
@@ -213,6 +217,50 @@ def reorder_spaces(chars: list[dict]) -> tuple[list[dict], int]:
     return chars, moved
 
 
+def reorder_punctuation(chars: list[dict]) -> tuple[list[dict], int]:
+    """
+    Move each punctuation mark of a right-to-left piece to where it is drawn
+    (R30, P33).
+
+    The mark that ends a line is drawn at its left end but can be stored
+    earlier: inside the last word (``فحواه.ا`` for ``فحواها.``), after the
+    first word (``أشهر .على``) or inside the opening marker (``(١.)``). As
+    with spaces (``reorder_spaces``), a mark stored before characters drawn
+    to its right moves past them; one drawn where it is stored stays, so
+    marks printed inside a word (``إنشائه،أو``, Art. 53) are kept. A mark
+    moves only when the character stored right after it is a letter or
+    bracket drawn to its right: before a space it is where it reads, even
+    when the print draws the space first (``عقار. وكل`` is drawn
+    ``عقار .وكل``, page 7). A mark
+    after a Latin letter or an ASCII digit belongs to that left-to-right run
+    and stays, and no mark moves past one.
+
+    returns:
+    - chars (list[dict]): the piece's characters, marks where they're drawn
+    - moved (int): how many marks moved
+    """
+    chars, moved = list(chars), 0
+    i = len(chars) - 1
+    while i >= 0:
+        if (
+            chars[i]["c"] in MOVABLE_PUNCTUATION
+            and not (i and LEFT_TO_RIGHT.match(chars[i - 1]["c"]))
+            and i + 1 < len(chars)
+            and not chars[i + 1]["c"].isspace()
+        ):
+            j = i
+            while (
+                j + 1 < len(chars)
+                and not LEFT_TO_RIGHT.match(chars[j + 1]["c"])
+                and chars[j + 1]["bbox"][0] > chars[j]["bbox"][0] + 0.5
+            ):
+                chars[j], chars[j + 1] = chars[j + 1], chars[j]
+                j += 1
+            moved += j != i
+        i -= 1
+    return chars, moved
+
+
 def _highlighted_text(line: list[dict], highlights: list[pymupdf.Rect]) -> str:
     """
     The characters of a line drawn under a highlight, in reading order.
@@ -255,7 +303,7 @@ def cell_text(
     """
     lines: list[str] = []
     highlighted: list[str] = []
-    swaps = reordered = remaining = moved = 0
+    swaps = reordered = remaining = moved = marks = 0
     private: list[str] = []
     groups, merged = visual_lines(raw, rtl)
     for pieces in groups:
@@ -275,6 +323,8 @@ def cell_text(
             if rtl:
                 piece_chars, n_moved = reorder_spaces(piece_chars)
                 moved += n_moved
+                piece_chars, n_marks = reorder_punctuation(piece_chars)
+                marks += n_marks
             line += piece_chars
         text = "".join(c["c"] for c in line)
         private += PRIVATE_USE.findall(text)
@@ -284,7 +334,15 @@ def cell_text(
             if marked:
                 highlighted.append(marked)
     return CellText(
-        lines, merged, moved, swaps, reordered, remaining, private, highlighted
+        lines,
+        merged,
+        moved,
+        marks,
+        swaps,
+        reordered,
+        remaining,
+        private,
+        highlighted,
     )
 
 

@@ -65,6 +65,9 @@ Every line must read `OK`. A mismatch means the PDF or the measurement code chan
 | P30 | PyMuPDF splits one visual line into several lines whenever a text run starts to the left of the previous one, which right-to-left text does constantly: 5,051 Arabic pieces (1,618 of them mid-word, e.g., `الثان` + `ي`) and 7 English pieces (stored right to left, e.g., Article 1022). `get_text("text")` splits the same way. Inside Arabic pieces, a space is often stored before characters drawn to its right (`' مصادر'` is drawn `'مصادر '`): 7,144 spaces, including the 13 spaced `مادة` (P10) and Article 601's split number (P24). `extract` joins the pieces of each visual line and moves those spaces (R24) | Measured | `extract.json` (`line_pieces_merged_ar`, `line_pieces_merged_en`, `piece_spaces_moved`) |
 | P31 | 2 ligatures are drawn with no character at all, so their letters are missing from the text layer: page 21 (`اداما`, reads as `انهداما`) and page 169 (`أما`, reads as `أنهما`). Found in Phase 2; errata entries await the owner | Measured (by the gap at the seam); the letters are Judgment | — |
 | P32 | The yellow fills (P6) mark text with no direct counterpart in the other language: English-only passages in Articles 84, 499, 1022 and 1060, and the heading `SECOND PART / REAL RIGHTS`; Arabic-only passages in Articles 970, 1021 (paragraphs ٢ and ٣) and 1085, and the heading `موت المستأجر أو إعساره`. Articles 1021 and 1022 are not treated as a misalignment: their paragraph numbers differ | Measured (location); the meaning is the owner's reading | `extract.json` (`highlighted_lines_en`, `highlighted_lines_ar`), `assemble.json` (`untranslated_passages`) |
+| P33 | The punctuation mark that ends an Arabic line is drawn at its left end but can be stored earlier in the line: inside the last word (`فحواه.ا` for `فحواها.`, Art. 1; `ا،لعرف`), at the start of the line (`،إذا …`), after its first word (`أشهر .على`, Art. 601) or inside the opening marker (`(١.)`). In each case the character stored right after the mark is a letter or bracket drawn to its right. 160 marks. A mark stored before a *space* drawn to its right is not this defect: the print draws `عقار .وكل` for the stored, correctly read `عقار. وكل` (page 7) | Measured (by `x0`); found in the gold sample (2026-10-14) | `extract.json` (`punctuation_moved`) |
+| P34 | Paragraph markers are stored in six shapes after R24 and R30: `) N(` 368 times, `(N(` 327, `)N(` 313, `( N(` 83, `(N)` 15, plus one `) N( .` and one `(N(` with no space after it. The print shows `(N)`. Article 52's list items (`١( الدولة`) have no opening parenthesis and are not paragraph markers | Measured | `repair.json` (`paragraph_markers_normalized`, `malformed_markers_remaining`) |
+| P35 | One ligature is stored scrambled: `إاءنه` for `إنهاء`, followed by a doubled space, on 5 lines of pages 81–82 (Articles 601, 602 and 608); 9 other `إنهاء` are intact | Measured; the reading is Judgment (owner ruling, 2026-10-14) | `data/errata.yaml` |
 
 # Subsequent Decisions
 
@@ -80,6 +83,7 @@ The pipeline follows these rules; each rests on the facts above. **Decided** rul
 | R4 | Build cell text from `get_text("rawdict", clip=cell_bbox)`, never `Table.extract()`, joining the pieces of each visual line (P30) | P25, P30 | Decided |
 | R5 | Lam-alef: a zero-width alef variant directly before `ل` swaps with it, before characters are joined. Exactly 3,500 swaps | P23 | Decided; spelling confirmed by the gold set |
 | R6 | Digits: each multi-digit Arabic-Indic run is ordered by ascending `x0`. Exactly 1,167 runs | P24 | Decided |
+| R30 | Punctuation (`.`, `،`, `؛`, `:`, `؟`, `!`) of an Arabic piece moves to where it is drawn, as R24 moves spaces: only when the character stored right after it is a non-space drawn to its right, and never after or past a Latin letter or ASCII digit. Exactly 160 | P33 | Decided by the owner (2026-10-14) |
 
 ## 2. Repair (`repair`, in this order)
 
@@ -89,6 +93,7 @@ The pipeline follows these rules; each rests on the facts above. **Decided** rul
 | R8 | Split same-line headers: `Article N` plus body text becomes a header line and a body line. Exactly 6 | P8 | Decided |
 | R9 | Normalize the Arabic header: `مادة` with inner spaces or stray parentheses becomes one form, with the number on the same line. Exactly 13 spaced forms | P10 | Decided |
 | R10 | No other edits to source text. Spurious spaces inside ordinary Arabic words stay as they are | P26 | Judgment |
+| R31 | Last in `repair`: a paragraph marker opening an Arabic line, in any P34 shape, becomes `(N)` and one space, in the text and in its highlighted passages (R28). Exactly 1,093; none left malformed | P34 | Decided by the owner (2026-10-14) |
 
 ## 3. Assembly (`assemble`)
 
@@ -140,5 +145,6 @@ Errata fix **one known error at one place** in the source, where a rule would be
 | E2 | 147, 6, en | `Article1022` → `Article 1022` | Header typo: missing space (P9) | Proposed |
 | E3 | 81, 6, ar | — | Article 601's split number (P24) | Retired: R24 joins the number |
 | E4–E28 | 25 rows, ar | Each visual line holding a private-use glyph, with the glyph mapped to its letters and its stored space moved back to the end of the word (listed in `data/errata.yaml`) | Private-use ligature glyphs (P27) | Proposed (pages 102 and 115 keep the owner's wording) |
+| E29–E33 | 81, 6–7 and 82, 5 (×3), ar | `إاءنه` → `إنهاء` (the doubled space after it becomes one) | Scrambled ligature (P35) | Approved by the owner (2026-10-14) |
 
 E1 and E2 were re-checked against the PDF: the first English line at those rows is exactly `rticle 452` and `Article1022`.

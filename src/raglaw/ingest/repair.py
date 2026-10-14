@@ -5,9 +5,12 @@
    line and a body line.
 3. **Arabic headers** (R9): ``مادة`` with inner spaces or stray parentheses,
    its number on the next line, becomes one line ``مادة ١٤٧``.
+4. **Paragraph markers** (R31): a marker opening an Arabic line, stored as
+   ``)١(``, ``(١(``, ``( ١(`` or ``) ١(``, becomes ``(١)`` and one space.
 
 Header repairs touch only article rows: rows whose English first line is a
-header (R11, R12). No other text is edited (R10). Each count must equal its raw
+header (R11, R12); markers are repaired on every row, since a paragraph can
+open a continuation row. No other text is edited (R10). Each count must equal its raw
 baseline (G6), and every defect a repair targets must be gone afterwards.
 
 Run as ``python -m raglaw.ingest.repair``.
@@ -35,6 +38,14 @@ logger = logging.getLogger(__name__)
 AR_HEADER_LINE = re.compile(r"^[\s()]*(م\s*ا\s*د\s*ة)[\s()]*(?:([٠-٩]+)[\s()]*)?$")
 AR_NUMBER_LINE = re.compile(r"^[\s()]*([٠-٩]+)[\s()]*$")
 AR_HEADER_WORD = "مادة"
+# Markers R31 rewrites, measured on the repaired rows (P34): every marker
+# except the 15 stored well formed and the 2 `(N.)` that R30 already fixes.
+PARAGRAPH_MARKERS_NORMALIZED = 1_093
+# A paragraph marker opening an Arabic line, in any stored shape (P14, P34).
+# Article 52's list items (`١( الدولة`) have no opening parenthesis and aren't
+# markers.
+AR_MARKER_LINE = re.compile(r"^[()]\s*([١-٩][٠-٩]*)\s*[()]\s*")
+WELL_FORMED_MARKER = re.compile(r"^\([١-٩][٠-٩]*\)( |$)")
 
 # The article rows whose Arabic header can't be read, and why. Any other
 # unreadable header fails the stage.
@@ -111,6 +122,41 @@ def normalize_ar_header(row: Row) -> tuple[Row, bool] | None:
     return row.model_copy(update={"ar_text": "\n".join(lines)}), spaced
 
 
+def _marker_line(line: str) -> str:
+    """The line with a paragraph marker opening it rewritten as ``(N)`` (R31)."""
+    m = AR_MARKER_LINE.match(line)
+    return f"({m.group(1)}) {line[m.end() :]}".rstrip() if m else line
+
+
+def normalize_markers(row: Row) -> tuple[Row, int]:
+    """
+    Rewrite each paragraph marker opening an Arabic line as ``(N)`` and one
+    space (R31), in the text and in its highlighted passages (R28), so that
+    ``assemble`` still finds each passage in its article.
+
+    returns:
+    - row (Row): the row, its other text unchanged
+    - normalized (int): how many markers were rewritten in the text
+    """
+    lines = row.ar_text.split("\n")
+    fixed = [_marker_line(line) for line in lines]
+    normalized = sum(a != b for a, b in zip(lines, fixed, strict=True))
+    highlighted = [_marker_line(h) for h in row.ar_highlighted]
+    if not normalized and highlighted == row.ar_highlighted:
+        return row, 0
+    update = {"ar_text": "\n".join(fixed), "ar_highlighted": highlighted}
+    return row.model_copy(update=update), normalized
+
+
+def _malformed_markers(row: Row) -> int:
+    """Markers opening an Arabic line in any shape but ``(N)`` (C7)."""
+    return sum(
+        not WELL_FORMED_MARKER.match(line)
+        for line in row.ar_text.split("\n")
+        if AR_MARKER_LINE.match(line)
+    )
+
+
 def remaining_defects(rows: list[Row]) -> dict[str, int]:
     """
     Count the header defects the repairs target, after repair (C10).
@@ -121,6 +167,7 @@ def remaining_defects(rows: list[Row]) -> dict[str, int]:
     """
     counts = Counter()
     for row in rows:
+        counts["malformed_markers_remaining"] += _malformed_markers(row)
         m = article_header(row)
         if not m:
             continue
@@ -132,13 +179,14 @@ def remaining_defects(rows: list[Row]) -> dict[str, int]:
         "header_typos_remaining",
         "same_line_headers_remaining",
         "spaced_mada_remaining",
+        "malformed_markers_remaining",
     )
     return {k: counts[k] for k in keys}
 
 
 def repair_rows(rows: list[Row], errata: list) -> tuple[list[Row], dict[str, int]]:
     """
-    Apply the three repairs, in order, to every row.
+    Apply the four repairs, in order, to every row.
 
     returns:
     - rows (list[Row]): the repaired rows, in order
@@ -178,6 +226,8 @@ def repair_rows(rows: list[Row], errata: list) -> tuple[list[Row], dict[str, int
                 row, spaced = normalized
                 counts["ar_headers_normalized"] += 1
                 counts["spaced_mada_normalized"] += spaced
+        row, markers = normalize_markers(row)
+        counts["paragraph_markers_normalized"] += markers
         repaired.append(row)
     keys = (
         "errata_applied",
@@ -186,6 +236,7 @@ def repair_rows(rows: list[Row], errata: list) -> tuple[list[Row], dict[str, int
         "spaced_mada_normalized",
         "ar_headers_unparsed",
         "ar_headers_unparsed_unexpected",
+        "paragraph_markers_normalized",
     )
     return repaired, {k: counts[k] for k in keys} | remaining_defects(repaired)
 
@@ -207,9 +258,11 @@ def check_counts(counts: dict[str, int], n_errata: int) -> None:
         "spaced_mada_normalized": 0,
         "ar_headers_unparsed": len(EXPECTED_UNPARSED_AR_HEADERS),
         "ar_headers_unparsed_unexpected": 0,
+        "paragraph_markers_normalized": PARAGRAPH_MARKERS_NORMALIZED,
         "header_typos_remaining": 0,
         "same_line_headers_remaining": 0,
         "spaced_mada_remaining": 0,
+        "malformed_markers_remaining": 0,
     }
     wrong = {k: (v, counts[k]) for k, v in expected.items() if counts[k] != v}
     if wrong:
