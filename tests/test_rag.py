@@ -11,6 +11,7 @@ from raglaw.rag import (
     load_prompt,
     question_language,
 )
+from raglaw.retrieval.repealed import RepealedMatch, repeal_answer
 from raglaw.schema import LogEvent
 
 pytestmark = pytest.mark.unit
@@ -72,6 +73,28 @@ def test_u32_below_the_threshold_the_no_answer_reply_has_no_sources(
     assert (answer.text, answer.sources) == (NO_ANSWER["ar"], [])
     assert answer.unaddressed
     assert llm.calls == []  # no LLM call is made
+
+
+@pytest.mark.parametrize(
+    "question", ["How are foundations set up?", "كيف تنشأ المؤسسة؟"]
+)
+def test_a_repealed_match_gets_the_repeal_reply_without_the_llm(
+    make_pipeline, retrieved, make_chunk, repealed_set, question
+):
+    """The note's rerank score (0.05) is below the gate; the match still answers."""
+    documents = retrieved(
+        [make_chunk(5, "المواد من ٥ إلى ٦ ملغاة", is_repealed=True)], rerank_score=0.05
+    )
+    match = RepealedMatch(repealed_set.ranges[0], 0.5, "Foundations")
+    documents[0].metadata["retrieval"]["repealed_match"] = match.to_metadata()
+    pipeline, llm = make_pipeline(documents, reply="should not be used")
+
+    answer = ask(pipeline, question)
+
+    assert answer.text == repeal_answer(repealed_set.ranges[0], answer.language)
+    assert answer.sources == ["Egyptian Civil Code, Articles 5-6"]
+    assert not answer.unaddressed
+    assert llm.calls == []
 
 
 # --- What the LLM is given ------------------------------------------------------

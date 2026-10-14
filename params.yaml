@@ -15,6 +15,7 @@ paths:
   analysis_dir: docs/analysis/source_pdf
   index_dir: data/index
   logs_dir: logs
+  repealed: data/repealed/repealed.json
 
 # The page 1 heading that opens every heading path (P7). It has no English side
 # in the source; the owner supplies the label (D7).
@@ -71,6 +72,9 @@ search:
   rerank: true          # re-score the top rerank_depth fused chunks with `reranker`
   rerank_depth: 30
   cite_expansion: true  # insert the articles a returned chunk cites, right after it (+2 questions with reranking)
+  repealed_fallback: false  # match the repealed ranges' former text when the gate would refuse (paths.repealed)
+  repealed_below: 0.1       # the gate's threshold (D21): the fallback runs only below it
+  repealed_min_score: 0.01  # a repealed passage's reranker score that counts as a match
 
 # How retrieval is scored (D15): configs are chosen on the tuning half; the
 # chosen one is reported once on the held-out half.

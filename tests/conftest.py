@@ -39,6 +39,7 @@ from raglaw.retrieval.champion import MODEL_NAME, promote, register_champion
 from raglaw.retrieval.dense import build_dense
 from raglaw.retrieval.document_text import document_text
 from raglaw.retrieval.lexical import build_bm25
+from raglaw.retrieval.repealed import RepealedSet
 from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import EvalQuestion, QuestionScore
 from raglaw.retrieval.tokenize import bm25_tokenizer
@@ -488,6 +489,41 @@ class StubReranker:
 def stub_reranker() -> Callable[..., StubReranker]:
     """Build a ``StubReranker`` from a {document text: score} map and a default."""
     return StubReranker
+
+
+@pytest.fixture
+def repealed_set() -> RepealedSet:
+    """One repealed range, Articles 5-6 (``citing_index``'s repeal note), with two
+    sections of former text: "Associations" and "Foundations"."""
+    return RepealedSet(
+        source="test",
+        ranges=[
+            {
+                "first": 5,
+                "last": 6,
+                "subject_en": "associations and foundations",
+                "subject_ar": "الجمعيات والمؤسسات",
+                "repealed_on": "1956-11-03",
+                "repealed_by_en": "by Decree-Law No. 348 of 1956",
+                "repealed_by_ar": "بالقانون رقم ٣٤٨ لسنة ١٩٥٦",
+                "source": "the repeal note",
+            }
+        ],
+        sections=[
+            {
+                "first": 5,
+                "heading_en": "Associations",
+                "heading_ar": "الجمعيات",
+                "text": "الجمعية جماعة ذات صفة دائمة",
+            },
+            {
+                "first": 5,
+                "heading_en": "Foundations",
+                "heading_ar": "المؤسسات",
+                "text": "المؤسسة شخص اعتباري",
+            },
+        ],
+    )
 
 
 @pytest.fixture

@@ -335,6 +335,7 @@ def main(argv: list[str] | None = None) -> None:
     from raglaw.retrieval.dense import DenseManifest
     from raglaw.retrieval.embeddings import huggingface_embeddings, model_tokenizer
     from raglaw.retrieval.manifest import read_manifest
+    from raglaw.retrieval.repealed import load_repealed
     from raglaw.retrieval.rerank import CrossEncoderReranker
     from raglaw.retrieval.retriever import HybridRetriever
 
@@ -388,6 +389,11 @@ def main(argv: list[str] | None = None) -> None:
             reranker=(
                 CrossEncoderReranker(settings.reranker, settings.device)
                 if settings.search.rerank
+                else None
+            ),
+            repealed=(
+                load_repealed(Path(settings.paths.repealed))
+                if settings.search.repealed_fallback
                 else None
             ),
         ) as retriever:

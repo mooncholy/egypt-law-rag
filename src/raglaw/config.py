@@ -64,6 +64,10 @@ class Paths(BaseModel):
     logs_dir: RepoPath = Field(
         description="One JSONL log per stage run (gitignored; attached to MLflow)."
     )
+    repealed: RepoPath = Field(
+        description="The repealed ranges' former text, for matching only, and "
+        "their repeal records (`search.repealed_fallback`; DVC-tracked)."
+    )
 
 
 class RootHeading(BaseModel):
@@ -237,6 +241,28 @@ class Search(BaseModel):
         description="After each returned chunk, insert the articles its text "
         "cites by number (`المادتين ٢٢١ ، ٢٢٢`, `Articles 221 and 222`).",
     )
+    repealed_fallback: bool = Field(
+        default=False,
+        description="When no article is named and the rank-1 reranker score is "
+        "below `repealed_below`, score the question against the repealed ranges' "
+        "former text; above `repealed_min_score`, put the range's repeal note "
+        "first. Needs `rerank`.",
+    )
+    repealed_below: float = Field(
+        default=0.1,
+        ge=0,
+        le=1,
+        description="The rank-1 reranker score below which the fallback runs; "
+        "the no-answer gate's threshold (D21), so it acts only where the gate "
+        "would refuse.",
+    )
+    repealed_min_score: float = Field(
+        default=0.01,
+        ge=0,
+        le=1,
+        description="The reranker score a repealed passage needs to count as a "
+        "match, set on the tuning half (2026-10-14).",
+    )
 
     @model_validator(mode="after")
     def _enough_candidates(self) -> Self:
@@ -244,6 +270,8 @@ class Search(BaseModel):
             raise ValueError("candidates must be at least top_k")
         if self.rerank_depth < self.top_k:
             raise ValueError("rerank_depth must be at least top_k")
+        if self.repealed_fallback and not self.rerank:
+            raise ValueError("repealed_fallback needs rerank")
         return self
 
 

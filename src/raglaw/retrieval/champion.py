@@ -43,6 +43,7 @@ from raglaw.config import Embedding, Reranker, Retrieval, Search, Settings
 from raglaw.retrieval.dense import DenseManifest
 from raglaw.retrieval.lexical import Bm25Manifest
 from raglaw.retrieval.manifest import MANIFEST, read_manifest
+from raglaw.retrieval.repealed import RepealedSet, load_repealed
 from raglaw.retrieval.rerank import RerankScorer
 from raglaw.retrieval.retriever import HybridRetriever, IndexMismatchError
 
@@ -95,6 +96,12 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
                 Path(artifacts["bm25_manifest"]).read_text("utf-8")
             ),
         }
+        # The repealed ranges travel with the version that was scored with them.
+        self.repealed: RepealedSet | None = (
+            load_repealed(Path(artifacts["repealed"]))
+            if "repealed" in artifacts
+            else None
+        )
         self._retriever: HybridRetriever | None = None
 
     def open(
@@ -143,6 +150,7 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
             search=search,
             embeddings=embeddings,
             reranker=reranker,
+            repealed=self.repealed,
         )
         return self._retriever
 
@@ -270,6 +278,11 @@ def register_champion(
                     "config": str(config),
                     "dense_manifest": str(index / "dense" / MANIFEST),
                     "bm25_manifest": str(index / "bm25" / MANIFEST),
+                    **(
+                        {"repealed": str(settings.paths.repealed)}
+                        if settings.search.repealed_fallback
+                        else {}
+                    ),
                 },
                 pip_requirements=_pip_requirements(),
             )
