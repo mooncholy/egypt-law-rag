@@ -49,7 +49,7 @@ A question on a repealed range is answered from the Code's repeal note, without 
 
 An empty question gets a 422. With `models` on CPU and the generator on an RTX 5060 Ti, the first answer took 55 s (Ollama loading the model) and the repealed-range answer 21 s, most of it CPU reranking; latency is measured properly in Phase 12.
 
-On CPU the generator needs about 9 GB of free memory and answers slowly. With an NVIDIA GPU (CUDA 13 driver and the NVIDIA Container Toolkit; Docker Desktop's WSL backend includes it):
+On CPU the generator needs about 9 GB of free memory and answers slowly. On a machine with less than about 16 GB of RAM (e.g., a 4-core GitHub Codespace), set `RAGLAW_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M` in `.env` before `docker compose up`: the same model in 4 bits, 4.7 GB instead of 8.1 GB. Its answers aren't measured; the faithfulness above is the default 8-bit model's. With an NVIDIA GPU (CUDA 13 driver and the NVIDIA Container Toolkit; Docker Desktop's WSL backend includes it):
 
 ```bash
 docker compose -f compose.yaml -f docker/compose.gpu.yml up

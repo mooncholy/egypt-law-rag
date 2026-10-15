@@ -17,7 +17,10 @@
 
 name: raglaw
 
-x-llm-model: &llm-model qwen2.5:7b-instruct-q8_0
+# The generator measured in Phase 9 (faithfulness 0.868). On a machine with
+# less than about 16 GB of RAM, set RAGLAW_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M
+# in .env: the same model in 4 bits (4.7 GB instead of 8.1 GB), not measured.
+x-llm-model: &llm-model ${RAGLAW_LLM_MODEL:-qwen2.5:7b-instruct-q8_0}
 x-ollama-image: &ollama-image ollama/ollama:0.40.4@sha256:926d40fd6eeeebd346b5c358a63de2a10ec995371cd93dd22f1843200694b1a6
 
 services:
