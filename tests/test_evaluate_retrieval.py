@@ -8,6 +8,7 @@ from raglaw.ingest.evaluate_retrieval import (
     flatten_metrics,
     misses_report,
     repealed_inputs,
+    repealed_ranges,
     run_evaluate_retrieval,
     run_identity,
     run_params,
@@ -332,6 +333,7 @@ def test_two_runs_on_the_real_index_give_identical_metrics(tmp_path, repo_root):
             evaluation=settings.evaluation,
             embeddings=embeddings,
             reranker=reranker,
+            repealed=repealed_ranges(settings, repo_root),
         )
         outputs.append((tmp_path / f"{run}.json").read_bytes())
 

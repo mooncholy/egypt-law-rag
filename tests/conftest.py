@@ -801,13 +801,14 @@ def tracking_db(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 @pytest.fixture
 def tracking_settings(
-    tracking_db: str, tmp_path: Path, request: pytest.FixtureRequest
+    tracking_db: str, tmp_path: Path, request: pytest.FixtureRequest, clean_env: None
 ) -> Settings:
     """Settings for a tracked stage, isolated per test.
 
     The session database, but experiments named after this test (``<test>``
     for corpus runs, ``<test>-retrieval`` for retrieval runs), with artifacts
-    and logs under ``tmp_path``. No AWS profile, so nothing reaches S3. The
+    and logs under ``tmp_path``. No AWS profile, so nothing reaches S3, and no
+    ``RAGLAW_*`` variable from the developer's shell (``clean_env``). The
     repealed fallback is off whatever ``params.yaml`` says: it reads
     ``data/repealed/repealed.json``, which CI has no ``dvc pull`` for. Tests
     of the fallback turn it on with their own data.

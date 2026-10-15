@@ -349,6 +349,16 @@ def repealed_inputs(settings: Settings) -> list[Path]:
     return [Path(settings.paths.repealed)] if settings.search.repealed_fallback else []
 
 
+def repealed_ranges(settings: Settings, root: Path = Path()) -> RepealedSet | None:
+    """
+    The repealed ranges a retriever needs for ``settings``, read from
+    ``paths.repealed`` under ``root``; None when the fallback is off.
+    """
+    if not settings.search.repealed_fallback:
+        return None
+    return load_repealed(root / settings.paths.repealed)
+
+
 # params.yaml sections that define a retrieval config; a change elsewhere (e.g.
 # paths) doesn't make a run another variant.
 CONFIG_SECTIONS = ("chunking", "embedding", "retrieval", "search", "evaluation")
@@ -475,11 +485,7 @@ def main(argv: list[str] | None = None) -> None:
                 if settings.search.rerank
                 else None
             ),
-            repealed=(
-                load_repealed(Path(settings.paths.repealed))
-                if settings.search.repealed_fallback
-                else None
-            ),
+            repealed=repealed_ranges(settings),
         )
         run.log_metrics(flatten_metrics(metrics))
         run.log_artifact(args.report, artifact_path="reports")
