@@ -39,7 +39,14 @@ from mlflow.entities.model_registry import ModelVersion
 from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 
-from raglaw.config import Embedding, Reranker, Retrieval, Search, Settings
+from raglaw.config import (
+    Embedding,
+    Reranker,
+    Retrieval,
+    Search,
+    Settings,
+    fallback_threshold_error,
+)
 from raglaw.retrieval.dense import DenseManifest
 from raglaw.retrieval.lexical import Bm25Manifest
 from raglaw.retrieval.manifest import MANIFEST, read_manifest
@@ -119,6 +126,8 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
 
         exceptions:
         - IndexMismatchError: the index differs from the registered one
+        - ValueError: the registered repealed fallback runs below another
+          threshold than this deployment's no-answer gate
         """
         index = Path(settings.paths.index_dir)
         found = {
@@ -132,6 +141,8 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
             )
         embedding = Embedding.model_validate(self.config["embedding"])
         search = Search.model_validate(self.config["search"])
+        if error := fallback_threshold_error(search, settings.answer):
+            raise ValueError(f"the registered config's {error}")
         if embeddings is None:
             from raglaw.retrieval.embeddings import huggingface_embeddings
 

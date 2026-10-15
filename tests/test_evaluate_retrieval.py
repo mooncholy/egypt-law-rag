@@ -188,15 +188,10 @@ def test_two_runs_on_one_index_give_identical_files(
 def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
     """Every choice that shapes retrieval is logged, read from the config in use.
 
-    The repealed fallback is off here; its own params are tested apart.
+    The repealed fallback is off (``tracking_settings``); its own params are
+    tested apart.
     """
-    settings = tracking_settings.model_copy(
-        update={
-            "search": tracking_settings.search.model_copy(
-                update={"repealed_fallback": False}
-            )
-        }
-    )
+    settings = tracking_settings
     params = run_params(settings, chunks_sha256="0" * 64, index_device="cuda")
 
     assert set(params) == {
@@ -242,13 +237,7 @@ def test_the_repealed_fallback_logs_its_thresholds_and_data_only_when_on(
 ):
     data = tmp_path / "repealed.json"
     data.write_text("{}")
-    off = tracking_settings.model_copy(
-        update={
-            "search": tracking_settings.search.model_copy(
-                update={"repealed_fallback": False}
-            )
-        }
-    )
+    off = tracking_settings
     on = tracking_settings.model_copy(
         update={
             "search": tracking_settings.search.model_copy(

@@ -133,7 +133,8 @@ class HybridRetriever(BaseRetriever):
     didn't hold it, or the config doesn't use it), ``lookup`` (fetched by
     article number), ``cited_by`` (the chunk whose citation inserted it) and
     ``repealed_match`` (on a repeal note the fallback put first: the range,
-    the score and the matched section; else None).
+    the score, the matched section and the rank-1 reranker score that let
+    the fallback run, since the note itself may carry none; else None).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -309,7 +310,7 @@ class HybridRetriever(BaseRetriever):
                 match.record.last,
             )
             return None
-        return match
+        return match.triggered_by(top)
 
     def _looked_up(self, query: str) -> list[str]:
         if not self.search.article_lookup:

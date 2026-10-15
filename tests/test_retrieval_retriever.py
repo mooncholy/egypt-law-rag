@@ -348,6 +348,7 @@ def test_a_repealed_match_puts_the_ranges_note_first(
         0.5,
         "Foundations",
     )
+    assert match["rank1_rerank_score"] == 0.05  # the note itself was never reranked
     assert all(d.metadata["retrieval"]["repealed_match"] is None for d in documents[1:])
 
 

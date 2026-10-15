@@ -85,14 +85,16 @@ def test_a_repealed_match_gets_the_repeal_reply_without_the_llm(
     documents = retrieved(
         [make_chunk(5, "المواد من ٥ إلى ٦ ملغاة", is_repealed=True)], rerank_score=0.05
     )
-    match = RepealedMatch(repealed_set.ranges[0], 0.5, "Foundations")
+    match = RepealedMatch(repealed_set.ranges[0], 0.5, "Foundations").triggered_by(0.05)
     documents[0].metadata["retrieval"]["repealed_match"] = match.to_metadata()
     pipeline, llm = make_pipeline(documents, reply="should not be used")
 
     answer = ask(pipeline, question)
 
     assert answer.text == repeal_answer(repealed_set.ranges[0], answer.language)
-    assert answer.sources == ["Egyptian Civil Code, Articles 5-6"]
+    # The article holding the repeal note, in /ask's one-article form.
+    assert answer.sources == ["Egyptian Civil Code, Article 5"]
+    assert answer.rank1_rerank_score == 0.05  # what let the fallback run
     assert not answer.unaddressed
     assert llm.calls == []
 

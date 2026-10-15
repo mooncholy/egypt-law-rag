@@ -5,8 +5,9 @@ For one question, ``AnswerPipeline.answer``:
 1. retrieves with ``champion`` (the registered retriever);
 2. when retrieval matched a repealed range (``search.repealed_fallback``),
    replies without calling the LLM that the articles on that subject were
-   repealed, as of when and by what, citing the range; the former text is
-   never used to answer;
+   repealed (with the date and law only where the Code prints them), citing
+   the article that holds the repeal note; the former text is never used to
+   answer;
 3. refuses without calling the LLM when the rank-1 reranker score is below
    ``answer.no_answer_threshold`` (D21): the Code is taken not to address the
    question. A rank-1 chunk fetched because the question names its article is
@@ -213,11 +214,6 @@ def citation(number: int) -> str:
     return f"Egyptian Civil Code, Article {number}"
 
 
-def range_citation(first: int, last: int) -> str:
-    """How ``sources`` names a repealed range."""
-    return f"Egyptian Civil Code, Articles {first}-{last}"
-
-
 def check_citations(
     text: str, articles: Sequence[ContextArticle]
 ) -> tuple[list[int], list[int]]:
@@ -270,11 +266,16 @@ class AnswerPipeline:
         with self._lock:
             return self._retrieve(question)
 
-    def _repealed(
-        self, match: dict, language: Language, note: Document, score: float | None
-    ) -> Answer:
-        """The fixed reply for a question on a repealed range (no LLM call)."""
+    def _repealed(self, match: dict, language: Language, note: Document) -> Answer:
+        """
+        The fixed reply for a question on a repealed range (no LLM call).
+
+        Its source is the article the repeal note is stored under, the range's
+        first (``Egyptian Civil Code, Article 54``), so ``sources`` keeps its
+        one-article form; the reply names the whole range.
+        """
         record = RepealRecord.model_validate(match["record"])
+        score = match["rank1_rerank_score"]
         logger.info(
             "Question on a repealed range",
             extra={
@@ -287,7 +288,7 @@ class AnswerPipeline:
         )
         return Answer(
             text=repeal_answer(record, language),
-            sources=[range_citation(record.first, record.last)],
+            sources=[citation(record.first)],
             language=language,
             unaddressed=False,
             articles=[record.first],
@@ -324,7 +325,7 @@ class AnswerPipeline:
             else None
         )
         if repealed:
-            return self._repealed(repealed, language, documents[0], score)
+            return self._repealed(repealed, language, documents[0])
         if is_unaddressed(documents, self.config.no_answer_threshold):
             logger.info(
                 "Question not addressed by the Code",

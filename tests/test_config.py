@@ -14,6 +14,7 @@ from raglaw.config import (
     RootHeading,
     Search,
     Settings,
+    fallback_threshold_error,
 )
 
 pytestmark = pytest.mark.unit
@@ -103,6 +104,7 @@ VALID_PATHS = {
     "analysis_dir": "docs/analysis/source_pdf",
     "index_dir": "data/index",
     "logs_dir": "logs",
+    "repealed": "data/repealed/repealed.json",
 }
 
 
@@ -197,6 +199,47 @@ def test_the_reranker_is_pinned_like_the_embedder():
 
     assert reranker.model == "BAAI/bge-reranker-v2-m3"
     assert len(reranker.revision) == 40
+
+
+@pytest.mark.parametrize(
+    ("fallback", "below", "gate", "agree"),
+    [
+        (True, 0.1, 0.1, True),
+        (True, 0.1, 0.3, False),  # the gate refuses more than the fallback covers
+        (False, 0.1, 0.3, True),  # off: nothing to agree on
+    ],
+)
+def test_the_repealed_fallback_runs_exactly_where_the_gate_refuses(
+    fallback, below, gate, agree
+):
+    search = Search(
+        mode="hybrid",
+        article_lookup=True,
+        candidates=50,
+        rrf_k=60,
+        top_k=10,
+        rerank=True,
+        repealed_fallback=fallback,
+        repealed_below=below,
+    )
+    answer = Settings(_env_file=None).answer.model_copy(
+        update={"no_answer_threshold": gate}
+    )
+
+    assert (fallback_threshold_error(search, answer) is None) is agree
+
+
+def test_settings_refuse_a_fallback_threshold_apart_from_the_gate(
+    repo_root, tmp_path, monkeypatch, clean_env
+):
+    params = yaml.safe_load((repo_root / "params.yaml").read_text("utf-8"))
+    params["search"] |= {"rerank": True, "repealed_fallback": True}
+    params["answer"]["no_answer_threshold"] = 0.3
+    (tmp_path / "params.yaml").write_text(yaml.safe_dump(params), "utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValidationError, match="must equal answer.no_answer_threshold"):
+        Settings(_env_file=None)
 
 
 def test_rerank_depth_must_cover_top_k():

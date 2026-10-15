@@ -16,7 +16,7 @@ Code's range. The former text is never shown or used to answer.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Self
@@ -144,6 +144,13 @@ class RepealedMatch:
     record: RepealRecord
     score: float
     section: str  # the English heading of the best passage
+    # The rank-1 reranker score before the repeal note was put first: the
+    # low score that triggered the fallback, which the note itself lacks.
+    rank1_rerank_score: float | None = None
+
+    def triggered_by(self, rank1_rerank_score: float) -> Self:
+        """The same match, with the rank-1 score that let the fallback run."""
+        return replace(self, rank1_rerank_score=rank1_rerank_score)
 
     def to_metadata(self) -> dict:
         """The match as plain data, for ``metadata["retrieval"]``."""
@@ -151,6 +158,7 @@ class RepealedMatch:
             "record": self.record.model_dump(mode="json"),
             "score": self.score,
             "section": self.section,
+            "rank1_rerank_score": self.rank1_rerank_score,
         }
 
 

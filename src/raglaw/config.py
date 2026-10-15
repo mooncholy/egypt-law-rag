@@ -252,9 +252,9 @@ class Search(BaseModel):
         default=0.1,
         ge=0,
         le=1,
-        description="The rank-1 reranker score below which the fallback runs; "
-        "the no-answer gate's threshold (D21), so it acts only where the gate "
-        "would refuse.",
+        description="The rank-1 reranker score below which the fallback runs. "
+        "It must equal `answer.no_answer_threshold` (D21), so the fallback acts "
+        "exactly where the gate would refuse (`fallback_threshold_error`).",
     )
     repealed_min_score: float = Field(
         default=0.01,
@@ -338,6 +338,30 @@ class Tracking(BaseModel):
 
     experiments: Experiments = Field(
         description="The experiment for each kind of work."
+    )
+
+
+def fallback_threshold_error(search: Search, answer: Answer) -> str | None:
+    """
+    Why the repealed fallback and the no-answer gate disagree, if they do.
+
+    The fallback is meant to run exactly where the gate would refuse, so its
+    ``repealed_below`` must equal ``answer.no_answer_threshold``: below it, a
+    question the gate answers would be rerouted; above it, one the gate
+    refuses would get no fallback.
+
+    returns:
+    - error (str | None): None when the fallback is off or the two agree
+    """
+    if (
+        not search.repealed_fallback
+        or search.repealed_below == answer.no_answer_threshold
+    ):
+        return None
+    return (
+        f"search.repealed_below ({search.repealed_below}) must equal "
+        f"answer.no_answer_threshold ({answer.no_answer_threshold}) while "
+        "search.repealed_fallback is on"
     )
 
 
@@ -443,6 +467,12 @@ class Settings(BaseSettings):
         description="The ~/.aws profile boto3 uses for MLflow's S3 artifacts. DVC "
         "reads its own from `.dvc/config.local`, which boto3 doesn't see.",
     )
+
+    @model_validator(mode="after")
+    def _fallback_matches_the_gate(self) -> Self:
+        if error := fallback_threshold_error(self.search, self.answer):
+            raise ValueError(error)
+        return self
 
     @classmethod
     def settings_customise_sources(

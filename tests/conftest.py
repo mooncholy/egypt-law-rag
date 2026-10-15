@@ -536,16 +536,14 @@ def champion_settings(
 
     The index lives at ``<tmp>/index/{dense,bm25}``, as a deployment's
     ``paths.index_dir`` would. Reranking is off, so opening the champion
-    never loads the real cross-encoder; the repealed fallback, which needs
-    it, is off with it.
+    never loads the real cross-encoder (the repealed fallback, which needs
+    it, is already off in ``tracking_settings``).
     """
     return tracking_settings.model_copy(
         update={
             "embedding": embedding_config,
             "retrieval": search_index.retrieval,
-            "search": tracking_settings.search.model_copy(
-                update={"rerank": False, "repealed_fallback": False}
-            ),
+            "search": tracking_settings.search.model_copy(update={"rerank": False}),
             "paths": tracking_settings.paths.model_copy(
                 update={"index_dir": search_index.dense_dir.parent}
             ),
@@ -809,7 +807,10 @@ def tracking_settings(
 
     The session database, but experiments named after this test (``<test>``
     for corpus runs, ``<test>-retrieval`` for retrieval runs), with artifacts
-    and logs under ``tmp_path``. No AWS profile, so nothing reaches S3.
+    and logs under ``tmp_path``. No AWS profile, so nothing reaches S3. The
+    repealed fallback is off whatever ``params.yaml`` says: it reads
+    ``data/repealed/repealed.json``, which CI has no ``dvc pull`` for. Tests
+    of the fallback turn it on with their own data.
     """
     name = re.sub(r"[^a-z0-9._-]+", "-", request.node.name.lower())
     settings = Settings(
@@ -821,6 +822,7 @@ def tracking_settings(
     return settings.model_copy(
         update={
             "paths": settings.paths.model_copy(update={"logs_dir": tmp_path / "logs"}),
+            "search": settings.search.model_copy(update={"repealed_fallback": False}),
             # model_copy skips validation, so make the name valid here:
             # test_x[None] -> test_x-none-
             "tracking": settings.tracking.model_copy(
