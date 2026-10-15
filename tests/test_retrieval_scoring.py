@@ -107,6 +107,19 @@ def test_a_range_chunk_stands_for_every_article_it_covers(make_question):
     assert score.hits == {1: False, 3: True, 5: True, 10: True}
 
 
+def test_a_repeal_note_put_first_reports_the_score_that_let_the_fallback_run():
+    documents = [hit(54, 1), hit(7, 2)]
+    documents[0].metadata["retrieval"] |= {
+        "rerank_score": None,
+        "repealed_match": {"score": 0.4, "rank1_rerank_score": 0.02},
+    }
+
+    found = Retrieved.from_documents(documents)
+
+    assert found.top_scores["rerank_score"] == 0.02
+    assert found.top_scores["repealed_score"] == 0.4
+
+
 def test_nothing_retrieved_has_no_top_scores():
     assert Retrieved.from_documents([]) == Retrieved(articles=[], top_scores={})
 

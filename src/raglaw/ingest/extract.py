@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 
 # Stray zero-width alefs dropped by D11; extract measured them (P28).
 STRAY_ZERO_WIDTH_ALEFS = 26
+# Line-end punctuation stored away from where it is drawn (R30); extract
+# measured it (P33).
+PUNCTUATION_MOVED = 160
 
 
 class ExtractCountError(RuntimeError):
@@ -76,6 +79,7 @@ def extract_row(
     for side, cell in (("en", en), ("ar", ar)):
         counts[f"line_pieces_merged_{side}"] += cell.pieces_merged
         counts["piece_spaces_moved"] += cell.spaces_moved
+        counts["punctuation_moved"] += cell.punctuation_moved
         counts["lam_alef_swaps"] += cell.lam_alef_swaps
         counts["rtl_digit_runs_reordered"] += cell.digit_runs_reordered
         counts["stray_zero_width_alefs"] += cell.stray_zero_width_alefs
@@ -153,6 +157,7 @@ def extract_document(pdf: Path) -> tuple[list[Row], dict[str, int]]:
         "line_pieces_merged_en",
         "line_pieces_merged_ar",
         "piece_spaces_moved",
+        "punctuation_moved",
         "lam_alef_swaps",
         "stray_zero_width_alefs",
         "rtl_digit_runs_reordered",
@@ -174,6 +179,7 @@ def check_counts(counts: dict[str, int]) -> None:
         "lam_alef_swaps": profile.RAW_DEFECTS["lam_alef_signatures"],
         "rtl_digit_runs_reordered": profile.RAW_DEFECTS["rtl_digit_runs"],
         "stray_zero_width_alefs": STRAY_ZERO_WIDTH_ALEFS,
+        "punctuation_moved": PUNCTUATION_MOVED,
     }
     wrong = {k: (v, counts[k]) for k, v in expected.items() if counts[k] != v}
     if wrong:

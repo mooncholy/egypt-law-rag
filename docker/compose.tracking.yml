@@ -54,8 +54,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Healthy only when the AWS profile resolves too: after a Docker Desktop
+    # restart the container can start before WSL's ~/.aws is mountable, get an
+    # empty directory instead, and answer every artifact upload with a 500.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      test: ["CMD", "python", "-c", "import boto3, urllib.request; assert boto3.Session().get_credentials(), 'no AWS credentials'; urllib.request.urlopen('http://localhost:5000/health')"]
       interval: 10s
       timeout: 5s
       retries: 12

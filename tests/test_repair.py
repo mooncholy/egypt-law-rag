@@ -8,6 +8,7 @@ from raglaw.ingest.repair import (
     RepairCountError,
     check_counts,
     normalize_ar_header,
+    normalize_markers,
     parse_ar_header,
     repair_rows,
     run_repair,
@@ -24,9 +25,11 @@ BASELINE_COUNTS = {
     "spaced_mada_normalized": 0,
     "ar_headers_unparsed": 2,
     "ar_headers_unparsed_unexpected": 0,
+    "paragraph_markers_normalized": 1_093,
     "header_typos_remaining": 0,
     "same_line_headers_remaining": 0,
     "spaced_mada_remaining": 0,
+    "malformed_markers_remaining": 0,
 }
 
 
@@ -99,6 +102,56 @@ def test_header_is_rewritten_as_one_line():
     assert spaced
 
 
+# --- Paragraph markers (R31) ----------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("ar", "expected"),
+    [
+        (")١( تسرى النصوص", "(١) تسرى النصوص"),
+        ("(٢( وإذا", "(٢) وإذا"),
+        ("( ٣( ويقع", "(٣) ويقع"),
+        (") ١٢( على أن", "(١٢) على أن"),
+        ("(١(ينقض الحق", "(١) ينقض الحق"),
+    ],
+)
+def test_each_stored_marker_shape_becomes_one_form(ar, expected):
+    repaired, n = normalize_markers(row("", f"نص سابق.\n{ar}"))
+
+    assert repaired.ar_text == f"نص سابق.\n{expected}"
+    assert n == 1
+
+
+@pytest.mark.unit
+def test_a_highlighted_passage_keeps_matching_its_rewritten_line():
+    """Page 147: a highlight is a whole line, marker included (R28)."""
+    r = row("", "(٢( فإذا كان مالك العقار").model_copy(
+        update={"ar_highlighted": ["(٢( فإذا كان مالك العقار"]}
+    )
+
+    repaired, n = normalize_markers(r)
+
+    assert repaired.ar_highlighted == ["(٢) فإذا كان مالك العقار"]
+    assert repaired.ar_highlighted[0] in repaired.ar_text
+    assert n == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "ar",
+    [
+        "(١) تسرى النصوص",  # already well formed
+        "١( الدولة وكذلك المديريات",  # Article 52's list item, not a marker
+        "وفقا للمادة (١٤٧) من هذا القانون",  # a number inside a line
+    ],
+)
+def test_other_lines_are_left_as_they_are(ar):
+    r = row("", ar)
+
+    assert normalize_markers(r) == (r, 0)
+
+
 # --- The repairs together -------------------------------------------------------
 
 
@@ -131,9 +184,11 @@ def test_repairs_apply_in_order_to_article_rows_only():
         "spaced_mada_normalized": 0,
         "ar_headers_unparsed": 1,
         "ar_headers_unparsed_unexpected": 1,  # Article 3 isn't a known case
+        "paragraph_markers_normalized": 0,
         "header_typos_remaining": 0,
         "same_line_headers_remaining": 0,
         "spaced_mada_remaining": 0,
+        "malformed_markers_remaining": 0,
     }
 
 
@@ -172,6 +227,8 @@ def test_baseline_counts_pass():
         {"spaced_mada_normalized": 1},  # extract's space fix (P30) regressed
         {"ar_headers_unparsed_unexpected": 1},  # a header other than 54 or 1022
         {"ar_headers_unparsed": 3},
+        {"malformed_markers_remaining": 1},  # a marker shape R31 doesn't read
+        {"paragraph_markers_normalized": 1_092},
     ],
 )
 def test_arabic_header_drift_fails_the_stage(drift):
@@ -213,4 +270,6 @@ def test_repair_counts_equal_their_baselines(stage_metrics, repo_root):
         counts["ar_headers_unparsed"] == 2
     )  # Article 54's repeal note, 1022's empty cell
     assert counts["ar_headers_unparsed_unexpected"] == 0
+    assert counts["paragraph_markers_normalized"] == 1_093  # R31, P34
+    assert counts["malformed_markers_remaining"] == 0
     assert all(v == 0 for k, v in counts.items() if k.endswith("_remaining"))

@@ -152,4 +152,6 @@ def test_the_project_errata_load(repo_root):
         (59, 2, "en"),
         (147, 6, "en"),
     ]
-    assert (81, 6) not in {(e.page, e.row) for e in errata}
+    # E3 stays retired: no entry edits Article 601's number line. Page 81 row 6
+    # keeps one entry, for its scrambled إنهاء (owner ruling, 2026-10-14).
+    assert not any("٦٠ ١" in e.expect for e in errata)

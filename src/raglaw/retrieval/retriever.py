@@ -8,7 +8,11 @@ For one question, ``HybridRetriever``:
    (the query tokenized as the index was), or both fused by reciprocal rank
    fusion, as ``search.mode`` says;
 3. with ``search.rerank``, re-scores the top ``rerank_depth`` ranked chunks with
-   a cross-encoder and reorders them by its score;
+   a cross-encoder and reorders them by its score; with
+   ``search.repealed_fallback``, when no article is named and the rank-1 score
+   is below ``repealed_below``, scores the question against the repealed
+   ranges' former text (``repealed.py``) and, on a match, puts the range's
+   repeal note first;
 4. returns the looked-up parts, then the ranked chunks not already listed; with
    ``search.cite_expansion``, each chunk is followed by the articles its text
    cites (the Arabic text's citations; the English only when the Arabic cites
@@ -42,6 +46,7 @@ from raglaw.retrieval.fusion import reciprocal_rank_fusion
 from raglaw.retrieval.lexical import Bm25Manifest, load_bm25
 from raglaw.retrieval.lookup import article_references, cited_articles
 from raglaw.retrieval.manifest import read_manifest
+from raglaw.retrieval.repealed import RepealedMatch, RepealedMatcher, RepealedSet
 from raglaw.retrieval.rerank import RerankScorer
 from raglaw.retrieval.tokenize import bm25_tokenizer
 
@@ -126,7 +131,10 @@ class HybridRetriever(BaseRetriever):
     ``metadata["retrieval"]``: ``rank`` (1-based), ``dense_score`` (cosine),
     ``bm25_score``, ``rrf_score`` and ``rerank_score`` (None where that list
     didn't hold it, or the config doesn't use it), ``lookup`` (fetched by
-    article number) and ``cited_by`` (the chunk whose citation inserted it).
+    article number), ``cited_by`` (the chunk whose citation inserted it) and
+    ``repealed_match`` (on a repeal note the fallback put first: the range,
+    the score, the matched section and the rank-1 reranker score that let
+    the fallback run, since the note itself may carry none; else None).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -142,6 +150,7 @@ class HybridRetriever(BaseRetriever):
     _parts: dict[int, list[str]] = PrivateAttr()
     _cites: dict[str, list[int]] = PrivateAttr()
     _reranker: RerankScorer | None = PrivateAttr(default=None)
+    _repealed: RepealedMatcher | None = PrivateAttr(default=None)
 
     @classmethod
     def from_index(
@@ -155,13 +164,15 @@ class HybridRetriever(BaseRetriever):
         embeddings: Embeddings,
         tokenizer: ModelTokenizer | None = None,
         reranker: RerankScorer | None = None,
+        repealed: RepealedSet | None = None,
     ) -> Self:
         """
         Open both index halves after checking them against the config.
 
         ``embeddings`` must be the model the index was built with;
         ``tokenizer`` (the model's own) is needed only for ``model_subwords``,
-        and ``reranker`` only for ``search.rerank``.
+        and ``reranker`` only for ``search.rerank``; ``repealed`` (the
+        repealed ranges, ``load_repealed``) only for ``search.repealed_fallback``.
 
         returns:
         - retriever (HybridRetriever): holding the Qdrant lock until ``close``
@@ -169,10 +180,13 @@ class HybridRetriever(BaseRetriever):
         exceptions:
         - IndexMismatchError: see ``check_manifests``; also when the
           collection's points differ from the manifest's chunks
-        - ValueError: ``search.rerank`` without a reranker
+        - ValueError: ``search.rerank`` without a reranker, or
+          ``search.repealed_fallback`` without the repealed ranges
         """
         if search.rerank and reranker is None:
             raise ValueError("search.rerank needs a reranker")
+        if search.repealed_fallback and repealed is None:
+            raise ValueError("search.repealed_fallback needs the repealed ranges")
         dense = read_manifest(dense_dir, DenseManifest)
         lexical = read_manifest(bm25_dir, Bm25Manifest)
         check_manifests(dense, lexical, embedding, retrieval)
@@ -191,6 +205,8 @@ class HybridRetriever(BaseRetriever):
         retriever._client = client
         retriever._store = QdrantVectorStore(client, COLLECTION, embedding=embeddings)
         retriever._reranker = reranker
+        if search.repealed_fallback:
+            retriever._repealed = RepealedMatcher(repealed, reranker)
         return retriever
 
     def _load_payloads(self, client: QdrantClient, chunk_ids: list[str]) -> None:
@@ -275,6 +291,27 @@ class HybridRetriever(BaseRetriever):
                 break
         return out, cited_by
 
+    def _repealed_match(
+        self, query: str, ranked: list[str], scores: dict, looked_up: list[str]
+    ) -> RepealedMatch | None:
+        """The repealed range the question is about, when the fallback applies."""
+        if self._repealed is None or looked_up or not ranked:
+            return None
+        top = scores.get(ranked[0])
+        if top is None or top >= self.search.repealed_below:
+            return None
+        match = self._repealed.match(query)
+        if match.score < self.search.repealed_min_score:
+            return None
+        if match.record.first not in self._parts:
+            logger.warning(
+                "Repealed range %d-%d has no repeal note in the index",
+                match.record.first,
+                match.record.last,
+            )
+            return None
+        return match.triggered_by(top)
+
     def _looked_up(self, query: str) -> list[str]:
         if not self.search.article_lookup:
             return []
@@ -303,6 +340,10 @@ class HybridRetriever(BaseRetriever):
             ranked = [c for c, _ in (dense if mode == "dense" else lexical)]
         ranked, rerank_scores = self._reranked(query, ranked)
         looked_up = self._looked_up(query)
+        repealed = self._repealed_match(query, ranked, rerank_scores, looked_up)
+        note = self._parts[repealed.record.first] if repealed else []
+        if note:
+            ranked = note + [c for c in ranked if c not in note]
         order, cited_by = self._expanded(list(dict.fromkeys(looked_up + ranked)))
         order = order[: self.search.top_k]
         dense_scores, bm25_scores = dict(dense), dict(lexical)
@@ -317,6 +358,7 @@ class HybridRetriever(BaseRetriever):
                 "rerank_score": rerank_scores.get(chunk_id),
                 "lookup": chunk_id in looked_up,
                 "cited_by": cited_by.get(chunk_id),
+                "repealed_match": repealed.to_metadata() if chunk_id in note else None,
             }
             documents.append(
                 Document(

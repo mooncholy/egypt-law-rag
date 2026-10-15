@@ -36,6 +36,7 @@ from raglaw.retrieval.embeddings import (
     model_tokenizer,
 )
 from raglaw.retrieval.manifest import read_manifest
+from raglaw.retrieval.repealed import RepealedSet, load_repealed
 from raglaw.retrieval.rerank import CrossEncoderReranker, RerankScorer
 from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import (
@@ -220,6 +221,7 @@ def run_evaluate_retrieval(
     embeddings: Embeddings,
     tokenizer: ModelTokenizer | None = None,
     reranker: RerankScorer | None = None,
+    repealed: RepealedSet | None = None,
 ) -> dict[str, Any]:
     """
     Score one half of the eval set against the index, writing metrics and a report.
@@ -240,6 +242,7 @@ def run_evaluate_retrieval(
         embeddings=embeddings,
         tokenizer=tokenizer,
         reranker=reranker,
+        repealed=repealed,
     ) as retriever:
         scores = evaluate(questions, retriever)
     metrics: dict[str, Any] = {
@@ -313,11 +316,47 @@ def run_params(
         "reranker_model": settings.reranker.model,
         "reranker_revision": settings.reranker.revision,
         "cite_expansion": search.cite_expansion,
+        "repealed_fallback": search.repealed_fallback,
+        **repealed_params(settings),
         "split": settings.evaluation.split,
         "device": settings.device,
         "index_device": index_device,
         "chunks_sha256": chunks_sha256,
     }
+
+
+def repealed_params(settings: Settings) -> dict[str, object]:
+    """
+    The repealed fallback's thresholds and the hash of its data, only when it
+    is on: runs without it never logged them, and an unlogged param isn't a
+    change (``tracking.params_diff``).
+
+    returns:
+    - params (dict[str, object]): empty when ``search.repealed_fallback`` is off
+    """
+    search = settings.search
+    if not search.repealed_fallback:
+        return {}
+    return {
+        "repealed_below": search.repealed_below,
+        "repealed_min_score": search.repealed_min_score,
+        "repealed_sha256": sha256_file(Path(settings.paths.repealed)),
+    }
+
+
+def repealed_inputs(settings: Settings) -> list[Path]:
+    """The repealed ranges' data, as a stage input when the fallback reads it."""
+    return [Path(settings.paths.repealed)] if settings.search.repealed_fallback else []
+
+
+def repealed_ranges(settings: Settings, root: Path = Path()) -> RepealedSet | None:
+    """
+    The repealed ranges a retriever needs for ``settings``, read from
+    ``paths.repealed`` under ``root``; None when the fallback is off.
+    """
+    if not settings.search.repealed_fallback:
+        return None
+    return load_repealed(root / settings.paths.repealed)
 
 
 # params.yaml sections that define a retrieval config; a change elsewhere (e.g.
@@ -410,7 +449,10 @@ def main(argv: list[str] | None = None) -> None:
     with stage_run(
         "evaluate_retrieval",
         input_hash=inputs_hash(
-            args.eval, dense_dir / "manifest.json", bm25_dir / "manifest.json"
+            args.eval,
+            dense_dir / "manifest.json",
+            bm25_dir / "manifest.json",
+            *repealed_inputs(settings),
         ),
         settings=settings,
         experiment="retrieval",
@@ -443,6 +485,7 @@ def main(argv: list[str] | None = None) -> None:
                 if settings.search.rerank
                 else None
             ),
+            repealed=repealed_ranges(settings),
         )
         run.log_metrics(flatten_metrics(metrics))
         run.log_artifact(args.report, artifact_path="reports")

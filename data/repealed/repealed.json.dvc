@@ -1,0 +1,5 @@
+outs:
+- md5: 50a3887d47ef7132aade11461d99212b
+  size: 28727
+  hash: md5
+  path: repealed.json

@@ -3,6 +3,7 @@ import pytest
 from raglaw.config import Embedding, Retrieval, Search
 from raglaw.retrieval.dense import build_dense, qdrant_client
 from raglaw.retrieval.lexical import build_bm25
+from raglaw.retrieval.repealed import passages
 from raglaw.retrieval.retriever import HybridRetriever, IndexMismatchError
 from raglaw.retrieval.tokenize import bm25_tokenizer
 
@@ -247,7 +248,7 @@ def test_lookup_of_an_article_inside_a_range_finds_the_range_chunk(
 # --- Reranking (search.rerank) -----------------------------------------------------
 
 
-def open_with(index, embedding, reranker=None, **overrides):
+def open_with(index, embedding, reranker=None, repealed=None, **overrides):
     return HybridRetriever.from_index(
         index.dense_dir,
         index.bm25_dir,
@@ -256,6 +257,7 @@ def open_with(index, embedding, reranker=None, **overrides):
         search=search(**overrides),
         embeddings=index.embeddings,
         reranker=reranker,
+        repealed=repealed,
     )
 
 
@@ -313,6 +315,76 @@ def test_reranking_needs_a_reranker(search_index, embedding_config):
 def test_without_reranking_no_rerank_score_is_recorded(search_index, embedding_config):
     with open_with(search_index, embedding_config) as r:
         assert r.invoke("majority")[0].metadata["retrieval"]["rerank_score"] is None
+
+
+# --- Repealed ranges (search.repealed_fallback) -----------------------------------
+
+
+def repealed_search(citing_index, embedding_config, reranker, repealed, **overrides):
+    """``citing_index`` (dense: 1, 2, 3, 4, 5), reranked, with the fallback on."""
+    fields = {"mode": "dense", "rerank": True, "repealed_fallback": True}
+    return open_with(
+        citing_index, embedding_config, reranker, repealed, **(fields | overrides)
+    )
+
+
+def foundations_passage(repealed_set):
+    return passages(repealed_set.sections)[1][1]
+
+
+def test_a_repealed_match_puts_the_ranges_note_first(
+    citing_index, embedding_config, stub_reranker, repealed_set
+):
+    """Every chunk scores 0.05, below the gate; the former text scores 0.5."""
+    reranker = stub_reranker({foundations_passage(repealed_set): 0.5}, default=0.05)
+
+    with repealed_search(citing_index, embedding_config, reranker, repealed_set) as r:
+        documents = r.invoke("How are foundations set up?")
+
+    assert ids(documents)[0] == "art-5-p1"
+    match = documents[0].metadata["retrieval"]["repealed_match"]
+    assert (match["record"]["first"], match["score"], match["section"]) == (
+        5,
+        0.5,
+        "Foundations",
+    )
+    assert match["rank1_rerank_score"] == 0.05  # the note itself was never reranked
+    assert all(d.metadata["retrieval"]["repealed_match"] is None for d in documents[1:])
+
+
+@pytest.mark.parametrize(
+    ("chunk_score", "passage_score", "question"),
+    [
+        (0.5, 0.9, "How are foundations set up?"),  # retrieval is confident
+        (0.05, 0.005, "How are foundations set up?"),  # below repealed_min_score
+        (0.05, 0.9, "What does Article 2 say?"),  # an article is named
+    ],
+)
+def test_the_fallback_stays_out_of_the_way(
+    citing_index,
+    embedding_config,
+    stub_reranker,
+    repealed_set,
+    chunk_score,
+    passage_score,
+    question,
+):
+    every_passage = {t: passage_score for _, t in passages(repealed_set.sections)}
+    reranker = stub_reranker(every_passage, default=chunk_score)
+
+    with repealed_search(citing_index, embedding_config, reranker, repealed_set) as r:
+        documents = r.invoke(question)
+
+    assert not any(d.metadata["retrieval"]["repealed_match"] for d in documents)
+
+
+def test_the_fallback_needs_the_repealed_ranges_and_a_reranker(
+    citing_index, embedding_config, stub_reranker
+):
+    with pytest.raises(ValueError, match="repealed ranges"):
+        repealed_search(citing_index, embedding_config, stub_reranker({}), None)
+    with pytest.raises(ValueError, match="needs rerank"):
+        search(repealed_fallback=True)
 
 
 # --- Citation expansion (search.cite_expansion) -----------------------------------

@@ -4,6 +4,7 @@ import pytest
 from raglaw.ingest.glyphs import (
     cell_text,
     order_digit_runs,
+    reorder_punctuation,
     reorder_spaces,
     swap_lam_alef,
     vertical_overlap,
@@ -250,6 +251,45 @@ def test_spaces_between_words_and_in_latin_runs_stay():
 
     assert reorder_spaces(arabic) == (arabic, 0)
     assert reorder_spaces(latin) == (latin, 0)
+
+
+# --- Misplaced line-end punctuation (R30, P33) --------------------------------
+
+
+def test_a_full_stop_stored_inside_the_last_word_moves_to_its_end():
+    """Page 1: `فحواه.ا` stores the line's full stop before the last letter."""
+    chars = word("فحواه", x0=500.0) + [char(".", 465.0, 3.0), char("ا", 470.0)]
+    chars += [char(" ", 460.0, 2.5)]
+
+    fixed, moved = reorder_punctuation(chars)
+
+    assert text(fixed) == "فحواها. "
+    assert moved == 1
+
+
+def test_a_full_stop_stored_in_the_opening_marker_moves_to_the_line_end():
+    """Page 81: `(١.) لا …المستأجر` draws the full stop after the last word."""
+    chars = [char("(", 555.8, 3.7), char("١", 550.1, 5.8), char(".", 346.8, 3.0)]
+    chars += [char(")", 546.2, 3.7)] + word(" لا ينتهي", x0=546.0)
+
+    assert text(reorder_punctuation(chars)[0]) == "(١) لا ينتهي."
+
+
+def test_a_mark_stored_before_a_space_stays_where_it_reads():
+    """Page 7 draws `عقار .وكل` but stores `عقار. وكل`, the reading order."""
+    chars = word("عقار", x0=559.0) + [char(".", 537.7, 2.8), char(" ", 540.5, 2.5)]
+    chars += word("وكل", x0=537.65)
+
+    assert reorder_punctuation(chars) == (chars, 0)
+
+
+def test_marks_drawn_where_they_are_stored_stay():
+    """Art. 53 prints `إنشائه،أو` with no space; Latin runs read left to right."""
+    arabic = word("إنشائه،أو حق.")
+    latin = [char(c, 300.0 + 5 * i) for i, c in enumerate("Art. 1, 2")]
+
+    assert reorder_punctuation(arabic) == (arabic, 0)
+    assert reorder_punctuation(latin) == (latin, 0)
 
 
 def test_stray_alefs_are_dropped_before_spaces_move():

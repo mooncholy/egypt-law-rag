@@ -3,14 +3,19 @@
 For one question, ``AnswerPipeline.answer``:
 
 1. retrieves with ``champion`` (the registered retriever);
-2. refuses without calling the LLM when the rank-1 reranker score is below
+2. when retrieval matched a repealed range (``search.repealed_fallback``),
+   replies without calling the LLM that the articles on that subject were
+   repealed (with the date and law only where the Code prints them), citing
+   the article that holds the repeal note; the former text is never used to
+   answer;
+3. refuses without calling the LLM when the rank-1 reranker score is below
    ``answer.no_answer_threshold`` (D21): the Code is taken not to address the
    question. A rank-1 chunk fetched because the question names its article is
    always answered;
-3. gives the LLM the top ``answer.max_sources`` articles, each with its
+4. gives the LLM the top ``answer.max_sources`` articles, each with its
    repealed flag and any passage printed in one language only (R28), under the
    versioned system prompt ``prompts/answer_<version>.md``;
-4. keeps as ``sources`` the given articles the answer cites, as
+5. keeps as ``sources`` the given articles the answer cites, as
    ``Egyptian Civil Code, Article N``. An article the answer cites that it
    wasn't given is dropped from ``sources`` and logged as a
    ``hallucinated_citation`` anomaly: that is the failure this phase guards.
@@ -30,6 +35,7 @@ from raglaw.config import Answer as AnswerConfig
 from raglaw.llm import ChatModel
 from raglaw.logging_conf import get_logger
 from raglaw.retrieval.lookup import cited_articles
+from raglaw.retrieval.repealed import RepealRecord, repeal_answer
 from raglaw.schema import LogEvent
 
 logger = get_logger(__name__)
@@ -260,6 +266,43 @@ class AnswerPipeline:
         with self._lock:
             return self._retrieve(question)
 
+    def _repealed(self, match: dict, language: Language, note: Document) -> Answer:
+        """
+        The fixed reply for a question on a repealed range (no LLM call).
+
+        Its source is the article the repeal note is stored under, the range's
+        first (``Egyptian Civil Code, Article 54``), so ``sources`` keeps its
+        one-article form; the reply names the whole range.
+        """
+        record = RepealRecord.model_validate(match["record"])
+        score = match["rank1_rerank_score"]
+        logger.info(
+            "Question on a repealed range",
+            extra={
+                "event_type": ANSWER_EVENT,
+                "repealed_range": [record.first, record.last],
+                "repealed_score": match["score"],
+                "repealed_section": match["section"],
+                "rank1_rerank_score": score,
+            },
+        )
+        return Answer(
+            text=repeal_answer(record, language),
+            sources=[citation(record.first)],
+            language=language,
+            unaddressed=False,
+            articles=[record.first],
+            rank1_rerank_score=score,
+            contexts=[
+                note.page_content,
+                (
+                    f"Repeal record for Articles {record.first}-{record.last} "
+                    f"({record.subject_en}): {repeal_answer(record, 'en')} "
+                    f"Source: {record.source}"
+                ),
+            ],
+        )
+
     async def answer(self, question: str) -> Answer:
         """
         Answer ``question`` from the retrieved articles.
@@ -276,6 +319,13 @@ class AnswerPipeline:
         score = (
             documents[0].metadata["retrieval"]["rerank_score"] if documents else None
         )
+        repealed = (
+            documents[0].metadata["retrieval"].get("repealed_match")
+            if documents
+            else None
+        )
+        if repealed:
+            return self._repealed(repealed, language, documents[0])
         if is_unaddressed(documents, self.config.no_answer_threshold):
             logger.info(
                 "Question not addressed by the Code",

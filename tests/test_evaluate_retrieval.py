@@ -7,13 +7,15 @@ from raglaw.config import Evaluation, Search
 from raglaw.ingest.evaluate_retrieval import (
     flatten_metrics,
     misses_report,
+    repealed_inputs,
+    repealed_ranges,
     run_evaluate_retrieval,
     run_identity,
     run_params,
 )
 from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import Retrieved, split_questions
-from raglaw.tracking import ParamsDiff
+from raglaw.tracking import ParamsDiff, sha256_file
 
 SEARCH = Search(mode="hybrid", article_lookup=True, candidates=50, rrf_k=60, top_k=10)
 
@@ -185,7 +187,11 @@ def test_two_runs_on_one_index_give_identical_files(
 
 @pytest.mark.unit
 def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
-    """Every choice that shapes retrieval is logged, read from the config in use."""
+    """Every choice that shapes retrieval is logged, read from the config in use.
+
+    The repealed fallback is off (``tracking_settings``); its own params are
+    tested apart.
+    """
     settings = tracking_settings
     params = run_params(settings, chunks_sha256="0" * 64, index_device="cuda")
 
@@ -210,6 +216,7 @@ def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
         "reranker_model",
         "reranker_revision",
         "cite_expansion",
+        "repealed_fallback",
         "split",
         "device",
         "index_device",
@@ -223,6 +230,31 @@ def test_a_run_is_compared_by_its_whole_retrieval_config(tracking_settings):
     assert params["device"] == settings.device
     assert params["index_device"] == "cuda"
     assert params["chunks_sha256"] == "0" * 64
+
+
+@pytest.mark.unit
+def test_the_repealed_fallback_logs_its_thresholds_and_data_only_when_on(
+    tracking_settings, tmp_path
+):
+    data = tmp_path / "repealed.json"
+    data.write_text("{}")
+    off = tracking_settings
+    on = tracking_settings.model_copy(
+        update={
+            "search": tracking_settings.search.model_copy(
+                update={"rerank": True, "repealed_fallback": True}
+            ),
+            "paths": tracking_settings.paths.model_copy(update={"repealed": data}),
+        }
+    )
+
+    assert "repealed_sha256" not in run_params(off, chunks_sha256="0")
+    params = run_params(on, chunks_sha256="0")
+    assert repealed_inputs(off) == []
+    assert repealed_inputs(on) == [data]  # hashed into the run's input_hash too
+    assert params["repealed_fallback"] is True
+    assert params["repealed_sha256"] == sha256_file(data)
+    assert (params["repealed_below"], params["repealed_min_score"]) == (0.1, 0.01)
 
 
 @pytest.mark.unit
@@ -301,6 +333,7 @@ def test_two_runs_on_the_real_index_give_identical_metrics(tmp_path, repo_root):
             evaluation=settings.evaluation,
             embeddings=embeddings,
             reranker=reranker,
+            repealed=repealed_ranges(settings, repo_root),
         )
         outputs.append((tmp_path / f"{run}.json").read_bytes())
 

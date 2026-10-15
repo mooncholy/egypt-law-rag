@@ -229,7 +229,13 @@ class Retrieved:
             if d.metadata.get("range_end")
         }
         top = documents[0].metadata["retrieval"] if documents else {}
-        return cls(articles, {k: top[k] for k in SCORE_NAMES if k in top}, ranges)
+        scores = {k: top[k] for k in SCORE_NAMES if k in top}
+        if repealed := top.get("repealed_match"):
+            # The note was put first by the fallback: report the rank-1 score
+            # that let it run, and the note's own match score beside it.
+            scores["rerank_score"] = repealed["rank1_rerank_score"]
+            scores["repealed_score"] = repealed["score"]
+        return cls(articles, scores, ranges)
 
     def positions(self) -> dict[int, int]:
         """Each article's 1-based rank; every article of a range takes the range's."""

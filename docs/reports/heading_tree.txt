@@ -13,7 +13,7 @@
   [2] BOOK I OBLIGATIONS GENERALLY | الكتاب الأول الالتزامات بوجه عام  (p8 r7; articles –)
     [3] CHAPTER I Sources of Obligations | الباب الأول مصادر الالتزام  (p8 r8; articles –)
       [4] Section I Contracts | الفصل الأول العقد  (p8 r9; articles –)
-        [5] 1. Elements of Contracts | :أولا- أركان العقد  (p8 r10; articles –)
+        [5] 1. Elements of Contracts | أولا:- أركان العقد  (p8 r10; articles –)
           [6] Consent: | ١- الرضاء  (p8 r10; articles 89–130)
           [6] Object: | المحل  (p14 r4; articles 131–135)
           [6] Consideration: | السبب  (p15 r3; articles 136–137)

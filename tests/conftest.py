@@ -39,6 +39,7 @@ from raglaw.retrieval.champion import MODEL_NAME, promote, register_champion
 from raglaw.retrieval.dense import build_dense
 from raglaw.retrieval.document_text import document_text
 from raglaw.retrieval.lexical import build_bm25
+from raglaw.retrieval.repealed import RepealedSet
 from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import EvalQuestion, QuestionScore
 from raglaw.retrieval.tokenize import bm25_tokenizer
@@ -491,6 +492,41 @@ def stub_reranker() -> Callable[..., StubReranker]:
 
 
 @pytest.fixture
+def repealed_set() -> RepealedSet:
+    """One repealed range, Articles 5-6 (``citing_index``'s repeal note), with two
+    sections of former text: "Associations" and "Foundations"."""
+    return RepealedSet(
+        source="test",
+        ranges=[
+            {
+                "first": 5,
+                "last": 6,
+                "subject_en": "associations and foundations",
+                "subject_ar": "الجمعيات والمؤسسات",
+                "repealed_on": "1956-11-03",
+                "repealed_by_en": "by Decree-Law No. 348 of 1956",
+                "repealed_by_ar": "بالقانون رقم ٣٤٨ لسنة ١٩٥٦",
+                "source": "the repeal note",
+            }
+        ],
+        sections=[
+            {
+                "first": 5,
+                "heading_en": "Associations",
+                "heading_ar": "الجمعيات",
+                "text": "الجمعية جماعة ذات صفة دائمة",
+            },
+            {
+                "first": 5,
+                "heading_en": "Foundations",
+                "heading_ar": "المؤسسات",
+                "text": "المؤسسة شخص اعتباري",
+            },
+        ],
+    )
+
+
+@pytest.fixture
 def champion_settings(
     tracking_settings: Settings,
     search_index: SearchIndex,
@@ -500,7 +536,8 @@ def champion_settings(
 
     The index lives at ``<tmp>/index/{dense,bm25}``, as a deployment's
     ``paths.index_dir`` would. Reranking is off, so opening the champion
-    never loads the real cross-encoder.
+    never loads the real cross-encoder (the repealed fallback, which needs
+    it, is already off in ``tracking_settings``).
     """
     return tracking_settings.model_copy(
         update={
@@ -764,13 +801,17 @@ def tracking_db(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 @pytest.fixture
 def tracking_settings(
-    tracking_db: str, tmp_path: Path, request: pytest.FixtureRequest
+    tracking_db: str, tmp_path: Path, request: pytest.FixtureRequest, clean_env: None
 ) -> Settings:
     """Settings for a tracked stage, isolated per test.
 
     The session database, but experiments named after this test (``<test>``
     for corpus runs, ``<test>-retrieval`` for retrieval runs), with artifacts
-    and logs under ``tmp_path``. No AWS profile, so nothing reaches S3.
+    and logs under ``tmp_path``. No AWS profile, so nothing reaches S3, and no
+    ``RAGLAW_*`` variable from the developer's shell (``clean_env``). The
+    repealed fallback is off whatever ``params.yaml`` says: it reads
+    ``data/repealed/repealed.json``, which CI has no ``dvc pull`` for. Tests
+    of the fallback turn it on with their own data.
     """
     name = re.sub(r"[^a-z0-9._-]+", "-", request.node.name.lower())
     settings = Settings(
@@ -782,6 +823,7 @@ def tracking_settings(
     return settings.model_copy(
         update={
             "paths": settings.paths.model_copy(update={"logs_dir": tmp_path / "logs"}),
+            "search": settings.search.model_copy(update={"repealed_fallback": False}),
             # model_copy skips validation, so make the name valid here:
             # test_x[None] -> test_x-none-
             "tracking": settings.tracking.model_copy(
