@@ -81,6 +81,7 @@ def test_answers_are_scored_and_refusals_counted(
     assert json.loads(out["answers.json"].read_text()) == metrics
     rows = json.loads(out["rows.json"].read_text())
     assert rows[0]["contexts"][0].startswith("### Article 44")
+    assert rows[0]["match"] == "all"  # carried, so comparisons apply the right rule
     assert rows[1]["scores"] == {}
     assert "## Lowest faithfulness (1)" in out["report.md"].read_text()
 
@@ -160,7 +161,13 @@ def test_the_generator_never_judges_itself(tracking_settings):
 
 def test_a_run_is_compared_by_its_answer_config_and_judge(tracking_settings):
     settings = tracking_settings.model_copy(
-        update={"llm_model": "qwen2.5:3b-instruct-fp16", "judge_model": "judge-model"}
+        update={
+            "llm_model": "qwen2.5:3b-instruct-fp16",
+            "llm_base_url": "http://localhost:11434/v1",
+            "judge_model": "judge-model",
+            "judge_base_url": "https://judge.example/v1",
+            "judge_api_key": "secret",
+        }
     )
 
     params = run_params(
@@ -170,6 +177,9 @@ def test_a_run_is_compared_by_its_answer_config_and_judge(tracking_settings):
     assert "split" not in params  # the answer set is its own
     assert params["llm_model"] == "qwen2.5:3b-instruct-fp16"
     assert params["judge_model"] == "judge-model"
+    assert params["llm_base_url"] == "http://localhost:11434/v1"
+    assert params["judge_base_url"] == "https://judge.example/v1"
+    assert "secret" not in map(str, params.values())  # endpoints, never keys
     assert params["prompt_version"] == settings.answer.prompt_version
     assert (params["subset"], params["questions"]) == ("full", 65)
     assert params["retrieval_mode"] == settings.search.mode

@@ -3,7 +3,7 @@ import re
 import pytest
 from ragas.run_config import RunConfig
 
-from raglaw.answer_compare import answer_kind, comparison_report
+from raglaw.answer_compare import answer_kind, comparison_report, expected_given
 from raglaw.answer_eval import (
     AnswerSetError,
     ci_subset,
@@ -275,6 +275,28 @@ SUBSTANCE = "Article 44 sets the age of majority at twenty-one Gregorian years."
 )
 def test_each_reply_is_an_answer_a_refusal_or_a_gate_refusal(row, kind):
     assert answer_kind(row) == kind
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("expected", "given", "match", "result"),
+    [
+        ([44, 45], [44, 45, 1], "all", True),
+        ([44, 45], [44], "all", False),
+        ([54, 55, 56], [54], "any", True),  # one article of a repealed range
+        ([54, 55, 56], [1], "any", False),
+        ([44, 45], [44], None, False),  # a run before `match` was recorded: all
+        ([], [1], "all", False),
+    ],
+)
+def test_the_expected_articles_count_as_given_by_the_retrieval_rule(
+    expected, given, match, result
+):
+    row = {"expected": expected, "articles": given}
+    if match:
+        row["match"] = match
+
+    assert expected_given(row) is result
 
 
 @pytest.mark.unit

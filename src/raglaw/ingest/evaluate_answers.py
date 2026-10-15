@@ -40,12 +40,13 @@ from raglaw.config import Settings
 from raglaw.ingest.evaluate_retrieval import (
     CONFIG_SECTIONS,
     flatten_metrics,
+    inputs_hash,
     run_identity,
 )
 from raglaw.ingest.evaluate_retrieval import run_params as retrieval_params
 from raglaw.llm import ChatModel, LLMError
 from raglaw.rag import Answer, AnswerPipeline
-from raglaw.tracking import params_diff, sha256_file, stage_run
+from raglaw.tracking import params_diff, stage_run
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,9 @@ def run_params(
     returns:
     - params (dict[str, object]): the retrieval config (``evaluate_retrieval``'s
       params, without its split), the generator, the prompt and gate, the
-      judge, and which questions were scored
+      judge, and which questions were scored. Each LLM is named by its model
+      and its endpoint (the base URL, never the key), since one model name can
+      be served by different providers
     """
     params = retrieval_params(
         settings, chunks_sha256=chunks_sha256, index_device=index_device
@@ -81,12 +84,14 @@ def run_params(
     answer = settings.answer
     return params | {
         "llm_model": settings.llm_model,
+        "llm_base_url": settings.llm_base_url and str(settings.llm_base_url),
         "prompt_version": answer.prompt_version,
         "no_answer_threshold": answer.no_answer_threshold,
         "max_sources": answer.max_sources,
         "temperature": answer.temperature,
         "max_tokens": answer.max_tokens,
         "judge_model": settings.judge_model,
+        "judge_base_url": settings.judge_base_url and str(settings.judge_base_url),
         "subset": settings.answer_evaluation.subset,
         "questions": questions,
     }
@@ -108,6 +113,7 @@ def record(item: AnswerItem, answer: Answer) -> dict[str, Any]:
         "question": q.question,
         "reference": item.reference,
         "expected": q.expected_articles,
+        "match": q.match,
         "answer": answer.text,
         "sources": answer.sources,
         "unaddressed": answer.unaddressed,
@@ -348,7 +354,12 @@ def main(argv: list[str] | None = None) -> None:
     embeddings = huggingface_embeddings(settings.embedding, settings.device)
     with stage_run(
         "evaluate_answers",
-        input_hash=sha256_file(args.answers),
+        input_hash=inputs_hash(
+            args.answers,
+            args.eval,
+            dense_dir / "manifest.json",
+            bm25_dir / "manifest.json",
+        ),
         settings=settings,
         experiment="answers",
         run_name=run_name,

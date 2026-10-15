@@ -40,6 +40,22 @@ def answer_kind(row: dict[str, Any]) -> str:
     )
 
 
+def expected_given(row: dict[str, Any]) -> bool:
+    """
+    Whether the generator was given what the question needs, under the same
+    rule as retrieval scoring: every expected article for ``match: all``, any
+    one for ``match: any`` (e.g., a repealed range). Records from runs before
+    ``match`` was recorded count as ``all``, the rule they were scored by.
+
+    returns:
+    - given (bool): False for a question with no expected article
+    """
+    expected, articles = set(row["expected"]), set(row["articles"])
+    if row.get("match") == "any":
+        return bool(expected & articles)
+    return bool(expected) and expected <= articles
+
+
 def _mean(values: Iterable[float | None]) -> float | None:
     kept = [v for v in values if v is not None]
     return statistics.fmean(kept) if kept else None
@@ -72,10 +88,7 @@ def comparison_report(
     ]
     for name, (metrics, rows) in runs.items():
         refused = [r for r in rows if answer_kind(r) == "refusal"]
-        given = sum(
-            bool(r["expected"]) and set(r["expected"]) <= set(r["articles"])
-            for r in refused
-        )
+        given = sum(expected_given(r) for r in refused)
         lines.append(
             f"| {name} | "
             + " | ".join(_cell(metrics.get(f"overall.{m}")) for m in METRICS)
