@@ -430,6 +430,13 @@ class Settings(BaseSettings):
     judge_api_key: SecretStr | None = Field(
         default=None, description="The judge endpoint's key."
     )
+    champion_dir: Path | None = Field(
+        default=None,
+        description="A copy of the `production` retriever exported at image "
+        "build (`champion export`, D26), which the API loads instead of the "
+        "registry, so a container needs no tracking server or AWS. Blank: load "
+        "`production` from the registry.",
+    )
     models_url: HttpUrl = Field(
         default="http://localhost:8001",
         description="The `models` service (D18), which embeds questions and "

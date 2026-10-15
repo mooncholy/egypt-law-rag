@@ -3,7 +3,9 @@
 The registered model is a pyfunc wrapping ``HybridRetriever``. Its artifacts are
 the config sections that define retrieval and both index manifests; the index
 itself stays in DVC. A deployment loads it by alias, never by path:
-``models:/civil-code-retriever@production``. Opening it checks that the index on
+``models:/civil-code-retriever@production``. A container that can't reach the
+registry loads a copy of that version, exported by alias when its image was
+built (``export``, D26), with a record of which version it is. Opening it checks that the index on
 that machine is the one the champion was scored on, so a registered score can't
 silently describe another index.
 
@@ -15,7 +17,8 @@ what a deployment serves at its next start, with no code change.
 This is the only retrieval module that imports MLflow.
 
 Register with ``python -m raglaw.retrieval.champion register``, then promote
-with ``python -m raglaw.retrieval.champion promote`` (see ``main``).
+with ``python -m raglaw.retrieval.champion promote``, and copy ``production``
+for an image with ``python -m raglaw.retrieval.champion export`` (see ``main``).
 """
 
 import argparse
@@ -32,6 +35,7 @@ from typing import Any, Self
 os.environ.setdefault("MLFLOW_DISABLE_AGENT_HINT", "1")
 
 import mlflow
+import mlflow.artifacts
 import mlflow.pyfunc
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -403,6 +407,48 @@ def promote(settings: Settings) -> ModelVersion:
     return client.get_model_version(MODEL_NAME, candidate.version)
 
 
+# Written beside an exported copy: which registered version it is.
+EXPORT_RECORD = "registered.json"
+
+
+def export_champion(settings: Settings, out: Path) -> dict[str, Any]:
+    """
+    Copy the ``production`` version, resolved by alias, into ``out`` for an
+    image to bake in (D26), with ``registered.json`` naming the version, its
+    run and its tags (the held-out and answer scores).
+
+    returns:
+    - record (dict[str, Any]): what ``registered.json`` holds
+
+    exceptions:
+    - MlflowException: no registered model, or no ``production`` alias
+    - FileExistsError: ``out`` exists and isn't empty
+    """
+    if settings.aws_profile:  # the model's artifacts may live in S3
+        os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"{out} isn't empty; remove it to export again")
+    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+    client = MlflowClient(settings.mlflow_tracking_uri)
+    version = client.get_model_version_by_alias(MODEL_NAME, PRODUCTION)
+    out.mkdir(parents=True, exist_ok=True)
+    mlflow.artifacts.download_artifacts(
+        artifact_uri=f"models:/{MODEL_NAME}/{version.version}", dst_path=str(out)
+    )
+    record = {
+        "name": MODEL_NAME,
+        "alias": PRODUCTION,
+        "version": version.version,
+        "run_id": version.run_id,
+        "tags": dict(version.tags),
+    }
+    (out / EXPORT_RECORD).write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n", "utf-8"
+    )
+    logger.info("Exported %s version %s to %s", MODEL_NAME, version.version, out)
+    return record
+
+
 def load_champion(
     settings: Settings,
     *,
@@ -413,6 +459,8 @@ def load_champion(
     Load the ``production`` version and open it on this machine's index.
 
     The alias is resolved once, so the version loaded is the one reported.
+    With ``champion_dir`` set, the exported copy there is loaded instead, and
+    its ``registered.json`` names the version; no registry is contacted.
 
     returns:
     - champion (Champion): call ``predict(questions)``; ``version`` names it
@@ -420,13 +468,21 @@ def load_champion(
     exceptions:
     - MlflowException: no registered model, or no ``production`` alias
     - IndexMismatchError: this machine's index isn't the registered one
+    - FileNotFoundError: ``champion_dir`` holds no exported copy
     """
-    if settings.aws_profile:  # the model's artifacts may live in S3
-        os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
-    mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
-    client = MlflowClient(settings.mlflow_tracking_uri)
-    version = client.get_model_version_by_alias(MODEL_NAME, PRODUCTION).version
-    model = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}/{version}")
+    if settings.champion_dir:
+        record = json.loads(
+            (Path(settings.champion_dir) / EXPORT_RECORD).read_text("utf-8")
+        )
+        version = record["version"]
+        model = mlflow.pyfunc.load_model(str(settings.champion_dir))
+    else:
+        if settings.aws_profile:  # the model's artifacts may live in S3
+            os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
+        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+        client = MlflowClient(settings.mlflow_tracking_uri)
+        version = client.get_model_version_by_alias(MODEL_NAME, PRODUCTION).version
+        model = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}/{version}")
     champion = model.unwrap_python_model()
     champion.open(settings, embeddings=embeddings, reranker=reranker)
     return Champion(champion, version)
@@ -492,19 +548,34 @@ def main(argv: list[str] | None = None) -> None:
     """
     ``register`` (the default): register the newest ``--run`` as ``candidate``,
     tagged with its held-out run's scores. ``promote``: move ``production`` to
-    the candidate when it scores no lower.
+    the candidate when it scores no lower. ``export``: copy ``production`` into
+    ``--out`` for the API image (D26).
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     settings = Settings()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
-        "action", nargs="?", choices=("register", "promote"), default="register"
+        "action",
+        nargs="?",
+        choices=("register", "promote", "export"),
+        default="register",
     )
     ap.add_argument("--run", default="champion", help="the tuning run to register")
     ap.add_argument(
         "--heldout-run", default="champion-heldout", help="its one held-out run (D15)"
     )
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=Path("build/champion"),
+        help="where `export` writes the copy (the API image's build context)",
+    )
     args = ap.parse_args(argv)
+    if args.action == "export":
+        record = export_champion(settings, args.out)
+        logger.info("models:/%s@%s -> %s", MODEL_NAME, PRODUCTION, args.out)
+        logger.info("version %s, run %s", record["version"], record["run_id"])
+        return
     if args.action == "promote":
         try:
             version = promote(settings)
