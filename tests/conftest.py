@@ -536,13 +536,16 @@ def champion_settings(
 
     The index lives at ``<tmp>/index/{dense,bm25}``, as a deployment's
     ``paths.index_dir`` would. Reranking is off, so opening the champion
-    never loads the real cross-encoder.
+    never loads the real cross-encoder; the repealed fallback, which needs
+    it, is off with it.
     """
     return tracking_settings.model_copy(
         update={
             "embedding": embedding_config,
             "retrieval": search_index.retrieval,
-            "search": tracking_settings.search.model_copy(update={"rerank": False}),
+            "search": tracking_settings.search.model_copy(
+                update={"rerank": False, "repealed_fallback": False}
+            ),
             "paths": tracking_settings.paths.model_copy(
                 update={"index_dir": search_index.dense_dir.parent}
             ),
