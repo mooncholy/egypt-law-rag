@@ -462,43 +462,47 @@ stages:
       size: 35110
     - path: data/gold/retrieval_eval.jsonl
       hash: md5
-      md5: e240a785db77f06e5a97a7f02385bfba
-      size: 58262
+      md5: b24a6c33c0e0f17eb747f935339f745a
+      size: 58330
     - path: data/index/bm25
       hash: md5
-      md5: c9e550c8210a6ae2a5dceaa959c46c5b.dir
-      size: 1263382
+      md5: 6561499af23a88d789c1d71e28988f14.dir
+      size: 961956
       nfiles: 6
     - path: data/index/dense
       hash: md5
-      md5: 0fbdcb603ff7c54a3e36d530542bb43b.dir
-      size: 15176858
+      md5: 8e6730b30629f6f64646bb6752212f3a.dir
+      size: 14726301
       nfiles: 4
+    - path: data/repealed/repealed.json
+      hash: md5
+      md5: 50a3887d47ef7132aade11461d99212b
+      size: 28727
     - path: src/raglaw/answer_eval.py
       hash: md5
       md5: 5e3ea93b44f5623a70aa9d74fe978300
       size: 7762
     - path: src/raglaw/ingest/evaluate_answers.py
       hash: md5
-      md5: 03a4d637ce9e7d97fd003d0c6ad5c34b
-      size: 14253
+      md5: 8a746dc140d54e5c741d8051c8628df2
+      size: 14487
     - path: src/raglaw/ingest/evaluate_retrieval.py
       hash: md5
-      md5: cead1d3e8b6983d22fa76b9492597e0e
-      size: 15773
+      md5: 455bf9eb509bfe51513fc367eb807ab7
+      size: 16824
     - path: src/raglaw/llm.py
       hash: md5
       md5: 1c4dabbf87df5ecf761dcbe625e7d37d
       size: 2438
     - path: src/raglaw/prompts
       hash: md5
-      md5: 3431cc589918bc1f611adb76e30d3020.dir
-      size: 2833
-      nfiles: 4
+      md5: 4eb95e8f4c4a55a99a50b838db7c389c.dir
+      size: 4805
+      nfiles: 5
     - path: src/raglaw/rag.py
       hash: md5
-      md5: 26aa16c36ce7d8a0acda416e68f48d94
-      size: 11383
+      md5: fb12ecfbba568be7d66615ee01799dfb
+      size: 13328
     - path: src/raglaw/retrieval/dense.py
       hash: md5
       md5: ef4b3d32c25c0266d3a28258280bd2df
@@ -523,14 +527,18 @@ stages:
       hash: md5
       md5: 4a09952026421d73f918cb65aecacf06
       size: 2263
+    - path: src/raglaw/retrieval/repealed.py
+      hash: md5
+      md5: ea9bbe263c357658b240494777306bfe
+      size: 7948
     - path: src/raglaw/retrieval/rerank.py
       hash: md5
       md5: a8299dca5f22da75986718022311c453
       size: 1629
     - path: src/raglaw/retrieval/retriever.py
       hash: md5
-      md5: 1aba2f17b8ac28b0e66450cc340f4449
-      size: 13593
+      md5: ed7a3708db201b3eeb62930ff22a7785
+      size: 15740
     - path: src/raglaw/retrieval/scoring.py
       hash: md5
       md5: 01db56ffbf6ae4fed52f0d5d8fe442be
@@ -570,7 +578,7 @@ stages:
           max_length: 1024
           batch_size: 8
         retrieval:
-          document_text: both_with_headings
+          document_text: both_without_headings
           bm25_tokenizer: words
           bm25_stopwords: none
           repealed_text: note
@@ -582,17 +590,20 @@ stages:
           top_k: 10
           rerank: true
           rerank_depth: 30
-          cite_expansion: false
+          cite_expansion: true
+          repealed_fallback: true
+          repealed_below: 0.1
+          repealed_min_score: 0.01
     outs:
     - path: docs/metrics/answers.json
       hash: md5
-      md5: 8d214bc0f7d22bee4dfc5f7619c0d44d
-      size: 848
+      md5: 52113de329ba867515fee24cf05a801e
+      size: 777
     - path: docs/reports/answer_eval.md
       hash: md5
-      md5: 36b09de573f3659aef2c81abdd905536
-      size: 11673
+      md5: fa0a0f097d522ea9b27003aede7f2a7d
+      size: 14277
     - path: docs/reports/answer_questions.json
       hash: md5
-      md5: ed2dcf3f5b3f061030b9713460a97e1f
-      size: 392720
+      md5: 72937ffa6fa74fe271c5f1996410f522
+      size: 425484
