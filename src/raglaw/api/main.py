@@ -204,10 +204,17 @@ def retriever_component(
         return ComponentStatus(
             ready=False, detail=f"champion not loaded: {type(exc).__name__}: {exc}"
         ), None
+    # A copy baked into the image (D26) names where it was loaded from, so
+    # /health never claims a registry it didn't contact.
+    origin = (
+        f"baked copy at {settings.champion_dir}"
+        if settings.champion_dir
+        else "registry"
+    )
     return ComponentStatus(
         ready=True,
-        detail=f"models:/{MODEL_NAME}@{PRODUCTION} (version {champion.version}) "
-        f"on {settings.paths.index_dir}",
+        detail=f"models:/{MODEL_NAME}@{PRODUCTION} (version {champion.version}, "
+        f"{origin}) on {settings.paths.index_dir}",
     ), champion
 
 

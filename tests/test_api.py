@@ -15,6 +15,7 @@ from raglaw.api.main import (
 from raglaw.config import Settings
 from raglaw.llm import LLMError, OpenAIChat
 from raglaw.rag import AnswerPipeline
+from raglaw.retrieval.champion import export_champion
 from raglaw.retrieval.remote import ModelsServiceError
 
 pytestmark = pytest.mark.unit
@@ -272,9 +273,26 @@ def test_the_retriever_is_the_production_version_and_names_it(
     try:
         assert status.ready
         assert status.detail.startswith(
-            f"models:/civil-code-retriever@production (version {version.version})"
+            f"models:/civil-code-retriever@production (version {version.version}, "
+            "registry)"
         )
         assert champion.documents_indexed == 5
+    finally:
+        champion.close()
+
+
+def test_a_baked_copy_is_named_as_such_on_health(
+    champion_settings, search_index, in_production, tmp_path
+):
+    """D26: the API image loads an exported copy; /health says so."""
+    version = in_production(champion_settings)
+    export_champion(champion_settings, tmp_path / "champion")
+    baked = champion_settings.model_copy(update={"champion_dir": tmp_path / "champion"})
+
+    status, champion = retriever_component(baked, embeddings=search_index.embeddings)
+    try:
+        assert status.ready
+        assert f"(version {version.version}, baked copy at {tmp_path}" in status.detail
     finally:
         champion.close()
 
