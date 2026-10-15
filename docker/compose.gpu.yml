@@ -1,0 +1,29 @@
+# GPU override: docker compose -f compose.yaml -f docker/compose.gpu.yml up
+# Needs an NVIDIA driver with CUDA 13 and the NVIDIA Container Toolkit (Docker
+# Desktop's WSL backend includes it). The `models` image is built on CUDA torch
+# under its own tag; Ollama's image already carries CUDA.
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  models:
+    <<: *gpu
+    image: mooncholy/raglaw-models:${RAGLAW_IMAGE_TAG:-latest}-gpu
+    build:
+      args:
+        TORCH_GROUP: torch-gpu
+    environment:
+      RAGLAW_DEVICE: cuda
+
+  models-pull:
+    image: mooncholy/raglaw-models:${RAGLAW_IMAGE_TAG:-latest}-gpu
+
+  ollama:
+    <<: *gpu
