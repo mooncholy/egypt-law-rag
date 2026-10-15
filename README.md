@@ -55,6 +55,8 @@ On CPU the generator needs about 9 GB of free memory and answers slowly. With an
 docker compose -f compose.yaml -f docker/compose.gpu.yml up
 ```
 
+This runs the CUDA build of the `models` image (`mooncholy/raglaw-models:latest-gpu`) and gives the GPU to `models` and `ollama`. A `-gpu` tag that isn't published is built locally on first `up`; that needs no project data.
+
 | Service | Port | What |
 | --- | --- | --- |
 | `api` | 8000 | `/ask` and `/health`. Bakes in the index and a copy of the production retriever (D26); runs as a non-root user, without torch |
@@ -71,6 +73,9 @@ uv run python -m raglaw.retrieval.champion export         # production -> build/
 docker compose build
 docker compose push                                       # mooncholy/raglaw-api, mooncholy/raglaw-models (latest)
 RAGLAW_IMAGE_TAG=0.1.0 docker compose build && RAGLAW_IMAGE_TAG=0.1.0 docker compose push
+GPU="-f compose.yaml -f docker/compose.gpu.yml"           # the CUDA models image, tagged <tag>-gpu
+docker compose $GPU build models && docker compose $GPU push models
+RAGLAW_IMAGE_TAG=0.1.0 docker compose $GPU build models && RAGLAW_IMAGE_TAG=0.1.0 docker compose $GPU push models
 ```
 
 Moving the `production` alias changes what a new `api` image serves; a running container keeps the copy it was built with.
