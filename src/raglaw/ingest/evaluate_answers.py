@@ -41,6 +41,7 @@ from raglaw.ingest.evaluate_retrieval import (
     CONFIG_SECTIONS,
     flatten_metrics,
     inputs_hash,
+    repealed_inputs,
     run_identity,
 )
 from raglaw.ingest.evaluate_retrieval import run_params as retrieval_params
@@ -360,6 +361,7 @@ def main(argv: list[str] | None = None) -> None:
             args.eval,
             dense_dir / "manifest.json",
             bm25_dir / "manifest.json",
+            *repealed_inputs(settings),
         ),
         settings=settings,
         experiment="answers",

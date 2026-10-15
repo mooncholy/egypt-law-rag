@@ -344,6 +344,11 @@ def repealed_params(settings: Settings) -> dict[str, object]:
     }
 
 
+def repealed_inputs(settings: Settings) -> list[Path]:
+    """The repealed ranges' data, as a stage input when the fallback reads it."""
+    return [Path(settings.paths.repealed)] if settings.search.repealed_fallback else []
+
+
 # params.yaml sections that define a retrieval config; a change elsewhere (e.g.
 # paths) doesn't make a run another variant.
 CONFIG_SECTIONS = ("chunking", "embedding", "retrieval", "search", "evaluation")
@@ -434,7 +439,10 @@ def main(argv: list[str] | None = None) -> None:
     with stage_run(
         "evaluate_retrieval",
         input_hash=inputs_hash(
-            args.eval, dense_dir / "manifest.json", bm25_dir / "manifest.json"
+            args.eval,
+            dense_dir / "manifest.json",
+            bm25_dir / "manifest.json",
+            *repealed_inputs(settings),
         ),
         settings=settings,
         experiment="retrieval",

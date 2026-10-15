@@ -7,6 +7,7 @@ from raglaw.config import Evaluation, Search
 from raglaw.ingest.evaluate_retrieval import (
     flatten_metrics,
     misses_report,
+    repealed_inputs,
     run_evaluate_retrieval,
     run_identity,
     run_params,
@@ -259,6 +260,8 @@ def test_the_repealed_fallback_logs_its_thresholds_and_data_only_when_on(
 
     assert "repealed_sha256" not in run_params(off, chunks_sha256="0")
     params = run_params(on, chunks_sha256="0")
+    assert repealed_inputs(off) == []
+    assert repealed_inputs(on) == [data]  # hashed into the run's input_hash too
     assert params["repealed_fallback"] is True
     assert params["repealed_sha256"] == sha256_file(data)
     assert (params["repealed_below"], params["repealed_min_score"]) == (0.1, 0.01)
