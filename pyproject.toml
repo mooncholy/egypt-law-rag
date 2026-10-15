@@ -20,7 +20,7 @@ dependencies = [
     "langchain-core>=1.6.7",
     "langchain-qdrant>=1.1.0",
     "mlflow-skinny>=3.16.1",
-    "openai>=3.27.0",
+    "openai>=3.3.0",  # below 3.27: ragas's instructor caps jiter under 0.15
     "pandas>=3.0.6",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
@@ -43,6 +43,13 @@ default-groups = ["dev", "ingest", "embed", "torch-cpu"]
 required-version = "==0.12.20"
 # One torch build per environment: CPU-only by default, CUDA 13 on request.
 conflicts = [[{ group = "torch-cpu" }, { group = "torch-gpu" }]]
+# ragas 0.4.3 (Phase 9) imports langchain_community.chat_models.vertexai at
+# load time, which langchain-community 0.4 removed; 0.3.31 still has it and
+# accepts langchain-core 1.x.
+constraint-dependencies = ["langchain-community<0.4"]
+# scikit-network has no Python 3.14 wheel and needs a C++ compiler; ragas uses
+# it only to generate test sets (ragas.testset), never to score.
+override-dependencies = ["scikit-network; sys_platform == 'never'"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -83,6 +90,7 @@ ingest = [
     "mlflow>=3.16.1",
     "pikepdf>=10.15.0",
     "pymupdf>=1.28.2",
+    "ragas==0.4.3",
 ]
 # The pinned embedding model (bge-m3) and the search index (Qdrant, BM25): the
 # semantic chunking variant and the `embed` and `bm25` stages. Kept out of `dev`, so the

@@ -442,3 +442,146 @@ stages:
       hash: md5
       md5: cbb2744bd5ecc9e3e87d5a7e8fb679bf
       size: 46043
+  evaluate_answers:
+    cmd: python -m raglaw.ingest.evaluate_answers
+    deps:
+    - path: data/gold/answer_eval.jsonl
+      hash: md5
+      md5: 52e1330a4437146b4a693d03b2ea9bb9
+      size: 35110
+    - path: data/gold/retrieval_eval.jsonl
+      hash: md5
+      md5: e240a785db77f06e5a97a7f02385bfba
+      size: 58262
+    - path: data/index/bm25
+      hash: md5
+      md5: c9e550c8210a6ae2a5dceaa959c46c5b.dir
+      size: 1263382
+      nfiles: 6
+    - path: data/index/dense
+      hash: md5
+      md5: 0fbdcb603ff7c54a3e36d530542bb43b.dir
+      size: 15176858
+      nfiles: 4
+    - path: src/raglaw/answer_eval.py
+      hash: md5
+      md5: 5e3ea93b44f5623a70aa9d74fe978300
+      size: 7762
+    - path: src/raglaw/ingest/evaluate_answers.py
+      hash: md5
+      md5: 03a4d637ce9e7d97fd003d0c6ad5c34b
+      size: 14253
+    - path: src/raglaw/ingest/evaluate_retrieval.py
+      hash: md5
+      md5: cead1d3e8b6983d22fa76b9492597e0e
+      size: 15773
+    - path: src/raglaw/llm.py
+      hash: md5
+      md5: 1c4dabbf87df5ecf761dcbe625e7d37d
+      size: 2438
+    - path: src/raglaw/prompts
+      hash: md5
+      md5: 3431cc589918bc1f611adb76e30d3020.dir
+      size: 2833
+      nfiles: 4
+    - path: src/raglaw/rag.py
+      hash: md5
+      md5: 26aa16c36ce7d8a0acda416e68f48d94
+      size: 11383
+    - path: src/raglaw/retrieval/dense.py
+      hash: md5
+      md5: ef4b3d32c25c0266d3a28258280bd2df
+      size: 4228
+    - path: src/raglaw/retrieval/embeddings.py
+      hash: md5
+      md5: a7e0368a51253607fbba36288a973843
+      size: 3516
+    - path: src/raglaw/retrieval/fusion.py
+      hash: md5
+      md5: 5e91f15a95a0c53f4de5d687452e9fbd
+      size: 1344
+    - path: src/raglaw/retrieval/lexical.py
+      hash: md5
+      md5: d2f384bbf549a82eac195453d6d54f7f
+      size: 3784
+    - path: src/raglaw/retrieval/lookup.py
+      hash: md5
+      md5: 03d84fb13db06433db3fa8482069e1c4
+      size: 3253
+    - path: src/raglaw/retrieval/manifest.py
+      hash: md5
+      md5: 4a09952026421d73f918cb65aecacf06
+      size: 2263
+    - path: src/raglaw/retrieval/rerank.py
+      hash: md5
+      md5: a8299dca5f22da75986718022311c453
+      size: 1629
+    - path: src/raglaw/retrieval/retriever.py
+      hash: md5
+      md5: 1aba2f17b8ac28b0e66450cc340f4449
+      size: 13593
+    - path: src/raglaw/retrieval/scoring.py
+      hash: md5
+      md5: 01db56ffbf6ae4fed52f0d5d8fe442be
+      size: 15756
+    - path: src/raglaw/retrieval/tokenize.py
+      hash: md5
+      md5: f8b0a5f00d1afce2a4b45dd4f7a46d4b
+      size: 4195
+    - path: src/raglaw/text/normalize.py
+      hash: md5
+      md5: a939c9592ed1cc3d8eb0d84e68e51363
+      size: 2457
+    params:
+      params.yaml:
+        answer:
+          prompt_version: v2
+          no_answer_threshold: 0.1
+          max_sources: 5
+          temperature: 0.0
+          max_tokens: 1024
+        answer_evaluation:
+          subset: full
+          ci_size: 20
+        chunking:
+          strategy: structural
+          max_chars: 1000
+          semantic:
+            breakpoint_percentile: 90
+          repealed: per_article
+        embedding:
+          model: BAAI/bge-m3
+          revision: 5617a9f61b028005a4858fdac845db406aefb181
+          batch_size: 32
+        reranker:
+          model: BAAI/bge-reranker-v2-m3
+          revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+          max_length: 1024
+          batch_size: 8
+        retrieval:
+          document_text: both_with_headings
+          bm25_tokenizer: words
+          bm25_stopwords: none
+          repealed_text: note
+        search:
+          mode: hybrid
+          article_lookup: true
+          candidates: 50
+          rrf_k: 60
+          top_k: 10
+          rerank: true
+          rerank_depth: 30
+          cite_expansion: false
+    outs:
+    - path: docs/metrics/answers.json
+      hash: md5
+      md5: 8d214bc0f7d22bee4dfc5f7619c0d44d
+      size: 848
+    - path: docs/reports/answer_eval.md
+      hash: md5
+      md5: 36b09de573f3659aef2c81abdd905536
+      size: 11673
+    - path: docs/reports/answer_questions.json
+      hash: md5
+      md5: ed2dcf3f5b3f061030b9713460a97e1f
+      size: 392720

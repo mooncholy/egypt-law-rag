@@ -366,8 +366,9 @@ def run_identity(
     }
 
 
-def _input_hash(*paths: Path) -> str:
-    """One hash over the eval set and both manifests, naming what was scored."""
+def inputs_hash(*paths: Path) -> str:
+    """One hash over a stage's input files (the eval set and both manifests),
+    naming what was scored; ``evaluate_answers`` adds its answer set."""
     digest = hashlib.sha256()
     for path in paths:
         digest.update(sha256_file(path).encode())
@@ -408,7 +409,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     with stage_run(
         "evaluate_retrieval",
-        input_hash=_input_hash(
+        input_hash=inputs_hash(
             args.eval, dense_dir / "manifest.json", bm25_dir / "manifest.json"
         ),
         settings=settings,

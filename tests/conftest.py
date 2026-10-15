@@ -20,6 +20,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 from mlflow.entities.model_registry import ModelVersion
 from mlflow.tracking import MlflowClient
 
@@ -557,6 +560,83 @@ def in_production(evaluation_run: Callable[..., str]) -> Callable[..., ModelVers
     return _promote
 
 
+# --- Answer evaluation -------------------------------------------------------
+
+
+class StubJudge(BaseChatModel):
+    """A RAGAS judge without a model, answering faithfulness's two prompts.
+
+    Statement extraction splits the answer into sentences; a statement is
+    supported when the context holds it word for word (case aside). Any other
+    prompt is an error, which RAGAS records as an unscored metric.
+    """
+
+    @property
+    def _llm_type(self) -> str:
+        return "stub-judge"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        text = messages[-1].content
+        data = json.loads(text.rsplit("input: ", 1)[1].rsplit("Output:", 1)[0])
+        if "answer" in data:
+            sentences = re.split(r"(?<=\.)\s+", data["answer"])
+            out: dict[str, Any] = {
+                "statements": [s.strip() for s in sentences if s.strip()]
+            }
+        elif "statements" in data and "context" in data:
+            context = data["context"].lower()
+            out = {
+                "statements": [
+                    {
+                        "statement": s,
+                        "reason": "stub",
+                        "verdict": int(s.lower() in context),
+                    }
+                    for s in data["statements"]
+                ]
+            }
+        else:
+            raise ValueError(f"StubJudge doesn't answer prompts with {sorted(data)}")
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content=json.dumps(out)))]
+        )
+
+
+@pytest.fixture
+def stub_judge() -> StubJudge:
+    """A judge that scores faithfulness by exact containment."""
+    return StubJudge()
+
+
+@pytest.fixture
+def answer_set(tmp_path: Path) -> Callable[..., tuple[Path, Path]]:
+    """Write ``questions`` as an eval set, and an answer set with ``references``
+    (id -> reference; default: one per in-scope question). Returns both paths:
+    (answers, eval set)."""
+
+    def _write(
+        questions: list[EvalQuestion], references: dict[str, str] | None = None
+    ) -> tuple[Path, Path]:
+        eval_path = tmp_path / "retrieval_eval.jsonl"
+        answers_path = tmp_path / "answer_eval.jsonl"
+        eval_path.write_text(
+            "".join(q.model_dump_json(by_alias=True) + "\n" for q in questions), "utf-8"
+        )
+        refs = references
+        if refs is None:
+            refs = {q.id: f"Reference for {q.id}." for q in questions if q.in_scope}
+        answers_path.write_text(
+            "".join(
+                json.dumps({"id": i, "reference": r}, ensure_ascii=False) + "\n"
+                for i, r in refs.items()
+            ),
+            "utf-8",
+        )
+        return answers_path, eval_path
+
+    return _write
+
+
 # --- Evaluation --------------------------------------------------------------
 
 
@@ -818,7 +898,7 @@ class StubLLM:
         self.calls: list[list[dict[str, str]]] = []
 
     async def complete(
-        self, messages: list[dict[str, str]], *, temperature: float
+        self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
     ) -> str:
         self.calls.append(messages)
         return self.reply

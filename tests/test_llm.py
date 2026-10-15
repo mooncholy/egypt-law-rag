@@ -24,7 +24,7 @@ def chat_with(handler) -> OpenAIChat:
     return llm
 
 
-def completion(content: str | None) -> httpx.Response:
+def completion(content: str | None, finish_reason: str = "stop") -> httpx.Response:
     return httpx.Response(
         200,
         json={
@@ -36,7 +36,7 @@ def completion(content: str | None) -> httpx.Response:
                 {
                     "index": 0,
                     "message": {"role": "assistant", "content": content},
-                    "finish_reason": "stop",
+                    "finish_reason": finish_reason,
                 }
             ],
         },
@@ -50,21 +50,37 @@ def test_the_reply_is_returned_stripped_with_the_model_and_temperature_sent():
         sent.append(json.loads(request.content))
         return completion("  Article 44.\n")
 
-    reply = asyncio.run(chat_with(handler).complete(MESSAGES, temperature=0.0))
+    reply = asyncio.run(
+        chat_with(handler).complete(MESSAGES, temperature=0.0, max_tokens=64)
+    )
 
     assert reply == "Article 44."
-    assert (sent[0]["model"], sent[0]["temperature"]) == ("test-model", 0.0)
+    assert (sent[0]["model"], sent[0]["temperature"], sent[0]["max_tokens"]) == (
+        "test-model",
+        0.0,
+        64,
+    )
 
 
 def test_an_empty_reply_is_an_llm_error():
     llm = chat_with(lambda request: completion(None))
 
     with pytest.raises(LLMError, match="empty"):
-        asyncio.run(llm.complete(MESSAGES, temperature=0.0))
+        asyncio.run(llm.complete(MESSAGES, temperature=0.0, max_tokens=64))
 
 
 def test_an_endpoint_error_is_an_llm_error():
     llm = chat_with(lambda request: httpx.Response(500, json={"error": "down"}))
 
     with pytest.raises(LLMError, match="test-model"):
-        asyncio.run(llm.complete(MESSAGES, temperature=0.0))
+        asyncio.run(llm.complete(MESSAGES, temperature=0.0, max_tokens=64))
+
+
+def test_a_reply_cut_at_the_cap_is_logged(log_records):
+    llm = chat_with(lambda request: completion("Repeat repeat repeat", "length"))
+
+    reply = asyncio.run(llm.complete(MESSAGES, temperature=0.0, max_tokens=8))
+
+    assert reply == "Repeat repeat repeat"
+    [warning] = [r for r in log_records() if r["level"] == "WARNING"]
+    assert warning["message"] == "Reply cut at max_tokens=8"

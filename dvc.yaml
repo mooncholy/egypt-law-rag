@@ -175,3 +175,47 @@ stages:
           cache: false
       - ${paths.reports_dir}/retrieval_questions.json:
           cache: false
+
+  # RAGAS scores for /ask's answers (Phase 9): the generator and the judge are
+  # per-machine endpoints in .env (RAGLAW_LLM_*, RAGLAW_JUDGE_*), which DVC
+  # can't see; each run logs both. Needs both endpoints to run.
+  evaluate_answers:
+    cmd: python -m raglaw.ingest.evaluate_answers
+    deps:
+      - ${paths.index_dir}/dense
+      - ${paths.index_dir}/bm25
+      - ${paths.gold_dir}/answer_eval.jsonl
+      - ${paths.gold_dir}/retrieval_eval.jsonl
+      - src/raglaw/answer_eval.py
+      - src/raglaw/ingest/evaluate_answers.py
+      - src/raglaw/ingest/evaluate_retrieval.py
+      - src/raglaw/llm.py
+      - src/raglaw/prompts
+      - src/raglaw/rag.py
+      - src/raglaw/retrieval/dense.py
+      - src/raglaw/retrieval/embeddings.py
+      - src/raglaw/retrieval/fusion.py
+      - src/raglaw/retrieval/lexical.py
+      - src/raglaw/retrieval/lookup.py
+      - src/raglaw/retrieval/manifest.py
+      - src/raglaw/retrieval/rerank.py
+      - src/raglaw/retrieval/retriever.py
+      - src/raglaw/retrieval/scoring.py
+      - src/raglaw/retrieval/tokenize.py
+      - src/raglaw/text/normalize.py
+    params:
+      - chunking
+      - embedding
+      - reranker
+      - retrieval
+      - search
+      - answer
+      - answer_evaluation
+    metrics:
+      - ${paths.metrics_dir}/answers.json:
+          cache: false
+    outs:
+      - ${paths.reports_dir}/answer_eval.md:
+          cache: false
+      - ${paths.reports_dir}/answer_questions.json:
+          cache: false

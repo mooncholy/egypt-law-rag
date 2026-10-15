@@ -107,7 +107,7 @@ def test_an_llm_failure_is_a_503_naming_it(
     make_app, make_service, retrieved, make_chunk, answer_config
 ):
     class DownLLM:
-        async def complete(self, messages, *, temperature):
+        async def complete(self, messages, *, temperature, max_tokens):
             raise LLMError("connection refused")
 
     pipeline = AnswerPipeline(

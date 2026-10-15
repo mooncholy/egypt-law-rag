@@ -38,6 +38,8 @@ uv run pytest -m "profile or corpus"     # needs `dvc pull` and `dvc repro`
 uv run dvc repro                         # run the pipeline
 uv run dvc metrics show                  # each stage's checks and counts
 uv run python scripts/compare_retrieval.py   # retrieval runs vs the baseline, question by question
+uv run dvc repro evaluate_answers        # RAGAS on /ask's answers; needs RAGLAW_LLM_* and RAGLAW_JUDGE_* in .env
+uv run python scripts/compare_answers.py     # answer runs side by side, with refusals, from MLflow
 uv run python -m raglaw.retrieval.champion register   # the `champion` run (and its held-out run) becomes the `candidate`
 uv run python -m raglaw.retrieval.champion promote    # `production` moves to it, unless its held-out recall@5 is lower
 # One MLflow run per stage execution. Log artifacts live in S3, so the UI needs
@@ -99,6 +101,8 @@ A plain `uv run` resyncs the default groups and puts the CPU build back, so on t
 | `src/raglaw/api/` | The FastAPI service: `/ask` and `/health` |
 | `src/raglaw/rag.py`, `src/raglaw/prompts/` | The answer pipeline (retrieve, no-answer gate, prompt, citation check) and its versioned prompts |
 | `src/raglaw/serving/models_app.py`, `src/raglaw/retrieval/remote.py` | The `models` service, and the API's HTTP clients for it |
+| `src/raglaw/answer_eval.py`, `docs/reports/answer_eval.md` | Answer evaluation with RAGAS (faithfulness, answer relevancy, context precision and recall), and its report |
+| `docs/reports/answer_comparison.md`, `ragas_arabic_scorecard.md` | Five answer configs compared, and which RAGAS scores to trust on Arabic answers |
 | `docs/reports/answer_check.md` | 20 real questions answered end to end (`scripts/check_answers.py`) |
 | `data/errata.yaml` | Owner-approved fixes for one-off source errors |
 | `docs/reports/0_source_pdf_analysis.md` | The source facts (P1 to P26) and the rules (R1 to R23) built on them |
