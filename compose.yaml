@@ -45,6 +45,7 @@ services:
         condition: service_healthy
       ollama-pull:
         condition: service_completed_successfully
+        required: false  # the GPU override serves vLLM instead
     restart: unless-stopped
 
   models:
