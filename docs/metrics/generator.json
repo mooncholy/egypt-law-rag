@@ -1,0 +1,36 @@
+[
+  {
+    "label": "q8 (Ollama)",
+    "model": "qwen2.5:7b-instruct-q8_0",
+    "prompts": 54,
+    "warmup": 5,
+    "iterations": 130,
+    "mean_ms": 2869.727848507612,
+    "p50_ms": 2435.843307500363,
+    "p95_ms": 5829.827439349992,
+    "p99_ms": 9425.408214180552,
+    "ttft_p50_ms": 110.70618200028548,
+    "tokens_per_second": 44.183041075012326,
+    "mean_completion_tokens": 126.79230769230769,
+    "vram_gib": 7.83,
+    "hardware": "NVIDIA GeForce RTX 5060 Ti",
+    "concurrency": 1
+  },
+  {
+    "label": "AWQ (vLLM)",
+    "model": "qwen2.5-7b-instruct-awq",
+    "prompts": 54,
+    "warmup": 5,
+    "iterations": 130,
+    "mean_ms": 2672.4043600846926,
+    "p50_ms": 2550.967657000001,
+    "p95_ms": 5084.493400800238,
+    "p99_ms": 5397.550948309,
+    "ttft_p50_ms": 488.90749600104755,
+    "tokens_per_second": 56.17285315589846,
+    "mean_completion_tokens": 150.1153846153846,
+    "vram_gib": 8.65,
+    "hardware": "NVIDIA GeForce RTX 5060 Ti",
+    "concurrency": 1
+  }
+]
