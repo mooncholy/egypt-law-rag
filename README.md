@@ -155,6 +155,41 @@ curl -s localhost:3000/ask -H 'Content-Type: application/json' -d '{"question": 
 
 Retrieval runs under a lock (Qdrant's local mode isn't safe across threads), so concurrent questions reach `Models` one at a time; batching then pays off within a question (30 rerank pairs in one batch) more than across questions. A Qdrant server would lift the lock.
 
+## Monitoring
+
+Add the monitoring override to either `up` command:
+
+```bash
+docker compose -f compose.yaml -f docker/compose.gpu.yml -f docker/compose.monitoring.yml up
+```
+
+| Service | Where | What |
+| --- | --- | --- |
+| Grafana | localhost:3200 (admin / admin) | The `egypt-law-rag` dashboard and two alert rules, provisioned from `docker/monitoring/grafana` |
+| Prometheus | localhost:9090 | Scrapes the API's `/metrics` and the Pushgateway every 15 s |
+| Langfuse | localhost:3100 (admin@raglaw.local / raglaw-admin) | A trace per `/ask`: `retrieve` (with `rerank` inside it), then `generate` with token usage; the prompt version, retriever version and correlation ID on every trace |
+| alert-sink | `docker compose logs alert-sink` | The webhook each alert notification is posted to |
+
+The login, the Langfuse project and its API keys are created at first start from local-only defaults in `docker/compose.monitoring.yml`; change them before exposing any port.
+
+What `/metrics` exposes (`raglaw.monitoring.metrics`):
+
+- `raglaw_requests_total{path,status}` and `raglaw_request_seconds{path}`: traffic and latency (the dashboard's p50 and p95 panel).
+- `llm_tokens_total{model,type}`: prompt and completion tokens, as the LLM endpoint reports them.
+- `raglaw_answers_total{outcome}`: answered, refused by the no-answer gate, or answered from a repeal note.
+- `raglaw_pii_decisions_total{decision}`, `raglaw_pii_findings_total{kind}` and `raglaw_pii_seconds`: the PII guardrail on every answer.
+- `raglaw_query_drift_ratio` and `raglaw_query_drift_threshold`: query drift over the last 20 questions.
+
+**Alerts.**
+- Faithfulness below **0.80**: `scripts/score_traces.py` is the scheduled evaluation. It samples the last day's answered `/ask` traces, scores each with RAGAS faithfulness against the article texts it was given, attaches the score to the trace in Langfuse, and pushes the mean to the Pushgateway (`raglaw_faithfulness`). Run it from cron or the CI runner: `uv run python scripts/score_traces.py --hours 24 --sample 20`, with `RAGLAW_PUSHGATEWAY_URL=http://localhost:9091` in `.env`.
+- Query drift below its line for 10 minutes.
+
+**Query drift.** Each question's embedding is compared with the eval set's centroid. The ratio is the window's mean cosine over the eval set's own (0.6689), so on-topic questions score about 1.0. The line is 3 standard errors below 1 for a 20-question window: 0.9461. On the real embedder (`docs/reports/drift.md`): the eval set scores 1.000, its halves 1.010 and 0.990, and 12 family-law questions (personal status law, not the Civil Code) 0.914.
+
+**PII guardrail** (`raglaw.monitoring.pii`). It redacts Egyptian national IDs (14 digits with a real birth date and governorate code), Egyptian mobile numbers, email addresses, and Arabic names after an honorific, in Western or Arabic-Indic digits. It runs on every `/ask` answer, and on `/ask/stream`, where it holds back the last 6 words until they're checked. On the Code's own text (1,149 articles, both languages, no personal data) it redacted nothing (0 false positives in 2,298 texts) and took 0.046 ms per text.
+
+**Token cost.** The self-hosted price of a token is the GPU's hourly price over the tokens it serves in an hour at the measured throughput. The cost panel multiplies the completion tokens per second by that price. Both inputs are dashboard constants (`gpu_usd_per_hour`, `throughput_tokens_per_s`); see the serving results for the measured throughput.
+
 ## Develop locally
 
 ### Prerequisites
