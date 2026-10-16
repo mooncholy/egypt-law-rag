@@ -357,6 +357,21 @@ class Tracking(BaseModel):
     )
 
 
+class Distillation(BaseModel):
+    """The reranker distillation (Phase 13): a smaller cross-encoder trained on
+    ``reranker``'s scores, with the same student trained on hard labels as the
+    control."""
+
+    student: Reranker = Field(description="The student's starting checkpoint.")
+    questions: int = Field(
+        gt=0, description="Synthetic training questions, one per sampled article."
+    )
+    seed: int = Field(description="Seeds the article sample and the training.")
+    epochs: int = Field(gt=0, description="Passes over the training pairs.")
+    learning_rate: float = Field(gt=0, description="The student's learning rate.")
+    train_batch_size: int = Field(gt=0, description="Pairs per training step.")
+
+
 def fallback_threshold_error(search: Search, answer: Answer) -> str | None:
     """
     Why the repealed fallback and the no-answer gate disagree, if they do.
@@ -420,6 +435,9 @@ class Settings(BaseSettings):
         description="How answers are scored with RAGAS."
     )
     gate: Gate = Field(description="CI's quality gate on answers and retrieval.")
+    distillation: Distillation = Field(
+        description="The reranker distillation experiment."
+    )
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(

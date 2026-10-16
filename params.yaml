@@ -104,3 +104,17 @@ answer_evaluation:
 gate:
   min_faithfulness: 0.75
   max_recall_drop: 1
+
+# The reranker distillation (Phase 13): the student learns `reranker`'s scores on
+# synthetic questions about articles outside the eval set, and is measured on it.
+distillation:
+  student:
+    model: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1   # 118M parameters, the teacher's 568M
+    revision: 1427fd652930e4ba29e8149678df786c240d8825
+    max_length: 512   # its position limit; the longest chunks are truncated
+    batch_size: 32
+  questions: 600
+  seed: 13
+  epochs: 2
+  learning_rate: 2.0e-5
+  train_batch_size: 32

@@ -109,6 +109,9 @@ torch-gpu = ["torch>=2.14.1"]
 bento = [
     "bentoml>=1.4.39",
 ]
+distill = [
+    "accelerate>=1.1.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

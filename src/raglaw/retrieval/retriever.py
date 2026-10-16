@@ -234,6 +234,10 @@ class HybridRetriever(BaseRetriever):
         self._parts = {n: [c for _, c in sorted(ps)] for n, ps in parts.items()}
         self._cites = {c: _citations(meta) for c, (_, meta) in payloads.items()}
 
+    def text_articles(self) -> dict[str, int]:
+        """Each chunk's indexed text, as the reranker reads it, -> its article."""
+        return {text: meta["article_number"] for text, meta in self._payloads.values()}
+
     def close(self) -> None:
         """Release the Qdrant client and its directory lock."""
         self._client.close()
