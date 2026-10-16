@@ -62,7 +62,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - run: uv sync --locked
+      # bento: so the BentoML service's tests run rather than skip.
+      - run: uv sync --locked --group bento
       # The 80% threshold lives in [tool.coverage.report]; --cov applies it.
       - run: uv run --no-sync pytest -m unit --cov
 
