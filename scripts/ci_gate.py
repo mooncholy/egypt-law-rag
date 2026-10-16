@@ -39,6 +39,7 @@ def main() -> None:
         json.loads((metrics / "retrieval.json").read_text("utf-8")),
         base,
         settings.gate,
+        settings.answer_evaluation.ci_size,
     )
     for line in result.lines:
         logger.info(line)
