@@ -93,6 +93,27 @@ class PromotionError(RuntimeError):
     """The candidate can't replace production: missing, unscored, or worse."""
 
 
+def check_index(registered: dict[str, Any], index: Path) -> None:
+    """
+    Check that ``index`` is the one a version was scored on, from the version's
+    ``manifests``. A module function rather than a method: registering runs
+    this module as ``__main__``, so each version carries its class pickled by
+    value, as it was then, and an older version lacks newer methods.
+
+    exceptions:
+    - IndexMismatchError: the index's manifests differ from the registered ones
+    """
+    found = {
+        "dense": read_manifest(index / "dense", DenseManifest),
+        "bm25": read_manifest(index / "bm25", Bm25Manifest),
+    }
+    if found != registered:
+        raise IndexMismatchError(
+            f"the index at {index} isn't the registered one (its manifests "
+            "differ); pull the index the champion was scored on"
+        )
+
+
 class ChampionRetriever(mlflow.pyfunc.PythonModel):
     """The registered retriever: question in, article citations out."""
 
@@ -115,23 +136,6 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
         )
         self._retriever: HybridRetriever | None = None
 
-    def check_index(self, index: Path) -> None:
-        """
-        Check that ``index`` is the one this version was scored on.
-
-        exceptions:
-        - IndexMismatchError: its manifests differ from the registered ones
-        """
-        found = {
-            "dense": read_manifest(index / "dense", DenseManifest),
-            "bm25": read_manifest(index / "bm25", Bm25Manifest),
-        }
-        if found != self.manifests:
-            raise IndexMismatchError(
-                f"the index at {index} isn't the registered one (its manifests "
-                "differ); pull the index the champion was scored on"
-            )
-
     def open(
         self,
         settings: Settings,
@@ -151,7 +155,7 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
           threshold than this deployment's no-answer gate
         """
         index = Path(settings.paths.index_dir)
-        self.check_index(index)
+        check_index(self.manifests, index)
         embedding = Embedding.model_validate(self.config["embedding"])
         search = Search.model_validate(self.config["search"])
         if error := fallback_threshold_error(search, settings.answer):
@@ -458,7 +462,9 @@ def export_champion(settings: Settings, out: Path) -> dict[str, Any]:
     )
     index = Path(settings.paths.index_dir)
     try:
-        mlflow.pyfunc.load_model(str(out)).unwrap_python_model().check_index(index)
+        check_index(
+            mlflow.pyfunc.load_model(str(out)).unwrap_python_model().manifests, index
+        )
     except IndexMismatchError as exc:
         raise IndexMismatchError(
             f"production (version {version.version}) was scored on another index "
