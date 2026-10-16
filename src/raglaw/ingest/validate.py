@@ -40,8 +40,18 @@ CER_LIMIT = 0.005  # D2
 LATIN_LIMIT = 0.01  # C13: Latin letters in any text_ar
 # Owner-approved exceptions, each with its ruling.
 EMPTY_AR_ALLOWED = {1022: "its Arabic cell is empty in the print (C8, 2026-10-14)"}
-CER_EXCLUDED = {
-    54: "its repeal note's dates and number line are kept as stored (2026-10-14)"
+# C14: each accepted difference from the gold sample as (stored, gold) spans of
+# text_ar, put back in their gold form before the comparison, so everything
+# else in the article is checked like any other.
+CER_ACCEPTED = {
+    54: (
+        "its repeal note's dates and number line are kept as stored (2026-10-14)",
+        (
+            ("المواد من ٥٤ إلى ٨٠\n", ""),
+            ("في ٣/١١/١٩٥٦", "في ١٩٥٦/١١/٣"),
+            ("في .١٩٦٤/٣/١٢", "في ١٢/٣/١٩٦٤."),
+        ),
+    )
 }
 # Rows whose Arabic header can't be read (repair.EXPECTED_UNPARSED_AR_HEADERS).
 UNPARSED_AR_HEADERS = set(repair.EXPECTED_UNPARSED_AR_HEADERS)
@@ -216,8 +226,10 @@ def check_repair_counts(
 
 def check_root(articles: Sequence[Article], root_en: str) -> Check:
     """C12: no promulgation-law text, and Article 1's path starts at the root."""
-    first = next(a for a in articles if a.article_number == 1)
     leaked = [a.article_number for a in articles if PROMULGATION in a.text_ar]
+    first = next((a for a in articles if a.article_number == 1), None)
+    if first is None:
+        return Check("C12", False, leaked, "Article 1 is missing")
     opens = first.text_ar.startswith(ARTICLE_1_OPENS)
     return Check(
         "C12",
@@ -284,6 +296,17 @@ def edit_distance(a: str, b: str) -> int:
     return previous[-1]
 
 
+def accepted_text(number: int, text_ar: str) -> str:
+    """
+    ``text_ar`` with each accepted span of the article put in its gold form; a
+    span that isn't there exactly once is left alone, so it counts as errors.
+    """
+    for stored, gold in CER_ACCEPTED.get(number, ("", ()))[1]:
+        if text_ar.count(stored) == 1:
+            text_ar = text_ar.replace(stored, gold)
+    return text_ar
+
+
 def check_gold(articles: Sequence[Article], gold: Sequence[dict]) -> Check:
     """C14: against the gold sample, article boundaries match exactly and the
     Arabic character error rate is at most 0.5% (D2), the accepted exceptions
@@ -294,17 +317,23 @@ def check_gold(articles: Sequence[Article], gold: Sequence[dict]) -> Check:
         and by_number[g["article_number"]].text_en.strip() == g["text_en"].strip()
         for g in gold
     )
-    errors = {
+    found = [g for g in gold if g["article_number"] in by_number]
+    raw_errors = {
         g["article_number"]: edit_distance(
             by_number[g["article_number"]].text_ar, g["text_ar"]
         )
-        for g in gold
-        if g["article_number"] in by_number
+        for g in found
     }
-    length = {g["article_number"]: len(g["text_ar"]) for g in gold}
-    kept = [n for n in errors if n not in CER_EXCLUDED]
-    cer = sum(errors[n] for n in kept) / sum(length[n] for n in kept)
-    raw = sum(errors.values()) / sum(length.values())
+    errors = {
+        g["article_number"]: edit_distance(
+            accepted_text(g["article_number"], by_number[g["article_number"]].text_ar),
+            g["text_ar"],
+        )
+        for g in found
+    }
+    length = sum(len(g["text_ar"]) for g in found)
+    cer = sum(errors.values()) / length if length else 1.0
+    raw = sum(raw_errors.values()) / length if length else 1.0
     value = {
         "boundary_recall": boundaries / len(gold),
         "boundary_precision": boundaries / len(errors) if errors else 0.0,
@@ -316,8 +345,8 @@ def check_gold(articles: Sequence[Article], gold: Sequence[dict]) -> Check:
         "C14",
         boundaries == len(gold) and cer <= CER_LIMIT,
         value,
-        f"ar_cer {cer:.2%} (limit {CER_LIMIT:.1%}), {raw:.2%} with "
-        f"{sorted(CER_EXCLUDED)} included",
+        f"ar_cer {cer:.2%} (limit {CER_LIMIT:.1%}), {raw:.2%} without the "
+        f"accepted spans of {sorted(CER_ACCEPTED)}",
     )
 
 
@@ -399,7 +428,8 @@ def report(checks: Sequence[Check], found: dict[str, Any], sha: str) -> str:
             f"| {c.id} | {'pass' if c.passed else '**FAIL**'} | `{value}` | {c.detail} |"
         )
     lines += ["", "## Accepted exceptions", ""]
-    for n, why in {**EMPTY_AR_ALLOWED, **CER_EXCLUDED}.items():
+    accepted = {n: why for n, (why, _) in CER_ACCEPTED.items()}
+    for n, why in {**EMPTY_AR_ALLOWED, **accepted}.items():
         lines.append(f"- Article {n}: {why}.")
     lines += ["", "## Outliers (reported, not failed)", ""]
     lines += [f"- `{k}`: {json.dumps(v, ensure_ascii=False)}" for k, v in found.items()]

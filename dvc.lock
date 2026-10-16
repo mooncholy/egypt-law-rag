@@ -642,6 +642,10 @@ stages:
       hash: md5
       md5: 72842d611737b216b6e554decee9e488
       size: 22263
+    - path: src/raglaw/ingest/errata.py
+      hash: md5
+      md5: 452ef14cd35c5bf2a6db206ee673fbbe
+      size: 3494
     - path: src/raglaw/ingest/extract.py
       hash: md5
       md5: 96716ed16ff311d669babbf7d1f5543e
@@ -650,14 +654,18 @@ stages:
       hash: md5
       md5: 230917a4998ec7b84552a75cf781b815
       size: 26149
+    - path: src/raglaw/ingest/profile.py
+      hash: md5
+      md5: 77e4be8715b2d095796758a37ed05bff
+      size: 7982
     - path: src/raglaw/ingest/repair.py
       hash: md5
       md5: 8e9918faa96b86da6ac01c3aa573454a
       size: 12572
     - path: src/raglaw/ingest/validate.py
       hash: md5
-      md5: 68d67b48f26d60d338ad52c81406ca43
-      size: 18174
+      md5: a181ca53376522fbaed64f88de9e4a2b
+      size: 19343
     - path: src/raglaw/records.py
       hash: md5
       md5: b470051d287b2c26fc47e23ff0baf566
@@ -678,9 +686,9 @@ stages:
     outs:
     - path: docs/metrics/corpus.json
       hash: md5
-      md5: 7f33af5c08ab2e712b3b719dc27d3f24
-      size: 1844
+      md5: ad24be11345194b3bdcbe916b8d147a4
+      size: 1826
     - path: docs/reports/corpus_validation.md
       hash: md5
-      md5: c9be48e1b1df1fb2e5f0c7eb8ad80c61
-      size: 2206
+      md5: 8015abadb2574abb7506f51b2120a305
+      size: 2212

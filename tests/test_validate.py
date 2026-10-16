@@ -54,9 +54,18 @@ def test_c13_counts_presentation_forms_and_latin(make_article):
 
 
 @pytest.mark.unit
-def test_c14_excludes_the_accepted_article_but_reports_it(make_article, monkeypatch):
-    monkeypatch.setattr(v, "CER_EXCLUDED", {2: "accepted"})
-    articles = [make_article(1, "abcd"), make_article(2, "wxyz")]
+@pytest.mark.parametrize(
+    ("stored", "passed", "ar_cer"),
+    [
+        ("wxyz", True, 0.0),  # only the accepted span differs
+        ("vxyz", False, 0.125),  # a change outside it still counts
+    ],
+)
+def test_c14_puts_back_only_the_accepted_spans(
+    make_article, monkeypatch, stored, passed, ar_cer
+):
+    monkeypatch.setattr(v, "CER_ACCEPTED", {2: ("accepted", (("yz", "yy"),))})
+    articles = [make_article(1, "abcd"), make_article(2, stored)]
     gold = [
         {"article_number": 1, "text_en": "Body of article 1.", "text_ar": "abcd"},
         {"article_number": 2, "text_en": "Body of article 2.", "text_ar": "wxyy"},
@@ -64,9 +73,17 @@ def test_c14_excludes_the_accepted_article_but_reports_it(make_article, monkeypa
 
     check = v.check_gold(articles, gold)
 
-    assert check.passed
-    assert (check.value["ar_cer"], check.value["ar_cer_with_accepted"]) == (0.0, 0.125)
+    assert check.passed is passed
+    assert check.value["ar_cer"] == ar_cer
+    assert check.value["ar_cer_with_accepted"] == (0.125 if passed else 0.25)
     assert check.value["boundary_recall"] == 1.0
+
+
+@pytest.mark.unit
+def test_c12_fails_without_article_1_instead_of_raising(make_article):
+    check = v.check_root([make_article(2)], "Preliminary Chapter / General Provisions")
+
+    assert (check.passed, check.detail) == (False, "Article 1 is missing")
 
 
 @pytest.mark.unit

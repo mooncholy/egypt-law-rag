@@ -85,9 +85,11 @@ stages:
       - ${paths.metrics_dir}/assemble.json
       - src/raglaw/ingest/validate.py
       - src/raglaw/ingest/assemble.py
+      - src/raglaw/ingest/errata.py
       - src/raglaw/ingest/extract.py
       - src/raglaw/ingest/repair.py
       - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/profile.py
       - src/raglaw/text/normalize.py
       - src/raglaw/schema.py
       - src/raglaw/records.py

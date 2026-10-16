@@ -44,10 +44,9 @@
     "C14": {
       "boundary_recall": 1.0,
       "boundary_precision": 1.0,
-      "ar_cer": 0.000335,
+      "ar_cer": 0.000324,
       "ar_cer_with_accepted": 0.006003,
       "errors_by_article": {
-        "54": 35,
         "970": 2
       }
     },
