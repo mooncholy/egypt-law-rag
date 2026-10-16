@@ -3,11 +3,12 @@
 # Desktop's WSL backend includes it). `models` and `models-pull` run the CUDA
 # build of the models image, published as `<tag>-gpu` (`latest-gpu`,
 # `0.1.0-gpu`); both carry its build too, so a tag that isn't published is
-# built locally instead (no data needed).
+# built locally instead (no data needed). Ollama's image already carries CUDA.
 #
-# The generator is vLLM here (Phase 12), serving Qwen2.5-7B-Instruct-AWQ, the
-# D20 model in 4 bits (Phase 13's comparison), with continuous batching. Ollama
-# is left out (profile `ollama`); `--profile ollama` brings it back.
+# The generator stays the measured 8-bit model on Ollama. vLLM serving its AWQ
+# build is docker/compose.vllm.yml, added after this file: twice the throughput
+# under load, but faithfulness 0.052 lower, past Phase 13's 0.03 limit
+# (docs/reports/optimization.md).
 
 x-gpu: &gpu
   deploy:
@@ -31,60 +32,11 @@ services:
     <<: [*gpu, *models-gpu-image]
     environment:
       RAGLAW_DEVICE: cuda
-    # vLLM sizes its KV cache from the memory that changes while it profiles;
-    # loading the models then would be counted against it (under WSL the GPU's
-    # memory is device-wide), so they load once vLLM is up.
-    depends_on:
-      vllm:
-        condition: service_healthy
 
   # Downloads only (on CPU), so it needs no GPU; it shares the image to avoid a
   # second large pull.
   models-pull:
     <<: *models-gpu-image
 
-  # 60% of the GPU: 5.3 GiB of weights, 0.3 GiB of CUDA graphs and about 2 GiB
-  # of KV cache (about 36k tokens), leaving `models` its 5.6 GB on a 16 GB
-  # card. Under WSL the desktop's ~1.4 GB counts inside vLLM's share, which is
-  # why 50% left no KV cache. 64 sequences cover the 50-user load test.
-  # Weights go to the shared `hf-cache` volume on first start.
-  vllm:
-    <<: *gpu
-    image: vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
-    command:
-      - --model=Qwen/Qwen2.5-7B-Instruct-AWQ
-      - --revision=b25037543e9394b818fdfca67ab2a00ecc7dd641
-      - --served-model-name=qwen2.5-7b-instruct-awq
-      - --gpu-memory-utilization=0.6
-      - --max-model-len=8192
-      - --max-num-seqs=64
-    environment:
-      HF_HUB_DISABLE_XET: "1"
-    volumes:
-      - hf-cache:/root/.cache/huggingface
-    shm_size: 2gb
-    ports:
-      - "127.0.0.1:8002:8000"  # for scripts/bench_generator.py and RAGAS runs from the host
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 10m
-    restart: unless-stopped
-
-  api:
-    environment:
-      RAGLAW_LLM_BASE_URL: http://vllm:8000/v1
-      RAGLAW_LLM_MODEL: qwen2.5-7b-instruct-awq
-      RAGLAW_LLM_API_KEY: vllm  # vLLM started without --api-key ignores it
-    depends_on:
-      vllm:
-        condition: service_healthy
-
   ollama:
     <<: *gpu
-    profiles: [ollama]
-
-  ollama-pull:
-    profiles: [ollama]
