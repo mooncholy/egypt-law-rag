@@ -43,6 +43,9 @@ configure_server_logging()
 logger = get_logger(__name__)
 
 CORRELATION_ID_HEADER = "X-Request-ID"
+# Every response names the version that served it, so a canary's traffic can be
+# told apart (README, "Canary rollout").
+VERSION_HEADER = "X-Raglaw-Version"
 SERVICE_VERSION = version("egypt-law-rag")
 
 # Responses raised outside FastAPI's view (the exception handlers, HTTPException,
@@ -356,6 +359,7 @@ async def correlation_id_middleware(request: Request, call_next):
             )
 
         response.headers[CORRELATION_ID_HEADER] = correlation_id
+        response.headers[VERSION_HEADER] = SERVICE_VERSION
         logger.info(
             "Request completed",
             extra={

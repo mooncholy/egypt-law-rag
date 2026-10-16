@@ -8,6 +8,8 @@ from pydantic import SecretStr
 from raglaw.api import main
 from raglaw.api.main import (
     CORRELATION_ID_HEADER,
+    SERVICE_VERSION,
+    VERSION_HEADER,
     indexed_chunks,
     llm_component,
     load_service,
@@ -189,6 +191,7 @@ def test_correlation_id_is_echoed_or_generated(client):
     generated = client.get("/health")
 
     assert echoed.headers[CORRELATION_ID_HEADER] == "abc-123"
+    assert echoed.headers[VERSION_HEADER] == SERVICE_VERSION
     assert generated.headers[CORRELATION_ID_HEADER]
 
 
