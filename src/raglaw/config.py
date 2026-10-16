@@ -319,6 +319,22 @@ class Answer(BaseModel):
     )
 
 
+class Gate(BaseModel):
+    """CI's quality gate (Phase 11, ``raglaw.gate``)."""
+
+    min_faithfulness: float = Field(
+        gt=0,
+        le=1,
+        description="The lowest RAGAS faithfulness on the 20-question CI set "
+        "that passes (the handbook's 0.75).",
+    )
+    max_recall_drop: int = Field(
+        ge=0,
+        description="How many tuning-half questions recall@5 may lose against "
+        "the base branch before the build fails.",
+    )
+
+
 class AnswerEvaluation(BaseModel):
     """How answers are scored with RAGAS (Phase 9)."""
 
@@ -403,6 +419,7 @@ class Settings(BaseSettings):
     answer_evaluation: AnswerEvaluation = Field(
         description="How answers are scored with RAGAS."
     )
+    gate: Gate = Field(description="CI's quality gate on answers and retrieval.")
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(

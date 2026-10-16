@@ -97,3 +97,10 @@ answer:
 answer_evaluation:
   subset: full   # | ci: the 20-question stratified subset CI scores
   ci_size: 20
+
+# CI's quality gate (Phase 11): the 20-question CI set must keep faithfulness at
+# or above min_faithfulness (the handbook's 0.75), and the tuning half's recall@5
+# may lose at most max_recall_drop questions against the base branch.
+gate:
+  min_faithfulness: 0.75
+  max_recall_drop: 1
