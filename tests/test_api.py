@@ -390,3 +390,30 @@ def test_unreachable_artifacts_leave_the_retriever_unready(
 
     assert not status.ready
     assert "NoCredentialsError" in status.detail
+
+
+def test_startup_waits_for_the_models_service_then_stops_waiting(monkeypatch):
+    """A restart brings api back before models; it waits instead of degrading."""
+    settings = Settings(_env_file=None, models_wait_seconds=30)
+    answers = iter([False, False, True])
+
+    def health(url):
+        if not next(answers):
+            raise ModelsServiceError("not yet")
+        return {}
+
+    monkeypatch.setattr(main, "models_health", health)
+    now = [0.0]
+    sleep = lambda s: now.__setitem__(0, now[0] + s)
+
+    assert main.wait_for_models(settings, sleep=sleep, clock=lambda: now[0])
+    assert now[0] == 10  # two waits of 5 s
+
+    monkeypatch.setattr(
+        main,
+        "models_health",
+        lambda url: (_ for _ in ()).throw(ModelsServiceError("down")),
+    )
+    now[0] = 0.0
+    assert not main.wait_for_models(settings, sleep=sleep, clock=lambda: now[0])
+    assert now[0] >= 30

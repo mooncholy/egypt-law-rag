@@ -454,6 +454,13 @@ class Settings(BaseSettings):
         "registry, so a container needs no tracking server or AWS. Blank: load "
         "`production` from the registry.",
     )
+    models_wait_seconds: float = Field(
+        default=0,
+        ge=0,
+        description="How long the API waits at startup for the `models` service "
+        "to answer before checking its components. Compose sets it, because a "
+        "restart policy brings containers back without waiting for each other.",
+    )
     models_url: HttpUrl = Field(
         default="http://localhost:8001",
         description="The `models` service (D18), which embeds questions and "

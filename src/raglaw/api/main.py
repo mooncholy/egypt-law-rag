@@ -219,6 +219,32 @@ def retriever_component(
     ), champion
 
 
+def wait_for_models(
+    settings: Settings,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """
+    Wait up to ``models_wait_seconds`` for the ``models`` service to answer,
+    so a container restarted before it doesn't come up degraded for good
+    (components are checked once, at startup).
+
+    returns:
+    - answered (bool): whether it answered before the wait ran out
+    """
+    deadline = clock() + settings.models_wait_seconds
+    while True:
+        try:
+            models_health(settings.models_url)
+            return True
+        except ModelsServiceError as exc:
+            if clock() >= deadline:
+                return False
+            logger.info("Waiting for the models service: %s", exc)
+            sleep(5)
+
+
 def load_service(
     settings: Settings,
     *,
@@ -240,6 +266,8 @@ def load_service(
     - FileNotFoundError: ``answer.prompt_version`` names no prompt file
     """
     load_prompt(settings.answer.prompt_version)  # a config error stops startup
+    if embeddings is None and reranker is None:
+        wait_for_models(settings)
     llm_status, llm = llm_component(settings)
     retriever_status, champion = retriever_component(
         settings, embeddings=embeddings, reranker=reranker
