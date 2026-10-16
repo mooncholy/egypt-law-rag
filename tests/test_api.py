@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 from mlflow.tracking import MlflowClient
@@ -78,6 +80,48 @@ def test_u30_ask_returns_the_answer_and_the_retrieved_articles_it_cites(
         "answer": reply,
         "sources": ["Egyptian Civil Code, Article 44"],
     }
+
+
+def sse(text: str) -> list[tuple[str | None, dict]]:
+    """Parse server-sent events into (event, data) pairs."""
+    events = []
+    for block in text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.split("\n"))
+        events.append((lines.get("event"), json.loads(lines["data"])))
+    return events
+
+
+def test_u38_a_streamed_answer_arrives_in_pieces_then_its_sources(
+    ask_client, retrieved, make_chunk
+):
+    reply = "Article 44 sets majority at twenty-one."
+    documents = retrieved([make_chunk(44), make_chunk(45)])
+
+    with ask_client(documents, reply=reply, streaming=True) as client:
+        response = client.post("/ask/stream", json={"question": "What is majority?"})
+
+    events = sse(response.text)
+    assert response.headers["content-type"].startswith("text/event-stream")
+    tokens = [data["token"] for event, data in events if event is None]
+    assert len(tokens) > 1  # more than one piece before the end
+    assert "".join(tokens).strip() == reply
+    assert events[-1] == ("sources", {"sources": ["Egyptian Civil Code, Article 44"]})
+
+
+def test_a_reply_made_without_the_llm_streams_as_one_piece(
+    ask_client, retrieved, make_chunk
+):
+    with ask_client(retrieved([make_chunk(1)], rerank_score=0.01), streaming=True) as c:
+        events = sse(c.post("/ask/stream", json=QUESTION).text)
+
+    assert len(events) == 2 and events[0][1]["token"].startswith("لم أجد")
+    assert events[1] == ("sources", {"sources": []})
+
+
+def test_streaming_is_refused_with_a_503_when_a_component_isnt_ready(client):
+    response = client.post("/ask/stream", json=QUESTION)
+
+    assert response.status_code == 503
 
 
 def test_the_no_answer_reply_has_empty_sources(ask_client, retrieved, make_chunk):

@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from collections.abc import Callable
@@ -8,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from langchain_core.embeddings import Embeddings
 
 from raglaw.api.schemas import (
@@ -28,7 +29,7 @@ from raglaw.logging_conf import (
     correlation_id_var,
     get_logger,
 )
-from raglaw.rag import AnswerPipeline, load_prompt
+from raglaw.rag import Answer, AnswerPipeline, load_prompt
 from raglaw.retrieval.remote import (
     ModelsServiceError,
     RemoteEmbeddings,
@@ -486,6 +487,46 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
     except LLMError as exc:
         raise ServiceUnavailableError({"llm": str(exc)}) from exc
     return AskResponse(answer=answer.text, sources=answer.sources)
+
+
+def _event(data: dict, event: str | None = None) -> str:
+    """One server-sent event."""
+    head = f"event: {event}\n" if event else ""
+    return f"{head}data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.post(
+    "/ask/stream",
+    responses={**INVALID_REQUEST_RESPONSE, **UNAVAILABLE_RESPONSE},
+)
+async def ask_stream(request: Request, body: AskRequest) -> StreamingResponse:
+    """
+    Answer as ``/ask`` does, streamed as server-sent events: ``data:
+    {"token": ...}`` per piece of the reply as the LLM writes it, then
+    ``event: sources`` with ``{"sources": [...]}``. A failure after the first
+    piece arrives as ``event: error``, since the status is already sent.
+
+    exceptions:
+    - ServiceUnavailableError: 503 when a component isn't ready at startup
+    - RequestValidationError: 422 when the question is empty or too long
+    """
+    service: Service = request.app.state.service
+    reasons = {name: c.detail for name, c in service.components.items() if not c.ready}
+    if reasons or service.pipeline is None:
+        raise ServiceUnavailableError(reasons or {"pipeline": "not built"})
+    pipeline = service.pipeline
+
+    async def events():
+        try:
+            async for piece in pipeline.answer_stream(body.question):
+                if isinstance(piece, Answer):
+                    yield _event({"sources": piece.sources}, event="sources")
+                else:
+                    yield _event({"token": piece})
+        except (ModelsServiceError, LLMError) as exc:
+            yield _event({"error": str(exc)}, event="error")
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 def create_app(

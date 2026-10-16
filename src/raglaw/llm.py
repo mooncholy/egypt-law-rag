@@ -5,6 +5,7 @@ endpoint, model and key are per-machine settings, never code.
 """
 
 import logging
+from collections.abc import AsyncIterator
 from typing import Protocol
 
 logger = logging.getLogger(__name__)
@@ -71,3 +72,45 @@ class OpenAIChat:
         if not text:
             raise LLMError(f"{self.model} returned an empty answer")
         return text
+
+    async def stream(
+        self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
+    ) -> AsyncIterator[str]:
+        """
+        The same completion as ``complete``, yielded as the endpoint generates
+        it (``/ask/stream``).
+
+        returns:
+        - pieces (AsyncIterator[str]): the reply's text, piece by piece
+
+        exceptions:
+        - LLMError: the call failed, or nothing was generated
+        """
+        from openai import OpenAIError
+
+        produced = False
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+            async for chunk in response:
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.delta.content:
+                    produced = True
+                    yield choice.delta.content
+                if choice.finish_reason == "length":
+                    logger.warning(
+                        "Reply cut at max_tokens=%d",
+                        max_tokens,
+                        extra={"model": self.model},
+                    )
+        except OpenAIError as exc:
+            raise LLMError(f"{self.model} at {self.client.base_url}: {exc}") from exc
+        if not produced:
+            raise LLMError(f"{self.model} returned an empty answer")
