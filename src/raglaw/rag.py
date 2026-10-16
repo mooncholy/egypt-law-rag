@@ -378,6 +378,18 @@ class AnswerPipeline:
             contexts=[a.render() for a in articles],
         )
 
+    async def messages_for(self, question: str) -> list[dict[str, str]] | None:
+        """
+        The chat ``answer`` would send the LLM for ``question``, for measuring
+        a generator on exactly /ask's prompts.
+
+        returns:
+        - messages (list[dict] | None): None when no LLM call would be made (a
+          repealed range, or the no-answer gate)
+        """
+        prepared = await self._prepare(question)
+        return None if isinstance(prepared, Answer) else prepared.messages
+
     async def answer(self, question: str) -> Answer:
         """
         Answer ``question`` from the retrieved articles.
