@@ -110,6 +110,13 @@ jobs:
         run: cp "$HOME/.config/raglaw/ci.env" .env
       - name: Install with CUDA torch
         run: uv sync --locked $UV_GPU
+      # The remote's AWS profile is per machine, in the untracked
+      # .dvc/config.local; a fresh checkout has none, so set it from ci.env.
+      - name: Point DVC at this machine's AWS profile
+        run: |
+          profile="$(sed -n 's/^RAGLAW_AWS_PROFILE=//p' .env)"
+          test -n "$profile" || { echo "::error::RAGLAW_AWS_PROFILE is empty in ci.env"; exit 1; }
+          uv run --no-sync dvc remote modify --local storage profile "$profile"
       - name: Pull the data (DVC remote)
         run: uv run --no-sync dvc pull
       - name: Rebuild the index (embed, bm25)
