@@ -16,34 +16,12 @@ import argparse
 import logging
 import random
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from raglaw.config import Settings
 
 logger = logging.getLogger("score_traces")
 
 TRACE = "ask"
-
-
-def answered(observation: Any) -> dict[str, Any] | None:
-    """
-    The RAGAS sample for one ``ask`` root span, when the LLM answered it.
-
-    returns:
-    - sample (dict | None): ``user_input``, ``response``, ``retrieved_contexts``
-      and the ``trace_id``; None for a refusal, a repeal reply or no contexts
-    """
-    meta = observation.metadata or {}
-    if meta.get("unaddressed") or meta.get("repealed") or not meta.get("contexts"):
-        return None
-    if not observation.input or not observation.output:
-        return None
-    return {
-        "trace_id": observation.trace_id,
-        "user_input": observation.input,
-        "response": observation.output,
-        "retrieved_contexts": list(meta["contexts"]),
-    }
 
 
 def main() -> None:
@@ -59,6 +37,7 @@ def main() -> None:
     from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
 
     from raglaw.answer_eval import ragas_scores
+    from raglaw.monitoring.tracing import faithfulness_sample
 
     if not (settings.langfuse_host and settings.langfuse_public_key):
         raise SystemExit("set RAGLAW_LANGFUSE_HOST and both keys in .env")
@@ -77,7 +56,7 @@ def main() -> None:
         parse_io_as_json=False,
         limit=500,
     ).data
-    samples = [s for s in map(answered, found) if s]
+    samples = [s for s in map(faithfulness_sample, found) if s]
     picked = random.Random(args.seed).sample(samples, min(args.sample, len(samples)))
     logger.info(
         "%d ask traces since %s, %d answered by the LLM, %d sampled",
@@ -108,6 +87,11 @@ def main() -> None:
             comment=f"scheduled evaluation, judge {settings.judge_model}",
         )
     langfuse.flush()
+    if not values:
+        raise SystemExit(
+            f"the judge scored none of the {len(picked)} traces (its errors are "
+            "above; a 429 means its quota ran out); nothing was pushed"
+        )
     mean = sum(values) / len(values)
     logger.info("Faithfulness %.3f over %d scored traces", mean, len(values))
     if settings.pushgateway_url:

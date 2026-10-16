@@ -16,6 +16,7 @@ so its spans still nest under the request's trace. Without the three
 ``RAGLAW_LANGFUSE_*`` settings, ``NO_TRACER`` stands in and nothing is sent.
 """
 
+import json
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
@@ -175,3 +176,33 @@ class TracedLLM:
                 pieces.append(piece)
                 yield piece
             generation.update(output="".join(pieces))
+
+
+def _flag(value: Any) -> bool:
+    return value is True or str(value).lower() == "true"
+
+
+def faithfulness_sample(observation: Any) -> dict[str, Any] | None:
+    """
+    The RAGAS sample for one ``ask`` root span read back from Langfuse, when
+    the LLM answered it. Langfuse returns metadata as strings (``"False"``, a
+    JSON list), so both forms are read.
+
+    returns:
+    - sample (dict | None): ``trace_id``, ``user_input``, ``response`` and
+      ``retrieved_contexts``; None for a refusal, a repeal reply or no contexts
+    """
+    meta = observation.metadata or {}
+    contexts = meta.get("contexts") or []
+    if isinstance(contexts, str):
+        contexts = json.loads(contexts)
+    if _flag(meta.get("unaddressed")) or _flag(meta.get("repealed")) or not contexts:
+        return None
+    if not observation.input or not observation.output:
+        return None
+    return {
+        "trace_id": observation.trace_id,
+        "user_input": observation.input,
+        "response": observation.output,
+        "retrieved_contexts": list(contexts),
+    }

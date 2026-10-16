@@ -10,6 +10,7 @@ from raglaw.monitoring.tracing import (
     TracedLLM,
     TracedReranker,
     Tracer,
+    faithfulness_sample,
     langfuse_tracer,
     traced_retrieve,
 )
@@ -107,3 +108,39 @@ def test_without_langfuse_settings_nothing_is_traced(clean_env):
     assert tracer is NO_TRACER
     with tracer.trace("ask", metadata={}) as root:
         root.update(output="ignored")  # a no-op, never an error
+
+
+class Stored:
+    """An ``ask`` root span as Langfuse returns it: metadata as strings."""
+
+    def __init__(self, **metadata):
+        self.trace_id, self.input, self.output = "t1", "Q?", "Under Article 44, ..."
+        self.metadata = metadata
+
+
+@pytest.mark.parametrize(
+    ("metadata", "kept"),
+    [
+        (
+            {"unaddressed": "False", "repealed": "False", "contexts": '["Art. 44"]'},
+            True,
+        ),
+        (
+            {"unaddressed": "True", "repealed": "False", "contexts": '["Art. 44"]'},
+            False,
+        ),
+        (
+            {"unaddressed": "False", "repealed": "True", "contexts": '["Art. 54"]'},
+            False,
+        ),
+        ({"unaddressed": False, "repealed": False, "contexts": ["Art. 44"]}, True),
+        ({"unaddressed": "False", "repealed": "False", "contexts": "[]"}, False),
+    ],
+)
+def test_only_traces_the_llm_answered_are_scored(metadata, kept):
+    """The scheduled evaluation reads metadata back as strings ("False", JSON)."""
+    sample = faithfulness_sample(Stored(**metadata))
+
+    assert (sample is not None) is kept
+    if kept:
+        assert sample["retrieved_contexts"] == ["Art. 44"]
