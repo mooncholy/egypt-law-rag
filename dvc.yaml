@@ -71,6 +71,37 @@ stages:
       - ${paths.metrics_dir}/assemble.json:
           cache: false
 
+  # Re-measures the corpus (C1-C16) and compares it with the gold sample
+  # (Phase 4). Nothing downstream reads its outputs; it fails on any check.
+  validate:
+    cmd: python -m raglaw.ingest.validate
+    deps:
+      - ${paths.corpus_dir}/articles.json
+      - ${paths.interim_dir}/rows_repaired.jsonl
+      - ${paths.gold_dir}/articles_gold.json
+      - ${paths.errata}
+      - ${paths.metrics_dir}/extract.json
+      - ${paths.metrics_dir}/repair.json
+      - ${paths.metrics_dir}/assemble.json
+      - src/raglaw/ingest/validate.py
+      - src/raglaw/ingest/assemble.py
+      - src/raglaw/ingest/errata.py
+      - src/raglaw/ingest/extract.py
+      - src/raglaw/ingest/repair.py
+      - src/raglaw/ingest/measure.py
+      - src/raglaw/ingest/profile.py
+      - src/raglaw/text/normalize.py
+      - src/raglaw/schema.py
+      - src/raglaw/records.py
+    params:
+      - root_heading
+    outs:
+      - ${paths.reports_dir}/corpus_validation.md:
+          cache: false
+    metrics:
+      - ${paths.metrics_dir}/corpus.json:
+          cache: false
+
   chunk:
     cmd: python -m raglaw.ingest.chunk
     deps:
