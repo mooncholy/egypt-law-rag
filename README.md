@@ -188,7 +188,11 @@ What `/metrics` exposes (`raglaw.monitoring.metrics`):
 
 **PII guardrail** (`raglaw.monitoring.pii`). It redacts Egyptian national IDs (14 digits with a real birth date and governorate code), Egyptian mobile numbers, email addresses, and Arabic names after an honorific, in Western or Arabic-Indic digits. It runs on every `/ask` answer, and on `/ask/stream`, where it holds back the last 6 words until they're checked. On the Code's own text (1,149 articles, both languages, no personal data) it redacted nothing (0 false positives in 2,298 texts) and took 0.046 ms per text.
 
-**Token cost.** The self-hosted price of a token is the GPU's hourly price over the tokens it serves in an hour at the measured throughput. The cost panel multiplies the completion tokens per second by that price. Both inputs are dashboard constants (`gpu_usd_per_hour`, `throughput_tokens_per_s`); see the serving results for the measured throughput.
+**Token cost.** The self-hosted price of a token is the GPU's hourly price over the tokens it serves in an hour at the measured throughput. The cost panel multiplies the completion tokens per second by that price. Both inputs are dashboard constants:
+- `throughput_tokens_per_s` is 44.2, the default generator's measured rate. Ollama decodes one answer at a time, so that is its capacity (`docs/metrics/generator.json`).
+- `gpu_usd_per_hour` is 0.35, an **assumed** hourly price for a 16 GB GPU. Set your own.
+
+With those two, a token costs about $2.2 per million.
 
 ## Develop locally
 

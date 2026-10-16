@@ -20,7 +20,7 @@
         "name": "throughput_tokens_per_s",
         "type": "constant",
         "hide": 2,
-        "query": "300",
+        "query": "44.2",
         "label": "Measured throughput (completion tokens/s)"
       }
     ]
