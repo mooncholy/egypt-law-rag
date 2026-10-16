@@ -68,6 +68,10 @@ class Paths(BaseModel):
         description="The repealed ranges' former text, for matching only, and "
         "their repeal records (`search.repealed_fallback`; DVC-tracked)."
     )
+    drift_baseline: RepoPath = Field(
+        description="The eval set's centroid and spread for query drift "
+        "(`scripts/drift_baseline.py`; the API reads it)."
+    )
 
 
 class RootHeading(BaseModel):

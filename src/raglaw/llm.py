@@ -5,8 +5,8 @@ endpoint, model and key are per-machine settings, never code.
 """
 
 import logging
-from collections.abc import AsyncIterator
-from typing import Protocol
+from collections.abc import AsyncIterator, Callable
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -30,13 +30,27 @@ class ChatModel(Protocol):
 class OpenAIChat:
     """``model`` at an OpenAI-compatible ``base_url``."""
 
-    def __init__(self, base_url: str, api_key: str, model: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        *,
+        on_usage: Callable[[str, int, int], None] | None = None,
+    ) -> None:
+        """``on_usage(model, prompt_tokens, completion_tokens)`` is called after
+        each call the endpoint reports usage for (the API counts tokens)."""
         from openai import AsyncOpenAI
 
         self.client = AsyncOpenAI(
             base_url=base_url, api_key=api_key, timeout=TIMEOUT_SECONDS, max_retries=1
         )
         self.model = model
+        self.on_usage = on_usage
+
+    def _usage(self, usage: Any) -> None:
+        if usage is not None and self.on_usage is not None:
+            self.on_usage(self.model, usage.prompt_tokens, usage.completion_tokens)
 
     async def complete(
         self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
@@ -63,6 +77,7 @@ class OpenAIChat:
             )
         except OpenAIError as exc:
             raise LLMError(f"{self.model} at {self.client.base_url}: {exc}") from exc
+        self._usage(response.usage)
         choice = response.choices[0]
         if choice.finish_reason == "length":
             logger.warning(
@@ -96,8 +111,10 @@ class OpenAIChat:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 stream=True,
+                stream_options={"include_usage": True},
             )
             async for chunk in response:
+                self._usage(chunk.usage)  # only the last chunk carries it
                 if not chunk.choices:
                     continue
                 choice = chunk.choices[0]

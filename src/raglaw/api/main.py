@@ -5,11 +5,17 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from importlib.metadata import version
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    JSONResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from langchain_core.embeddings import Embeddings
 
 from raglaw.api.schemas import (
@@ -29,6 +35,9 @@ from raglaw.logging_conf import (
     correlation_id_var,
     get_logger,
 )
+from raglaw.monitoring import metrics
+from raglaw.monitoring.drift import DriftBaseline, DriftWindow
+from raglaw.monitoring.pii import StreamRedactor, redact
 from raglaw.rag import Answer, AnswerPipeline, load_prompt
 from raglaw.retrieval.remote import (
     ModelsServiceError,
@@ -46,6 +55,7 @@ CORRELATION_ID_HEADER = "X-Request-ID"
 # Every response names the version that served it, so a canary's traffic can be
 # told apart (README, "Canary rollout").
 VERSION_HEADER = "X-Raglaw-Version"
+DRIFT_WINDOW = 20  # questions in the drift window (docs/reports/drift.md)
 SERVICE_VERSION = version("egypt-law-rag")
 
 # Responses raised outside FastAPI's view (the exception handlers, HTTPException,
@@ -110,7 +120,10 @@ def llm_component(settings: Settings) -> tuple[ComponentStatus, ChatModel | None
             ready=False, detail=f"{', '.join(missing)} {verb} not set."
         ), None
     llm = OpenAIChat(
-        settings.llm_base_url, values["RAGLAW_LLM_API_KEY"], settings.llm_model
+        settings.llm_base_url,
+        values["RAGLAW_LLM_API_KEY"],
+        settings.llm_model,
+        on_usage=metrics.record_tokens,
     )
     return ComponentStatus(
         ready=True, detail=f"{settings.llm_model} at {settings.llm_base_url}"
@@ -161,6 +174,37 @@ def indexed_chunks(settings: Settings) -> int:
     return len(manifest.chunk_ids)
 
 
+class ObservedEmbeddings(Embeddings):
+    """``inner``, with each question's vector also added to the drift window."""
+
+    def __init__(self, inner: Embeddings, window: DriftWindow) -> None:
+        self.inner = inner
+        self.window = window
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self.inner.embed_documents(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        vector = self.inner.embed_query(text)
+        metrics.DRIFT.set(self.window.add(vector))
+        metrics.DRIFT_THRESHOLD.set(self.window.threshold)
+        return vector
+
+
+def drift_window(settings: Settings) -> DriftWindow | None:
+    """
+    The query-drift window over ``paths.drift_baseline`` (Phase 14).
+
+    returns:
+    - window (DriftWindow | None): None when the baseline file is missing
+    """
+    path = Path(settings.paths.drift_baseline)
+    if not path.exists():
+        logger.warning("No drift baseline at %s; drift isn't measured", path)
+        return None
+    return DriftWindow(DriftBaseline.load(path), DRIFT_WINDOW)
+
+
 def retriever_component(
     settings: Settings,
     *,
@@ -187,10 +231,13 @@ def retriever_component(
         return ComponentStatus(
             ready=False, detail=f"retrieval dependencies missing: {exc}"
         ), None
+    query_embeddings = embeddings or RemoteEmbeddings(settings.models_url)
+    if window := drift_window(settings):
+        query_embeddings = ObservedEmbeddings(query_embeddings, window)
     try:
         champion = load_champion(
             settings,
-            embeddings=embeddings or RemoteEmbeddings(settings.models_url),
+            embeddings=query_embeddings,
             reranker=reranker or RemoteReranker(settings.models_url),
         )
     # No registry or alias; the artifacts unreachable in S3; no index on this
@@ -360,6 +407,11 @@ async def correlation_id_middleware(request: Request, call_next):
 
         response.headers[CORRELATION_ID_HEADER] = correlation_id
         response.headers[VERSION_HEADER] = SERVICE_VERSION
+        # The route's template, so an unknown path can't add a label per URL.
+        route = request.scope.get("route")
+        path = getattr(route, "path", "unmatched")
+        metrics.REQUESTS.labels(path, str(response.status_code)).inc()
+        metrics.LATENCY.labels(path).observe(time.perf_counter() - start)
         logger.info(
             "Request completed",
             extra={
@@ -491,6 +543,14 @@ async def health_check(request: Request) -> HealthResponse:
     )
 
 
+@router.get("/metrics", include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """The Prometheus metrics (``raglaw.monitoring.metrics``)."""
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    return Response(generate_latest(metrics.REGISTRY), media_type=CONTENT_TYPE_LATEST)
+
+
 @router.post(
     "/ask",
     response_model=AskResponse,
@@ -518,7 +578,30 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
         raise ServiceUnavailableError({"models": str(exc)}) from exc
     except LLMError as exc:
         raise ServiceUnavailableError({"llm": str(exc)}) from exc
-    return AskResponse(answer=answer.text, sources=answer.sources)
+    count_outcome(answer)
+    start = time.perf_counter()
+    guarded = redact(answer.text)
+    metrics.PII_SECONDS.observe(time.perf_counter() - start)
+    count_pii(guarded.findings)
+    return AskResponse(answer=guarded.text, sources=answer.sources)
+
+
+def count_outcome(answer: Answer) -> None:
+    """Count an answer as answered, refused (no-answer gate) or repealed."""
+    if answer.unaddressed:
+        outcome = "refused"
+    elif answer.repealed:
+        outcome = "repealed"
+    else:
+        outcome = "answered"
+    metrics.ANSWERS.labels(outcome).inc()
+
+
+def count_pii(findings: list) -> None:
+    """Count the guardrail's decision on one answer, and what it redacted."""
+    metrics.PII_DECISIONS.labels("redacted" if findings else "clean").inc()
+    for finding in findings:
+        metrics.PII_FINDINGS.labels(finding.kind).inc()
 
 
 def _event(data: dict, event: str | None = None) -> str:
@@ -549,12 +632,22 @@ async def ask_stream(request: Request, body: AskRequest) -> StreamingResponse:
     pipeline = service.pipeline
 
     async def events():
+        # The PII guard holds the last words back until they're checked, and
+        # each piece waits for the next, so the last one leaves with the rest
+        # (a reply made in one piece stays one event).
+        guard, held = StreamRedactor(), ""
         try:
             async for piece in pipeline.answer_stream(body.question):
                 if isinstance(piece, Answer):
+                    if rest := guard.feed(held) + guard.flush():
+                        yield _event({"token": rest})
+                    count_outcome(piece)
+                    count_pii(guard.findings)
                     yield _event({"sources": piece.sources}, event="sources")
-                else:
-                    yield _event({"token": piece})
+                    continue
+                if ready := guard.feed(held):
+                    yield _event({"token": ready})
+                held = piece
         except (ModelsServiceError, LLMError) as exc:
             yield _event({"error": str(exc)}, event="error")
 

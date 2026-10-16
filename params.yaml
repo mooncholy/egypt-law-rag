@@ -16,6 +16,7 @@ paths:
   index_dir: data/index
   logs_dir: logs
   repealed: data/repealed/repealed.json
+  drift_baseline: docs/metrics/drift_baseline.json   # scripts/drift_baseline.py
 
 # The page 1 heading that opens every heading path (P7). It has no English side
 # in the source; the owner supplies the label (D7).

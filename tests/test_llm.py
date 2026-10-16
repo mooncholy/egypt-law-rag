@@ -84,3 +84,25 @@ def test_a_reply_cut_at_the_cap_is_logged(log_records):
     assert reply == "Repeat repeat repeat"
     [warning] = [r for r in log_records() if r["level"] == "WARNING"]
     assert warning["message"] == "Reply cut at max_tokens=8"
+
+
+def test_the_reported_usage_is_handed_on():
+    """Phase 14's llm_tokens_total counts what the endpoint reports."""
+
+    def handler(request):
+        response = completion("Article 44.")
+        body = json.loads(response.content)
+        body["usage"] = {
+            "prompt_tokens": 120,
+            "completion_tokens": 7,
+            "total_tokens": 127,
+        }
+        return httpx.Response(200, json=body)
+
+    llm = chat_with(handler)
+    counted = []
+    llm.on_usage = lambda model, prompt, done: counted.append((model, prompt, done))
+
+    asyncio.run(llm.complete(MESSAGES, temperature=0.0, max_tokens=64))
+
+    assert counted == [("test-model", 120, 7)]
