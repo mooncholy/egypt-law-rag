@@ -1,0 +1,15 @@
+# Prometheus (Phase 14): the API's /metrics, and the faithfulness the
+# scheduled evaluation pushes (scripts/score_traces.py).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+  - job_name: pushgateway
+    honor_labels: true  # keep the pushed job's own labels
+    static_configs:
+      - targets: ["pushgateway:9091"]

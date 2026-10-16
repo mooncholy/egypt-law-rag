@@ -1,0 +1,130 @@
+"""The scheduled evaluation (Phase 14): score sampled /ask traces' faithfulness.
+
+Reads the ``ask`` traces Langfuse received in the last ``--hours``, keeps
+those the LLM answered (not refused by the gate, not a repeal note's reply),
+samples ``--sample`` of them, and scores each with RAGAS faithfulness
+against the article texts it was given (the trace's ``contexts``), using the
+judge in ``.env`` (``RAGLAW_JUDGE_*``). Each score is attached to its trace
+(``faithfulness``), and the mean goes to the Pushgateway as
+``raglaw_faithfulness``, where Grafana's alert fires under 0.80.
+
+Run on a schedule (cron, or the CI runner) against the monitoring stack:
+    uv run python scripts/score_traces.py --hours 24 --sample 20
+"""
+
+import argparse
+import logging
+import random
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from raglaw.config import Settings
+
+logger = logging.getLogger("score_traces")
+
+TRACE = "ask"
+
+
+def answered(observation: Any) -> dict[str, Any] | None:
+    """
+    The RAGAS sample for one ``ask`` root span, when the LLM answered it.
+
+    returns:
+    - sample (dict | None): ``user_input``, ``response``, ``retrieved_contexts``
+      and the ``trace_id``; None for a refusal, a repeal reply or no contexts
+    """
+    meta = observation.metadata or {}
+    if meta.get("unaddressed") or meta.get("repealed") or not meta.get("contexts"):
+        return None
+    if not observation.input or not observation.output:
+        return None
+    return {
+        "trace_id": observation.trace_id,
+        "user_input": observation.input,
+        "response": observation.output,
+        "retrieved_contexts": list(meta["contexts"]),
+    }
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--hours", type=float, default=24)
+    ap.add_argument("--sample", type=int, default=20)
+    ap.add_argument("--seed", type=int, default=0)
+    args = ap.parse_args()
+    settings = Settings()
+    from langchain_openai import ChatOpenAI
+    from langfuse import Langfuse
+    from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+
+    from raglaw.answer_eval import ragas_scores
+
+    if not (settings.langfuse_host and settings.langfuse_public_key):
+        raise SystemExit("set RAGLAW_LANGFUSE_HOST and both keys in .env")
+    langfuse = Langfuse(
+        public_key=settings.langfuse_public_key.get_secret_value(),
+        secret_key=settings.langfuse_secret_key.get_secret_value(),
+        base_url=settings.langfuse_host,
+    )
+    since = datetime.now(UTC) - timedelta(hours=args.hours)
+    found = langfuse.api.observations.get_many(
+        name=TRACE,
+        is_root_observation=True,
+        from_start_time=since,
+        fields="core,basic,io,metadata",
+        expand_metadata="contexts",
+        parse_io_as_json=False,
+        limit=500,
+    ).data
+    samples = [s for s in map(answered, found) if s]
+    picked = random.Random(args.seed).sample(samples, min(args.sample, len(samples)))
+    logger.info(
+        "%d ask traces since %s, %d answered by the LLM, %d sampled",
+        len(found),
+        since.isoformat(timespec="minutes"),
+        len(samples),
+        len(picked),
+    )
+    if not picked:
+        raise SystemExit("no answered traces to score")
+    judge = ChatOpenAI(
+        base_url=str(settings.judge_base_url),
+        model=settings.judge_model,
+        api_key=settings.judge_api_key.get_secret_value(),
+        temperature=0,
+    )
+    rows = [{k: v for k, v in s.items() if k != "trace_id"} for s in picked]
+    scores = ragas_scores(rows, judge, None, metrics=["faithfulness"])
+    values = []
+    for sample, score in zip(picked, scores, strict=True):
+        if (value := score["faithfulness"]) is None:
+            continue
+        values.append(value)
+        langfuse.create_score(
+            trace_id=sample["trace_id"],
+            name="faithfulness",
+            value=value,
+            comment=f"scheduled evaluation, judge {settings.judge_model}",
+        )
+    langfuse.flush()
+    mean = sum(values) / len(values)
+    logger.info("Faithfulness %.3f over %d scored traces", mean, len(values))
+    if settings.pushgateway_url:
+        registry = CollectorRegistry()
+        Gauge(
+            "raglaw_faithfulness",
+            "Mean RAGAS faithfulness of the sampled /ask traces.",
+            registry=registry,
+        ).set(mean)
+        Gauge(
+            "raglaw_faithfulness_traces",
+            "Traces the last scheduled evaluation scored.",
+            registry=registry,
+        ).set(len(values))
+        push_to_gateway(settings.pushgateway_url, job="score_traces", registry=registry)
+        logger.info("Pushed to %s", settings.pushgateway_url)
+
+
+if __name__ == "__main__":
+    main()
