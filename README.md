@@ -1,5 +1,7 @@
 # egypt-law-rag
 
+[![ci](https://github.com/mooncholy/egypt-law-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/mooncholy/egypt-law-rag/actions/workflows/ci.yml)
+
 A retrieval-augmented generation (RAG) chatbot that answers questions about the Egyptian Civil Code.
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
@@ -229,6 +231,9 @@ egypt-law-rag/
 | lint | `pre-commit run --all-files` | dev group only |
 | test | `pytest -m unit --cov` (80% coverage gate) | no S3 access |
 | runtime | serves `/health` with `uv sync --no-default-groups` | API dependencies only |
+| deliver | `dvc pull` → rebuild the index → retrieval and RAGAS on the 20-question CI set → quality gate (`scripts/ci_gate.py`) → export the production retriever → build both images; pushes them (`sha-<commit>` and `latest`) on merges | The self-hosted GPU runner (label `raglaw-gpu`) with `~/.config/raglaw/ci.env`; never runs for forks |
+
+The gate fails a build when faithfulness on the CI set is below 0.75, or recall@5 on the tuning half loses more than one question against the base branch (`gate:` in `params.yaml`).
 
 The runtime job fails if the API imports anything outside the runtime dependencies. Those include retrieval, the registry client (`mlflow-skinny`) and the LLM client, but not torch: keep `pymupdf`, `torch`, `sentence-transformers` and other pipeline imports out of `raglaw.api`, `raglaw.rag` and `raglaw.schema`. The models live in the `models` service.
 

@@ -1,9 +1,15 @@
-# CI contract: every change headed for an integration branch is proven, with
-# no credentials, to be clean, reproducible from uv.lock, tested, and servable
-# from the runtime dependencies alone. All three jobs must pass to merge.
+# CI contract: every change headed for an integration branch is proven to be
+# clean, reproducible from uv.lock, tested and servable from the runtime
+# dependencies alone (GitHub's runners, no credentials), and then, on the
+# project's self-hosted GPU runner, to rebuild the index, keep answer and
+# retrieval quality above the gate, and build the images it would ship.
 #
-# - Inputs are only what's committed. No secrets, no S3, no `dvc pull` (D6):
-#   tests needing the full PDF (`profile`, `corpus`) skip themselves.
+# - The first three jobs use only what's committed. No secrets, no S3, no
+#   `dvc pull` (D6): tests needing the full PDF (`profile`, `corpus`) skip.
+# - `deliver` runs on the owner's machine (D24): it reaches the DVC remote, the
+#   tracking server, the GPU and the LLMs with that machine's settings
+#   (~/.config/raglaw/ci.env), so no secret is stored in GitHub. It never runs
+#   for a fork's pull request.
 # - Python comes from .python-version, uv from [tool.uv] required-version, and
 #   every install uses --locked, so a stale uv.lock fails the run.
 name: ci
@@ -84,3 +90,64 @@ jobs:
           done
           curl -sf localhost:8000/health | tee /dev/stderr \
             | uv run --no-sync python -c "import json, sys; assert json.load(sys.stdin)['status'] in ('healthy', 'degraded')"
+
+  deliver:
+    name: index, quality gate and images (self-hosted GPU)
+    needs: [lint, test, runtime]
+    # This machine holds the project's credentials, so it runs only code from
+    # people who already hold them: pushes and manual runs (both need write
+    # access), and pull requests from this repository's branches opened by its
+    # owner, members or collaborators. A fork's code never reaches it.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.pull_request.author_association))
+    runs-on: [self-hosted, raglaw-gpu]
+    timeout-minutes: 60
+    env:
+      UV_GPU: --no-group torch-cpu --group torch-gpu
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the base branch's committed metrics, for the gate
+      - name: This machine's settings (outside the repo)
+        run: cp "$HOME/.config/raglaw/ci.env" .env
+      - name: Install with CUDA torch
+        run: uv sync --locked $UV_GPU
+      # The remote's AWS profile is per machine, in the untracked
+      # .dvc/config.local; a fresh checkout has none, so set it from ci.env.
+      - name: Point DVC at this machine's AWS profile
+        run: |
+          profile="$(sed -n 's/^RAGLAW_AWS_PROFILE=//p' .env)"
+          test -n "$profile" || { echo "::error::RAGLAW_AWS_PROFILE is empty in ci.env"; exit 1; }
+          uv run --no-sync dvc remote modify --local storage profile "$profile"
+      - name: Pull the data (DVC remote)
+        run: uv run --no-sync dvc pull
+      - name: Rebuild the index (embed, bm25)
+        run: uv run --no-sync dvc repro --force embed bm25
+      - name: Retrieval on the tuning half
+        run: uv run --no-sync dvc repro --force --single-item evaluate_retrieval
+      - name: Answers on the 20-question CI set (RAGAS)
+        run: >-
+          uv run --no-sync dvc exp run -n "ci-${GITHUB_RUN_ID}" -s evaluate_answers
+          -S answer_evaluation.subset=ci
+      - name: Quality gate
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          git show "$base:docs/metrics/retrieval.json" > "$RUNNER_TEMP/base_retrieval.json" \
+            || rm -f "$RUNNER_TEMP/base_retrieval.json"
+          uv run --no-sync python scripts/ci_gate.py --base-retrieval "$RUNNER_TEMP/base_retrieval.json"
+      - name: Export the production retriever (D26)
+        run: rm -rf build/champion && uv run --no-sync python -m raglaw.retrieval.champion export
+      - name: Build the images
+        run: RAGLAW_IMAGE_TAG="sha-${GITHUB_SHA::7}" docker compose build api models
+      - name: Push the images (merges only)
+        if: github.event_name == 'push'
+        run: |
+          tag="sha-${GITHUB_SHA::7}"
+          RAGLAW_IMAGE_TAG="$tag" docker compose push api models
+          for image in api models; do
+            docker tag "mooncholy/raglaw-$image:$tag" "mooncholy/raglaw-$image:latest"
+          done
+          RAGLAW_IMAGE_TAG=latest docker compose push api models

@@ -93,6 +93,27 @@ class PromotionError(RuntimeError):
     """The candidate can't replace production: missing, unscored, or worse."""
 
 
+def check_index(registered: dict[str, Any], index: Path) -> None:
+    """
+    Check that ``index`` is the one a version was scored on, from the version's
+    ``manifests``. A module function rather than a method: registering runs
+    this module as ``__main__``, so each version carries its class pickled by
+    value, as it was then, and an older version lacks newer methods.
+
+    exceptions:
+    - IndexMismatchError: the index's manifests differ from the registered ones
+    """
+    found = {
+        "dense": read_manifest(index / "dense", DenseManifest),
+        "bm25": read_manifest(index / "bm25", Bm25Manifest),
+    }
+    if found != registered:
+        raise IndexMismatchError(
+            f"the index at {index} isn't the registered one (its manifests "
+            "differ); pull the index the champion was scored on"
+        )
+
+
 class ChampionRetriever(mlflow.pyfunc.PythonModel):
     """The registered retriever: question in, article citations out."""
 
@@ -134,15 +155,7 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
           threshold than this deployment's no-answer gate
         """
         index = Path(settings.paths.index_dir)
-        found = {
-            "dense": read_manifest(index / "dense", DenseManifest),
-            "bm25": read_manifest(index / "bm25", Bm25Manifest),
-        }
-        if found != self.manifests:
-            raise IndexMismatchError(
-                f"the index at {index} isn't the registered one (its manifests "
-                "differ); pull the index the champion was scored on"
-            )
+        check_index(self.manifests, index)
         embedding = Embedding.model_validate(self.config["embedding"])
         search = Search.model_validate(self.config["search"])
         if error := fallback_threshold_error(search, settings.answer):
@@ -423,6 +436,8 @@ def export_champion(settings: Settings, out: Path) -> dict[str, Any]:
     exceptions:
     - MlflowException: no registered model, or no ``production`` alias
     - FileExistsError: ``out`` exists and isn't empty
+    - IndexMismatchError: this machine's index isn't the one ``production`` was
+      scored on, so an image pairing the two couldn't start
     """
     if settings.aws_profile:  # the model's artifacts may live in S3
         os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
@@ -445,6 +460,17 @@ def export_champion(settings: Settings, out: Path) -> dict[str, Any]:
     (out / EXPORT_RECORD).write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n", "utf-8"
     )
+    index = Path(settings.paths.index_dir)
+    try:
+        check_index(
+            mlflow.pyfunc.load_model(str(out)).unwrap_python_model().manifests, index
+        )
+    except IndexMismatchError as exc:
+        raise IndexMismatchError(
+            f"production (version {version.version}) was scored on another index "
+            f"than {index}: an index change needs its own retriever registered "
+            "and promoted before an image can ship"
+        ) from exc
     logger.info("Exported %s version %s to %s", MODEL_NAME, version.version, out)
     return record
 
