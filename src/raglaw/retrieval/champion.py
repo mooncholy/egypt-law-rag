@@ -115,6 +115,23 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
         )
         self._retriever: HybridRetriever | None = None
 
+    def check_index(self, index: Path) -> None:
+        """
+        Check that ``index`` is the one this version was scored on.
+
+        exceptions:
+        - IndexMismatchError: its manifests differ from the registered ones
+        """
+        found = {
+            "dense": read_manifest(index / "dense", DenseManifest),
+            "bm25": read_manifest(index / "bm25", Bm25Manifest),
+        }
+        if found != self.manifests:
+            raise IndexMismatchError(
+                f"the index at {index} isn't the registered one (its manifests "
+                "differ); pull the index the champion was scored on"
+            )
+
     def open(
         self,
         settings: Settings,
@@ -134,15 +151,7 @@ class ChampionRetriever(mlflow.pyfunc.PythonModel):
           threshold than this deployment's no-answer gate
         """
         index = Path(settings.paths.index_dir)
-        found = {
-            "dense": read_manifest(index / "dense", DenseManifest),
-            "bm25": read_manifest(index / "bm25", Bm25Manifest),
-        }
-        if found != self.manifests:
-            raise IndexMismatchError(
-                f"the index at {index} isn't the registered one (its manifests "
-                "differ); pull the index the champion was scored on"
-            )
+        self.check_index(index)
         embedding = Embedding.model_validate(self.config["embedding"])
         search = Search.model_validate(self.config["search"])
         if error := fallback_threshold_error(search, settings.answer):
@@ -423,6 +432,8 @@ def export_champion(settings: Settings, out: Path) -> dict[str, Any]:
     exceptions:
     - MlflowException: no registered model, or no ``production`` alias
     - FileExistsError: ``out`` exists and isn't empty
+    - IndexMismatchError: this machine's index isn't the one ``production`` was
+      scored on, so an image pairing the two couldn't start
     """
     if settings.aws_profile:  # the model's artifacts may live in S3
         os.environ.setdefault("AWS_PROFILE", settings.aws_profile)
@@ -445,6 +456,15 @@ def export_champion(settings: Settings, out: Path) -> dict[str, Any]:
     (out / EXPORT_RECORD).write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n", "utf-8"
     )
+    index = Path(settings.paths.index_dir)
+    try:
+        mlflow.pyfunc.load_model(str(out)).unwrap_python_model().check_index(index)
+    except IndexMismatchError as exc:
+        raise IndexMismatchError(
+            f"production (version {version.version}) was scored on another index "
+            f"than {index}: an index change needs its own retriever registered "
+            "and promoted before an image can ship"
+        ) from exc
     logger.info("Exported %s version %s to %s", MODEL_NAME, version.version, out)
     return record
 

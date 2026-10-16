@@ -1,5 +1,8 @@
 """U35: the registry lifecycle on a real tracking server (D22)."""
 
+import json
+import shutil
+
 import pytest
 from mlflow.exceptions import MlflowException
 from mlflow.protos.databricks_pb2 import INTERNAL_ERROR
@@ -16,6 +19,7 @@ from raglaw.retrieval.champion import (
     promote,
     register_champion,
 )
+from raglaw.retrieval.retriever import IndexMismatchError
 
 pytestmark = pytest.mark.unit
 
@@ -133,6 +137,28 @@ def test_an_export_never_overwrites_a_copy(server_settings, evaluation_run, tmp_
 
     with pytest.raises(FileExistsError, match="isn't empty"):
         export_champion(server_settings, tmp_path / "champion")
+
+
+def test_an_export_refuses_an_index_production_was_not_scored_on(
+    server_settings, evaluation_run, tmp_path
+):
+    """CI rebuilds the branch's index before exporting: a changed index can't
+    be paired with production's retriever, so no image is built that fails
+    at startup."""
+    candidate(server_settings, evaluation_run, 0.79)
+    promote(server_settings)
+    changed = tmp_path / "changed-index"
+    shutil.copytree(server_settings.paths.index_dir, changed)
+    manifest = changed / "dense" / "manifest.json"
+    fields = json.loads(manifest.read_text("utf-8"))
+    fields["chunk_ids"] = fields["chunk_ids"][:-1]  # a chunk fewer
+    manifest.write_text(json.dumps(fields), "utf-8")
+    paths = server_settings.paths.model_copy(update={"index_dir": changed})
+
+    with pytest.raises(IndexMismatchError, match="its own retriever registered"):
+        export_champion(
+            server_settings.model_copy(update={"paths": paths}), tmp_path / "out"
+        )
 
 
 def test_the_server_proxies_the_models_artifacts(server_settings, evaluation_run):

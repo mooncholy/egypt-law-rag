@@ -94,10 +94,15 @@ jobs:
   deliver:
     name: index, quality gate and images (self-hosted GPU)
     needs: [lint, test, runtime]
-    # Branches of this repository only: a fork's code never reaches this machine.
+    # This machine holds the project's credentials, so it runs only code from
+    # people who already hold them: pushes and manual runs (both need write
+    # access), and pull requests from this repository's branches opened by its
+    # owner, members or collaborators. A fork's code never reaches it.
     if: >-
       github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                github.event.pull_request.author_association))
     runs-on: [self-hosted, raglaw-gpu]
     timeout-minutes: 60
     env:
