@@ -75,6 +75,7 @@ module-name = "raglaw"
 [dependency-groups]
 dev = [
     "httpx2>=2.13.1",
+    "locust>=2.46.7",
     "pdfplumber>=0.11.10",
     "pre-commit>=4.6.2",
     "pylint>=4.1.1",
