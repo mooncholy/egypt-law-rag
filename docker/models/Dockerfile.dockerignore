@@ -1,0 +1,9 @@
+# The models image's build context: only what docker/models/Dockerfile copies.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!README.md
+!src/
+!params.yaml
+**/__pycache__

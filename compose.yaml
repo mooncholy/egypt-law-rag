@@ -1,0 +1,94 @@
+# The whole service (Phase 10): `docker compose up`, then ask on port 8000.
+#
+# - api:         /ask and /health; bakes in the index and the production
+#                retriever (D26), so it needs no DVC, tracking server or AWS.
+# - models:      the embedder and reranker (D18); `models-pull` downloads their
+#                weights once into the `hf-cache` volume (about 4.5 GB).
+# - ollama:      the generator measured in Phase 9 (D20), pulled once into the
+#                `ollama` volume (about 8 GB) by `ollama-pull`.
+#
+# CPU by default. With an NVIDIA GPU:
+#   docker compose -f compose.yaml -f docker/compose.gpu.yml up
+# The tracking server is apart, in docker/compose.tracking.yml: it needs the
+# project's AWS profile, which a reviewer doesn't have.
+#
+# Maintainers build the images instead of pulling them (README, "Build the
+# images"); RAGLAW_IMAGE_TAG picks a version (default `latest`).
+
+name: raglaw
+
+# The generator measured in Phase 9 (faithfulness 0.868). On a machine with
+# less than about 16 GB of RAM, set RAGLAW_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M
+# in .env: the same model in 4 bits (4.7 GB instead of 8.1 GB), not measured.
+x-llm-model: &llm-model ${RAGLAW_LLM_MODEL:-qwen2.5:7b-instruct-q8_0}
+x-ollama-image: &ollama-image ollama/ollama:0.40.4@sha256:926d40fd6eeeebd346b5c358a63de2a10ec995371cd93dd22f1843200694b1a6
+
+services:
+  api:
+    image: mooncholy/raglaw-api:${RAGLAW_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    environment:
+      RAGLAW_MODELS_URL: http://models:8001
+      RAGLAW_LLM_BASE_URL: http://ollama:11434/v1
+      RAGLAW_LLM_MODEL: *llm-model
+      RAGLAW_LLM_API_KEY: ollama  # Ollama ignores it; the client needs one
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      # /health checks its components once, at startup.
+      models:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  models:
+    image: mooncholy/raglaw-models:${RAGLAW_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: docker/models/Dockerfile
+    volumes:
+      - hf-cache:/home/raglaw/.cache/huggingface
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      models-pull:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Downloads both models once, so the download never races the healthcheck;
+  # a later start finds them in the volume and exits.
+  models-pull:
+    image: mooncholy/raglaw-models:${RAGLAW_IMAGE_TAG:-latest}
+    command: ["python", "-m", "raglaw.serving.fetch_models"]
+    volumes:
+      - hf-cache:/home/raglaw/.cache/huggingface
+    restart: "no"
+
+  ollama:
+    image: *ollama-image
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Pulls the generator once; a later start finds it in the volume and exits.
+  ollama-pull:
+    image: *ollama-image
+    environment:
+      OLLAMA_HOST: ollama:11434
+    command: ["pull", *llm-model]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  hf-cache:
+  ollama:

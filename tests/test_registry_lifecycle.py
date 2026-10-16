@@ -11,6 +11,7 @@ from raglaw.retrieval.champion import (
     PRODUCTION,
     PROMOTION_TAG,
     PromotionError,
+    export_champion,
     load_champion,
     promote,
     register_champion,
@@ -99,6 +100,39 @@ def test_moving_production_changes_what_loads_without_code(
     )  # a rollback: move the alias back, nothing else
     with load_champion(server_settings, embeddings=search_index.embeddings) as served:
         assert served.version == v1.version
+
+
+def test_an_exported_copy_serves_production_without_the_registry(
+    server_settings, evaluation_run, search_index, tmp_path, closed_url
+):
+    """D26: the API image bakes in a copy of production, exported by alias, and
+    loads it with no tracking server reachable."""
+    candidate(server_settings, evaluation_run, 0.79)
+    version = promote(server_settings)
+
+    record = export_champion(server_settings, tmp_path / "champion")
+    offline = server_settings.model_copy(
+        update={
+            "mlflow_tracking_uri": closed_url,
+            "champion_dir": tmp_path / "champion",
+        }
+    )
+
+    assert (record["version"], record["alias"]) == (version.version, PRODUCTION)
+    assert record["tags"]["heldout_recall_at_5"] == "0.79"
+    with load_champion(offline, embeddings=search_index.embeddings) as served:
+        assert served.version == version.version
+        assert served.retrieve("majority")  # the copy opens on this index
+
+
+def test_an_export_never_overwrites_a_copy(server_settings, evaluation_run, tmp_path):
+    candidate(server_settings, evaluation_run, 0.79)
+    promote(server_settings)
+    (tmp_path / "champion").mkdir()
+    (tmp_path / "champion" / "MLmodel").write_text("an earlier copy")
+
+    with pytest.raises(FileExistsError, match="isn't empty"):
+        export_champion(server_settings, tmp_path / "champion")
 
 
 def test_the_server_proxies_the_models_artifacts(server_settings, evaluation_run):

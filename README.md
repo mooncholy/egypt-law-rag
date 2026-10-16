@@ -4,14 +4,83 @@ A retrieval-augmented generation (RAG) chatbot that answers questions about the 
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
 
-**Status:** the corpus, retrieval and `/ask` are built; containers are next.
-- Done: `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
-- Done: `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval on the eval set before any LLM is involved.
-- The registered retriever (`models:/civil-code-retriever@production`) fuses dense and BM25 search and reranks the top 30 with a cross-encoder. It finds the governing articles in the top 5 for 79% of held-out questions (recall@5 0.788; the target is 0.9).
-- `/ask` answers from the registered retriever and an LLM, citing only articles it retrieved. When the rank-1 reranker score is below a threshold, it replies that the Code doesn't address the question, without calling the LLM.
+**Status:** the corpus, retrieval, `/ask` and its containers are built; CI/CD, serving and monitoring are next.
+- `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
+- `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval before any LLM is involved.
+- The registered retriever (`models:/civil-code-retriever@production`, version 4) fuses dense and BM25 search, reranks the top 30 with a cross-encoder, and answers questions on the repealed ranges (Articles 54–80, 389–417) from the Code's repeal note. It finds the governing articles in the top 5 for 86% of held-out questions (recall@5 0.864; the target is 0.9).
+- `/ask` answers from that retriever and `qwen2.5:7b-instruct-q8_0`, citing only articles it retrieved: faithfulness 0.868 on 65 questions (RAGAS, `docs/metrics/answers.json`). When the rank-1 reranker score is below a threshold, it replies that the Code doesn't address the question, without calling the LLM.
 - Not built yet: `validate`, which checks the corpus against the gold sample.
 
-## Quickstart
+## Run it with Docker
+
+Three commands on any machine with Docker; no AWS account, data download or Python setup:
+
+```bash
+git clone https://github.com/mooncholy/egypt-law-rag.git && cd egypt-law-rag
+cp .env.example .env
+docker compose up
+```
+
+The first start downloads the two retrieval models (about 4.5 GB) and the generator (about 8 GB) into Docker volumes; later starts reuse them. `api` starts once both are ready. Then:
+
+```bash
+curl -s localhost:8000/health
+curl -s localhost:8000/ask -H 'Content-Type: application/json' \
+  -d '{"question": "ما هي سن الرشد في القانون المدني؟"}'
+```
+
+A real response from `docker compose up` (version 4 of the retriever, `qwen2.5:7b-instruct-q8_0`):
+
+```json
+{
+  "answer": "سن الرشد في القانون المدني هو واحد وعشرون سنة ميلادية كاملة، وفقًا لـ `المادة ٤٤`.",
+  "sources": ["Egyptian Civil Code, Article 44"]
+}
+```
+
+A question on a repealed range is answered from the Code's repeal note, without the LLM:
+
+```json
+{
+  "answer": "كانت أحكام إثبات الالتزام في القانون المدني واردة في المواد من ٣٨٩ إلى ٤١٧، وقد ألغيت. ولا يتضمن القانون المدني الحالي من هذه المواد إلا ما يفيد إلغاءها.",
+  "sources": ["Egyptian Civil Code, Article 389"]
+}
+```
+
+An empty question gets a 422. With `models` on CPU and the generator on an RTX 5060 Ti, the first answer took 55 s (Ollama loading the model) and the repealed-range answer 21 s, most of it CPU reranking; latency is measured properly in Phase 12.
+
+On CPU the generator needs about 9 GB of free memory and answers slowly. On a machine with less than about 16 GB of RAM (e.g., a 4-core GitHub Codespace), set `RAGLAW_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M` in `.env` before `docker compose up`: the same model in 4 bits, 4.7 GB instead of 8.1 GB. Its answers aren't measured; the faithfulness above is the default 8-bit model's. With an NVIDIA GPU (CUDA 13 driver and the NVIDIA Container Toolkit; Docker Desktop's WSL backend includes it):
+
+```bash
+docker compose -f compose.yaml -f docker/compose.gpu.yml up
+```
+
+This runs the CUDA build of the `models` image (`mooncholy/raglaw-models:latest-gpu`) and gives the GPU to `models` and `ollama`. A `-gpu` tag that isn't published is built locally on first `up`; that needs no project data.
+
+| Service | Port | What |
+| --- | --- | --- |
+| `api` | 8000 | `/ask` and `/health`. Bakes in the index and a copy of the production retriever (D26); runs as a non-root user, without torch |
+| `models` | 8001 | The embedder and reranker (D18), on pinned revisions; weights in the `hf-cache` volume |
+| `ollama` | – | The generator, pulled once into the `ollama` volume by `ollama-pull` |
+
+### Build the images (maintainers)
+
+The `api` image needs the index (`dvc pull`) and a copy of the `production` retriever, exported by alias from the tracking server, so only a maintainer with the project's AWS profile can build it:
+
+```bash
+uv run dvc pull data/index
+uv run python -m raglaw.retrieval.champion export         # production -> build/champion (gitignored)
+docker compose build
+docker compose push                                       # mooncholy/raglaw-api, mooncholy/raglaw-models (latest)
+RAGLAW_IMAGE_TAG=0.1.0 docker compose build && RAGLAW_IMAGE_TAG=0.1.0 docker compose push
+GPU="-f compose.yaml -f docker/compose.gpu.yml"           # the CUDA models image, tagged <tag>-gpu
+docker compose $GPU build models && docker compose $GPU push models
+RAGLAW_IMAGE_TAG=0.1.0 docker compose $GPU build models && RAGLAW_IMAGE_TAG=0.1.0 docker compose $GPU push models
+```
+
+Moving the `production` alias changes what a new `api` image serves; a running container keeps the copy it was built with.
+
+## Develop locally
 
 ### Prerequisites
 
@@ -87,6 +156,30 @@ uvg dvc repro                                    # every command goes through uv
 
 A plain `uv run` resyncs the default groups and puts the CPU build back, so on that machine every command goes through `uvg`. A stage set to `cuda` without a GPU fails at startup instead of falling back to CPU. GPU arithmetic differs from CPU in the last digits, so retrieval runs are only compared on one device: `scripts/compare_retrieval.py` leaves out runs on another device than the baseline's.
 
+### Repository layout
+
+```text
+egypt-law-rag/
+├── compose.yaml            # api, models and ollama (Phase 10)
+├── docker/                 # api/ and models/ Dockerfiles, the GPU override, the tracking server
+├── dvc.yaml, dvc.lock      # the pipeline, PDF to index to evaluation
+├── params.yaml             # tracked parameters, shared with dvc.yaml
+├── .env.example            # per-machine and secret values
+├── data/                   # DVC-tracked: raw PDF, interim rows, corpus, index, gold sets, repealed ranges
+│   └── errata.yaml         # git-tracked: owner-approved fixes
+├── src/raglaw/
+│   ├── ingest/             # one module per pipeline stage
+│   ├── retrieval/          # hybrid retriever, reranker, scoring, the registered champion
+│   ├── text/               # Arabic normalization
+│   ├── api/                # FastAPI: /ask and /health
+│   ├── serving/            # the models service
+│   ├── prompts/            # versioned answer prompts
+│   └── rag.py, llm.py, answer_eval.py, config.py, schema.py, …
+├── scripts/                # comparison reports, the answer check, the repealed-range builder
+├── docs/                   # source analysis, normalization, stage metrics, reports
+└── tests/                  # pytest; every fixture in conftest.py
+```
+
 ### Where things live
 
 | Path | What |
@@ -110,6 +203,9 @@ A plain `uv run` resyncs the default groups and puts the CPU build back, so on t
 | `docs/normalization.md` | Arabic normalization rules, shared by ingestion and query time |
 | `docs/metrics/` | Stage metrics read by `dvc metrics` |
 | `data/gold/` | The gold sample and the retrieval eval set (see [Evaluation data](#evaluation-data)) |
+| `compose.yaml`, `docker/api/`, `docker/models/`, `docker/compose.gpu.yml` | The containers: `api`, `models` and `ollama`, CPU by default, with a GPU override |
+| `docker/compose.tracking.yml`, `docker/mlflow/` | The MLflow tracking server (Postgres and S3 behind it), for maintainers |
+| `src/raglaw/retrieval/repealed.py`, `scripts/build_repealed.py`, `data/repealed/` | The repealed-range fallback: the 1948 text used for matching only, and the repeal records |
 
 ## Evaluation data
 
