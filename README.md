@@ -6,13 +6,51 @@ A retrieval-augmented generation (RAG) chatbot that answers questions about the 
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
 
-**Status:** the corpus, retrieval, `/ask`, its containers, CI/CD and serving are built; monitoring is next.
+**Status:** every handbook phase is built, from the corpus to monitoring (CHANGELOG.md has each PR). Open: the owner confirms the latency target (docs/reports/optimization.md) and captures the screenshots.
 - `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
 - `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval before any LLM is involved.
 - The registered retriever (`models:/civil-code-retriever@production`, version 4) fuses dense and BM25 search, reranks the top 30 with a cross-encoder, and answers questions on the repealed ranges (Articles 54–80, 389–417) from the Code's repeal note. It finds the governing articles in the top 5 for 86% of held-out questions (recall@5 0.864; the target is 0.9).
 - `/ask` answers from that retriever and `qwen2.5:7b-instruct-q8_0`, citing only articles it retrieved: faithfulness 0.868 on 65 questions (RAGAS, `docs/metrics/answers.json`). When the rank-1 reranker score is below a threshold, it replies that the Code doesn't address the question, without calling the LLM.
 - `validate` checks the corpus against C1–C16 and the gold sample (Arabic character error rate 0.03%).
 - Serving (Phase 12–13): `/ask/stream` streams the answer; a canary config; a BentoML form of the service; vLLM as an opt-in generator; batch re-indexing; a load test at 50 users; AWQ and a distilled reranker measured, and both rejected on quality (`docs/reports/optimization.md`).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph corpus["Corpus (DVC stages)"]
+    pdf[(civil_code.pdf)] --> profile --> extract --> repair --> assemble --> validate
+    assemble --> chunk
+  end
+  subgraph index["Index"]
+    chunk --> embed["embed: bge-m3 → Qdrant"]
+    chunk --> bm25["bm25: folded Arabic"]
+  end
+  subgraph tracking["Tracking (MLflow, S3)"]
+    evalr["evaluate_retrieval"] --> registry[("registry: civil-code-retriever @production")]
+    evala["evaluate_answers (RAGAS)"]
+  end
+  embed --> evalr
+  bm25 --> evalr
+  subgraph serving["Serving (docker compose)"]
+    api["api: /ask, /ask/stream, /metrics; retriever baked in; PII guard"]
+    models["models: embed + rerank (GPU)"]
+    llm["generator: Ollama q8 (vLLM AWQ opt-in)"]
+    api --> models
+    api --> llm
+  end
+  registry -- "export at build (D26)" --> api
+  subgraph monitoring["Monitoring"]
+    prom[Prometheus] --> grafana["Grafana: p95, cost, drift, alerts"]
+    langfuse["Langfuse: traces"]
+    scorer["score_traces.py: sampled faithfulness"] --> push[Pushgateway] --> prom
+  end
+  api -- "/metrics" --> prom
+  api -- "traces" --> langfuse
+  langfuse --> scorer
+  ci["CI: lint, tests, self-hosted GPU deliver job (gate on RAGAS and recall)"] --> evala
+  ci -- "images" --> hub[(Docker Hub)]
+```
 
 ## Run it with Docker
 
