@@ -43,7 +43,7 @@ from raglaw.retrieval.repealed import RepealedSet
 from raglaw.retrieval.retriever import HybridRetriever
 from raglaw.retrieval.scoring import EvalQuestion, QuestionScore
 from raglaw.retrieval.tokenize import bm25_tokenizer
-from raglaw.schema import Chunk
+from raglaw.schema import Article, Chunk
 from raglaw.serving.models_app import create_models_app
 from raglaw.tracking import stage_run
 
@@ -235,6 +235,26 @@ def stub_tokenizer() -> Callable[..., StubTokenizer]:
 
 
 # --- Chunks ----------------------------------------------------------------
+
+
+@pytest.fixture
+def make_article() -> Callable[..., Article]:
+    """Build an ``Article`` with a valid body and heading path; override any field."""
+
+    def _make(number: int, text_ar: str = "(١) نص المادة", **overrides: Any) -> Article:
+        fields = {
+            "article_number": number,
+            "text_en": f"Body of article {number}.",
+            "text_ar": text_ar,
+            "heading_path": ["Preliminary Chapter / General Provisions"],
+            "heading_path_ar": ["باب تمهيدي / أحكام عامة"],
+            "source_pages": [1],
+            "source_rows": [(1, number)],
+            "is_repealed": False,
+        }
+        return Article(**(fields | overrides))
+
+    return _make
 
 
 @pytest.fixture

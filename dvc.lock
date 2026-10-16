@@ -607,3 +607,80 @@ stages:
       hash: md5
       md5: 72937ffa6fa74fe271c5f1996410f522
       size: 425484
+  validate:
+    cmd: python -m raglaw.ingest.validate
+    deps:
+    - path: data/corpus/articles.json
+      hash: md5
+      md5: 4adeb64afaea15696e262cf6c37f4bdb
+      size: 1918213
+    - path: data/errata.yaml
+      hash: md5
+      md5: 95417d9371790d5372cd41fa7e3bbf06
+      size: 12058
+    - path: data/gold/articles_gold.json
+      hash: md5
+      md5: ced238216c1f2f2a34b6c5e05cd09349
+      size: 35938
+    - path: data/interim/rows_repaired.jsonl
+      hash: md5
+      md5: eda1551c5ea86e8a451701cff4422b06
+      size: 1140639
+    - path: docs/metrics/assemble.json
+      hash: md5
+      md5: 5e31832938c24ea26e62e579043dac8d
+      size: 278
+    - path: docs/metrics/extract.json
+      hash: md5
+      md5: 4c2a088f49f34b52155fb87e11b83288
+      size: 411
+    - path: docs/metrics/repair.json
+      hash: md5
+      md5: b5a78815c6be5235fa06469f9b08985b
+      size: 363
+    - path: src/raglaw/ingest/assemble.py
+      hash: md5
+      md5: 72842d611737b216b6e554decee9e488
+      size: 22263
+    - path: src/raglaw/ingest/extract.py
+      hash: md5
+      md5: 96716ed16ff311d669babbf7d1f5543e
+      size: 8259
+    - path: src/raglaw/ingest/measure.py
+      hash: md5
+      md5: 230917a4998ec7b84552a75cf781b815
+      size: 26149
+    - path: src/raglaw/ingest/repair.py
+      hash: md5
+      md5: 8e9918faa96b86da6ac01c3aa573454a
+      size: 12572
+    - path: src/raglaw/ingest/validate.py
+      hash: md5
+      md5: 68d67b48f26d60d338ad52c81406ca43
+      size: 18174
+    - path: src/raglaw/records.py
+      hash: md5
+      md5: b470051d287b2c26fc47e23ff0baf566
+      size: 2991
+    - path: src/raglaw/schema.py
+      hash: md5
+      md5: d036eb970651268b997b486cff28b13f
+      size: 7240
+    - path: src/raglaw/text/normalize.py
+      hash: md5
+      md5: a939c9592ed1cc3d8eb0d84e68e51363
+      size: 2457
+    params:
+      params.yaml:
+        root_heading:
+          ar: باب تمهيدي / أحكام عامة
+          en: Preliminary Chapter / General Provisions
+    outs:
+    - path: docs/metrics/corpus.json
+      hash: md5
+      md5: 7f33af5c08ab2e712b3b719dc27d3f24
+      size: 1844
+    - path: docs/reports/corpus_validation.md
+      hash: md5
+      md5: c9be48e1b1df1fb2e5f0c7eb8ad80c61
+      size: 2206

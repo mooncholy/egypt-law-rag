@@ -1,0 +1,120 @@
+{
+  "corpus_sha256": "43b57b07c736f8cce2e265d1d51ccbb103d6e67e19c272764136c8660c5bf8c3",
+  "checks": {
+    "C1": "pass",
+    "C2": "pass",
+    "C3": "pass",
+    "C4": "pass",
+    "C5": "pass",
+    "C6": "pass",
+    "C7": "pass",
+    "C8": "pass",
+    "C9": "pass",
+    "C10": "pass",
+    "C11": "pass",
+    "C12": "pass",
+    "C13": "pass",
+    "C14": "pass",
+    "C16": "pass"
+  },
+  "values": {
+    "C1": 1149,
+    "C2": 56,
+    "C3": 1092,
+    "C4": 0,
+    "C5": 1463,
+    "C6": 0,
+    "C7": 0,
+    "C8": 0,
+    "C9": 222,
+    "C10": {
+      "header_typos": 0,
+      "same_line_headers": 0,
+      "private_use_glyphs": 0,
+      "malformed_markers": 0
+    },
+    "C11": 7,
+    "C12": [],
+    "C13": {
+      "presentation_forms": 0,
+      "control_characters": 0,
+      "latin_over_1pct": [],
+      "normalization_unstable": []
+    },
+    "C14": {
+      "boundary_recall": 1.0,
+      "boundary_precision": 1.0,
+      "ar_cer": 0.000335,
+      "ar_cer_with_accepted": 0.006003,
+      "errors_by_article": {
+        "54": 35,
+        "970": 2
+      }
+    },
+    "C16": 1149
+  },
+  "outliers": {
+    "en_ar_ratio_bounds": [
+      0.995,
+      2.174
+    ],
+    "en_ar_ratio_outliers": [
+      38,
+      84,
+      103,
+      107,
+      163,
+      188,
+      194,
+      248,
+      257,
+      261,
+      315,
+      375,
+      427,
+      499,
+      509,
+      519,
+      520,
+      540,
+      552,
+      664,
+      793,
+      794,
+      804,
+      817,
+      870,
+      921,
+      958,
+      970,
+      1021,
+      1044,
+      1060
+    ],
+    "shortest_ar": [
+      492,
+      33,
+      49,
+      543,
+      202,
+      552,
+      556,
+      451,
+      736,
+      39
+    ],
+    "longest_ar": [
+      1089,
+      673,
+      536,
+      1063,
+      238,
+      658,
+      676,
+      1065,
+      563,
+      1143
+    ],
+    "latin_in_ar_over_1pct": []
+  }
+}
