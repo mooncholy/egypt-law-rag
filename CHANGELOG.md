@@ -13,6 +13,8 @@ One entry per pull request into `feat-civil-law-chatbot`, in merge order. The ha
   - A scheduled scorer that puts RAGAS faithfulness on sampled traces.
   - The judge moved to a local model after the cloud judge's quota ran out.
   - This changelog and the architecture diagram.
+## Merged
+
 - **#13 Serving and optimization (Phases 12–13).**
   - `/ask/stream` (server-sent events).
   - Batch re-indexing.
@@ -22,9 +24,6 @@ One entry per pull request into `feat-civil-law-chatbot`, in merge order. The ha
   - Locust at 50 users: p95 180 s on Ollama, 101 s on vLLM.
   - A benchmark harness (U40).
   - AWQ and a distilled reranker, measured and both rejected on quality: faithfulness −0.052 for AWQ; for the reranker, 14 of 131 questions lost for a 6.1× speedup.
-
-## Merged
-
 - **#12 CI/CD (Phase 11).**
   - A self-hosted GPU job that rebuilds the index, scores retrieval and RAGAS on the 20-question CI set, gates on faithfulness ≥ 0.75 and on recall within one question of the base branch, and exports the production retriever.
   - It builds the images and pushes them on merges.
