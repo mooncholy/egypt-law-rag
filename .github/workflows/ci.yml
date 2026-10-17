@@ -92,18 +92,37 @@ jobs:
           curl -sf localhost:8000/health | tee /dev/stderr \
             | uv run --no-sync python -c "import json, sys; assert json.load(sys.stdin)['status'] in ('healthy', 'degraded')"
 
+  # Whether the change needs the GPU job at all: documentation alone doesn't,
+  # so a docs-only PR or merge pulls no data and pushes no image
+  # (scripts/ci_scope.py says which paths count as documentation).
+  scope:
+    name: scope (code or docs only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/ci_scope.py "$BASE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
   deliver:
     name: index, quality gate and images (self-hosted GPU)
-    needs: [lint, test, runtime]
+    needs: [lint, test, runtime, scope]
     # This machine holds the project's credentials, so it runs only code from
     # people who already hold them: pushes and manual runs (both need write
     # access), and pull requests from this repository's branches opened by its
     # owner, members or collaborators. A fork's code never reaches it.
     if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
-       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
-                github.event.pull_request.author_association))
+      needs.scope.outputs.code == 'true' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+                 github.event.pull_request.author_association)))
     runs-on: [self-hosted, raglaw-gpu]
     timeout-minutes: 60
     env:
@@ -118,11 +137,14 @@ jobs:
         run: uv sync --locked $UV_GPU
       # The remote's AWS profile is per machine, in the untracked
       # .dvc/config.local; a fresh checkout has none, so set it from ci.env.
-      - name: Point DVC at this machine's AWS profile
+      # The cache lives outside the workspace, which each checkout cleans, so
+      # `dvc pull` downloads only data that changed since the last run.
+      - name: Point DVC at this machine's AWS profile and cache
         run: |
           profile="$(sed -n 's/^RAGLAW_AWS_PROFILE=//p' .env)"
           test -n "$profile" || { echo "::error::RAGLAW_AWS_PROFILE is empty in ci.env"; exit 1; }
           uv run --no-sync dvc remote modify --local storage profile "$profile"
+          uv run --no-sync dvc cache dir --local "$HOME/.cache/raglaw/dvc"
       - name: Pull the data (DVC remote)
         run: uv run --no-sync dvc pull
       # Rebuilt when anything it's built from changed (chunks, params, the

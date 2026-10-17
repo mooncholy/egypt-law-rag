@@ -105,11 +105,17 @@ egypt-law-rag/
 | lint | `pre-commit run --all-files` | dev group only |
 | test | `pytest -m unit --cov` (80% coverage gate) | no S3 access |
 | runtime | serves `/health` with `uv sync --no-default-groups` | API dependencies only |
-| deliver | `dvc pull` → rebuild the index when its inputs changed → retrieval, and RAGAS faithfulness on the 20-question CI set → quality gate (`scripts/ci_gate.py`) → export the production retriever → build both images; pushes them (`sha-<commit>` and `latest`) on merges | The self-hosted GPU runner (label `raglaw-gpu`) with `~/.config/raglaw/ci.env`; never runs for forks |
+| scope | `scripts/ci_scope.py`: does the change touch more than documentation (top-level Markdown, `docs/` except `docs/metrics/`)? | Nothing; GitHub's runner |
+| deliver | Skipped when `scope` finds documentation only. `dvc pull` → rebuild the index when its inputs changed → retrieval, and RAGAS faithfulness on the 20-question CI set → quality gate (`scripts/ci_gate.py`) → export the production retriever → build both images; pushes them (`sha-<commit>` and `latest`) on merges | The self-hosted GPU runner (label `raglaw-gpu`) with `~/.config/raglaw/ci.env`; never runs for forks |
 
 The gate fails a build when faithfulness on the CI set is below 0.75, or recall@5 on the tuning half loses more than one question against the base branch (`gate:` in `params.yaml`).
 
 The runtime job fails if the API imports anything outside the runtime dependencies. Those include retrieval, the registry client (`mlflow-skinny`) and the LLM client, but not torch: keep `pymupdf`, `torch`, `sentence-transformers` and other pipeline imports out of `raglaw.api`, `raglaw.rag` and `raglaw.schema`. The models live in the `models` service.
+
+**What a run costs in bandwidth.**
+- **Docs-only change:** the GPU job is skipped, so nothing is pulled or pushed.
+- **Pull request:** only the data that changed is pulled; the Python packages, the models and the Docker layers come from the machine's caches.
+- **Merge:** the images are pushed, but each image keeps its locked dependencies in their own layer, separate from the project's. A code change uploads the project's few MB, not the 450 MB and 1.8 GB dependency layers, which change only with `uv.lock`.
 
 ### The self-hosted runner
 
@@ -130,6 +136,7 @@ What the job expects on that machine:
 - `~/.config/raglaw/ci.env`: the `.env` the job copies in (`RAGLAW_AWS_PROFILE`, the tracking URI, `RAGLAW_LLM_*`, `RAGLAW_JUDGE_*`).
 - `~/.aws` with that profile, for `dvc pull`.
 - The MLflow tracking server on `localhost:5000` (`docker/compose.tracking.yml`).
+- `~/.cache/raglaw/dvc`: the DVC cache, outside the workspace, so each run downloads only data that changed.
 - Ollama serving the generator (`qwen2.5:7b-instruct-q8_0`) and the judge (`gemma3:12b`), with `OLLAMA_NUM_PARALLEL=4` so the judge takes RAGAS's 4 calls at once.
 - `docker login` for the image push on merges.
 
