@@ -3,7 +3,7 @@
 #     docker compose -f compose.yaml -f docker/compose.canary.yml up
 # (add -f docker/compose.gpu.yml before this file on a GPU). Ask on port 8080;
 # each response says which version served it. The rollout stages are in the
-# README, "Canary rollout". `api` itself still runs on 8000 for direct checks.
+# docs/serving.md, "Canary rollout". `api` itself still runs on 8000 for direct checks.
 
 x-api: &api
   environment:

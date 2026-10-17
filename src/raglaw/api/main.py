@@ -62,7 +62,7 @@ logger = get_logger(__name__)
 
 CORRELATION_ID_HEADER = "X-Request-ID"
 # Every response names the version that served it, so a canary's traffic can be
-# told apart (README, "Canary rollout").
+# told apart (docs/serving.md, "Canary rollout").
 VERSION_HEADER = "X-Raglaw-Version"
 DRIFT_WINDOW = 20  # questions in the drift window (docs/reports/drift.md)
 SERVICE_VERSION = version("egypt-law-rag")
