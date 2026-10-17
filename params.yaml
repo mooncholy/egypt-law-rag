@@ -97,6 +97,7 @@ answer:
 answer_evaluation:
   subset: full   # | ci: the 20-question stratified subset CI scores
   ci_size: 20
+  ci_metrics: [faithfulness]   # what CI scores on its subset: the gate reads faithfulness only
   judge_workers: 4     # the local judge (gemma3:12b) serves one call at a time
   judge_timeout: 900   # seconds per judge call
 

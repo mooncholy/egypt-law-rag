@@ -17,14 +17,16 @@ from raglaw.retrieval.scoring import EvalQuestion
 pytestmark = pytest.mark.unit
 
 
-def fake_scores(samples, judge, embeddings, run_config=None):
-    """Faithfulness 1.0 when the answer cites Article 44, else 0.0."""
+def fake_scores(samples, judge, embeddings, metrics, run_config=None):
+    """Faithfulness 1.0 when the answer cites Article 44, else 0.0; only the
+    ``metrics`` asked for, as RAGAS returns them."""
+    every = {"answer_relevancy": 0.9, "context_precision": 1.0, "context_recall": 1.0}
     return [
         {
-            "faithfulness": 1.0 if "Article 44" in s["response"] else 0.0,
-            "answer_relevancy": 0.9,
-            "context_precision": 1.0,
-            "context_recall": 1.0,
+            m: (1.0 if "Article 44" in s["response"] else 0.0)
+            if m == "faithfulness"
+            else every[m]
+            for m in metrics
         }
         for s in samples
     ]
@@ -84,6 +86,49 @@ def test_answers_are_scored_and_refusals_counted(
     assert rows[0]["match"] == "all"  # carried, so comparisons apply the right rule
     assert rows[1]["scores"] == {}
     assert "## Lowest faithfulness (1)" in out["report.md"].read_text()
+
+
+@pytest.mark.parametrize(
+    ("subset", "scored"),
+    [
+        (
+            "full",
+            ["faithfulness", "answer_relevancy", "context_precision", "context_recall"],
+        ),
+        ("ci", ["faithfulness"]),  # what the gate reads; the rest would go unread
+    ],
+)
+def test_the_ci_set_scores_only_its_metrics(
+    two_questions,
+    retrieved,
+    make_chunk,
+    stub_llm,
+    tracking_settings,
+    tmp_path,
+    monkeypatch,
+    subset,
+    scored,
+):
+    monkeypatch.setattr(evaluate_answers, "ragas_scores", fake_scores)
+    evaluation = tracking_settings.answer_evaluation.model_copy(
+        update={"subset": subset, "ci_metrics": ["faithfulness"]}
+    )
+    settings = tracking_settings.model_copy(update={"answer_evaluation": evaluation})
+
+    metrics = run_evaluate_answers(
+        two_questions,
+        lambda question: retrieved([make_chunk(44)]),
+        stub_llm("Article 44 sets majority at twenty-one."),
+        judge=None,
+        embeddings=None,
+        settings=settings,
+        metrics_out=tmp_path / "answers.json",
+        report_out=tmp_path / "report.md",
+        questions_out=tmp_path / "rows.json",
+    )
+
+    assert metrics["metrics_scored"] == scored
+    assert [m for m, v in metrics["overall"].items() if v is not None] == scored
 
 
 class FlakyLLM:

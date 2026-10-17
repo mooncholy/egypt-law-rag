@@ -344,6 +344,15 @@ class AnswerEvaluation(BaseModel):
         "CI scores (Phase 11)."
     )
     ci_size: int = Field(gt=0, description="Questions in the CI subset.")
+    ci_metrics: list[
+        Literal[
+            "faithfulness", "answer_relevancy", "context_precision", "context_recall"
+        ]
+    ] = Field(
+        min_length=1,
+        description="The RAGAS metrics scored on the CI subset; the gate reads "
+        "faithfulness, so the others would be judge calls it never reads.",
+    )
     judge_workers: int = Field(
         gt=0,
         description="Judge calls RAGAS makes at once; a local judge serves one "
