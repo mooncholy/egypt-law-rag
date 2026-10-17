@@ -1,0 +1,83 @@
+# Alerts (Phase 14), to the alert-sink webhook (docker compose logs alert-sink).
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: alert-sink
+    receivers:
+      - uid: alert-sink
+        type: webhook
+        settings:
+          url: http://alert-sink:8080/raglaw-alert
+          httpMethod: POST
+
+policies:
+  - orgId: 1
+    receiver: alert-sink
+    group_by: ["alertname"]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: raglaw
+    folder: raglaw
+    interval: 1m
+    rules:
+      # The handbook's line: faithfulness under 0.80 on the scheduled evaluation
+      # (the sampled /ask traces scored by scripts/score_traces.py).
+      - uid: raglaw-faithfulness-low
+        title: Faithfulness below 0.80
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model: { refId: A, expr: raglaw_faithfulness, instant: true }
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [0.8] }
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        labels: { severity: warning }
+        annotations:
+          summary: "Faithfulness {{ $values.B }} on the latest scheduled evaluation, under 0.80"
+      # Recent questions drifting off the eval set's topics (docs/reports/drift.md).
+      - uid: raglaw-query-drift
+        title: Questions drifting off topic
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: raglaw_query_drift_ratio - raglaw_query_drift_threshold
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels: { severity: info }
+        annotations:
+          summary: "The last 20 questions sit below the drift line for 10 minutes"

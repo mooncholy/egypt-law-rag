@@ -1,0 +1,12 @@
+# The API image's build context: only what docker/api/Dockerfile copies.
+*
+!pyproject.toml
+!uv.lock
+!.python-version
+!README.md
+!src/
+!params.yaml
+!docs/metrics/drift_baseline.json
+!data/index/
+!build/champion/
+**/__pycache__

@@ -1,0 +1,10 @@
+{
+  "bm25_stopwords": "none",
+  "bm25_tokenizer": "words",
+  "chunks_indexed": 1150,
+  "chunks_without_terms": 0,
+  "document_text": "both_without_headings",
+  "max_chunk_terms": 528,
+  "seconds": 0.1,
+  "vocabulary_size": 10413
+}

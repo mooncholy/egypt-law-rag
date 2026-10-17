@@ -1,0 +1,397 @@
+{
+  "questions": 20,
+  "llm_model": "qwen2.5:3b-instruct-fp16",
+  "prompt_version": "v2",
+  "no_answer_threshold": 0.1,
+  "out_of_scope": 11,
+  "out_of_scope_refused": 9,
+  "out_of_scope_answered": [
+    "q116",
+    "q122"
+  ],
+  "in_scope_refused": [
+    "q087",
+    "q003"
+  ],
+  "hallucinated_citations": 0,
+  "answers": [
+    {
+      "id": "q112",
+      "kind": "out_of_scope",
+      "language": "en",
+      "register": "english",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.0026957239024341106,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q113",
+      "kind": "out_of_scope",
+      "language": "ar",
+      "register": "msa",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.0045463875867426395,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q114",
+      "kind": "out_of_scope",
+      "language": "en",
+      "register": "english",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.00046226262929849327,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q115",
+      "kind": "out_of_scope",
+      "language": "ar",
+      "register": "colloquial",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.0023034238256514072,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q116",
+      "kind": "out_of_scope",
+      "language": "en",
+      "register": "english",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.31444528698921204,
+      "articles": [
+        252,
+        259,
+        890,
+        253,
+        385
+      ],
+      "sources": [
+        "Egyptian Civil Code, Article 252"
+      ],
+      "hallucinated": []
+    },
+    {
+      "id": "q117",
+      "kind": "out_of_scope",
+      "language": "ar",
+      "register": "msa",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.01125290896743536,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q118",
+      "kind": "out_of_scope",
+      "language": "en",
+      "register": "english",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.0011302210623398423,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q119",
+      "kind": "out_of_scope",
+      "language": "ar",
+      "register": "colloquial",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.04663674533367157,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q120",
+      "kind": "out_of_scope",
+      "language": "en",
+      "register": "english",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.0005359979113563895,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q121",
+      "kind": "out_of_scope",
+      "language": "ar",
+      "register": "msa",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.0029856848996132612,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q122",
+      "kind": "out_of_scope",
+      "language": "en",
+      "register": "english",
+      "in_scope": false,
+      "expected": [],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.21672560274600983,
+      "articles": [
+        874,
+        11,
+        53,
+        28,
+        611
+      ],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q002",
+      "kind": "rule",
+      "language": "ar",
+      "register": "msa",
+      "in_scope": true,
+      "expected": [
+        374
+      ],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.9046627283096313,
+      "articles": [
+        381,
+        374,
+        382,
+        377,
+        385
+      ],
+      "sources": [
+        "Egyptian Civil Code, Article 374"
+      ],
+      "hallucinated": []
+    },
+    {
+      "id": "q034",
+      "kind": "rule_with_exception",
+      "language": "en",
+      "register": "english",
+      "in_scope": true,
+      "expected": [
+        29
+      ],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.8823907971382141,
+      "articles": [
+        29,
+        44,
+        45,
+        112,
+        501
+      ],
+      "sources": [
+        "Egyptian Civil Code, Article 29"
+      ],
+      "hallucinated": []
+    },
+    {
+      "id": "q053",
+      "kind": "multi_article",
+      "language": "ar",
+      "register": "msa",
+      "in_scope": true,
+      "expected": [
+        374,
+        375
+      ],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.748562753200531,
+      "articles": [
+        375,
+        385,
+        969,
+        379,
+        378
+      ],
+      "sources": [
+        "Egyptian Civil Code, Article 375"
+      ],
+      "hallucinated": []
+    },
+    {
+      "id": "q070",
+      "kind": "cross_reference",
+      "language": "en",
+      "register": "english",
+      "in_scope": true,
+      "expected": [
+        605,
+        563
+      ],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.979601263999939,
+      "articles": [
+        605,
+        563,
+        598,
+        600,
+        608
+      ],
+      "sources": [
+        "Egyptian Civil Code, Article 605",
+        "Egyptian Civil Code, Article 563",
+        "Egyptian Civil Code, Article 598",
+        "Egyptian Civil Code, Article 600",
+        "Egyptian Civil Code, Article 608"
+      ],
+      "hallucinated": []
+    },
+    {
+      "id": "q080",
+      "kind": "article_lookup",
+      "language": "ar",
+      "register": "msa",
+      "in_scope": true,
+      "expected": [
+        222
+      ],
+      "unaddressed": false,
+      "rank1_rerank_score": null,
+      "articles": [
+        222,
+        52,
+        42,
+        43,
+        750
+      ],
+      "sources": [
+        "Egyptian Civil Code, Article 222"
+      ],
+      "hallucinated": []
+    },
+    {
+      "id": "q087",
+      "kind": "repealed",
+      "language": "en",
+      "register": "english",
+      "in_scope": true,
+      "expected": [
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80
+      ],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.020351354032754898,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q093",
+      "kind": "one_language_only",
+      "language": "ar",
+      "register": "msa",
+      "in_scope": true,
+      "expected": [
+        499
+      ],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.9726132154464722,
+      "articles": [
+        499,
+        770,
+        498,
+        497,
+        1096
+      ],
+      "sources": [
+        "Egyptian Civil Code, Article 497"
+      ],
+      "hallucinated": []
+    },
+    {
+      "id": "q101",
+      "kind": "lay_term",
+      "language": "en",
+      "register": "english",
+      "in_scope": true,
+      "expected": [
+        174
+      ],
+      "unaddressed": false,
+      "rank1_rerank_score": 0.1374831199645996,
+      "articles": [
+        167,
+        166,
+        173,
+        175,
+        164
+      ],
+      "sources": [],
+      "hallucinated": []
+    },
+    {
+      "id": "q003",
+      "kind": "rule",
+      "language": "ar",
+      "register": "colloquial",
+      "in_scope": true,
+      "expected": [
+        172
+      ],
+      "unaddressed": true,
+      "rank1_rerank_score": 0.0012929510558024049,
+      "articles": [],
+      "sources": [],
+      "hallucinated": []
+    }
+  ]
+}
