@@ -126,11 +126,23 @@ def record(item: AnswerItem, answer: Answer) -> dict[str, Any]:
     }
 
 
-def score(rows: list[dict[str, Any]], judge: Any, embeddings: Any) -> None:
-    """Attach RAGAS scores to each answered row; a refused row keeps none."""
+def score(
+    rows: list[dict[str, Any]],
+    judge: Any,
+    embeddings: Any,
+    *,
+    metrics: Sequence[str] = METRICS,
+    workers: int = 16,
+    timeout: float = 180,
+) -> None:
+    """Attach RAGAS scores to each answered row; a refused row keeps none.
+    Only ``metrics`` are scored; ``workers`` judge calls run at once, each
+    given ``timeout`` seconds."""
     answered = [r for r in rows if not r["unaddressed"]]
     if not answered:
         return
+    from ragas import RunConfig
+
     samples = [
         {
             "user_input": r["question"],
@@ -141,7 +153,15 @@ def score(rows: list[dict[str, Any]], judge: Any, embeddings: Any) -> None:
         for r in answered
     ]
     for row, scores in zip(
-        answered, ragas_scores(samples, judge, embeddings), strict=True
+        answered,
+        ragas_scores(
+            samples,
+            judge,
+            embeddings,
+            metrics=metrics,
+            run_config=RunConfig(max_workers=workers, timeout=timeout),
+        ),
+        strict=True,
     ):
         row["scores"] = scores
 
@@ -249,13 +269,24 @@ def run_evaluate_answers(
     pipeline = AnswerPipeline(retrieve, generator, settings.answer)
     answers = asyncio.run(_answer_all(pipeline, items))
     rows = [record(i, a) for i, a in zip(items, answers, strict=True)]
-    score(rows, judge, embeddings)
+    evaluation = settings.answer_evaluation
+    # The CI set scores only what its gate reads; the full set scores all four.
+    metrics = METRICS if evaluation.subset == "full" else evaluation.ci_metrics
+    score(
+        rows,
+        judge,
+        embeddings,
+        metrics=metrics,
+        workers=settings.answer_evaluation.judge_workers,
+        timeout=settings.answer_evaluation.judge_timeout,
+    )
     summary = summarize(rows)
     metrics = {
         "llm_model": settings.llm_model,
         "judge_model": settings.judge_model,
         "prompt_version": settings.answer.prompt_version,
         "subset": settings.answer_evaluation.subset,
+        "metrics_scored": list(metrics),
         "hallucinated_citations": sum(len(r["hallucinated"]) for r in rows),
         **summary,
     }

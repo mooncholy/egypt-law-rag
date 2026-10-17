@@ -344,6 +344,23 @@ class AnswerEvaluation(BaseModel):
         "CI scores (Phase 11)."
     )
     ci_size: int = Field(gt=0, description="Questions in the CI subset.")
+    ci_metrics: list[
+        Literal[
+            "faithfulness", "answer_relevancy", "context_precision", "context_recall"
+        ]
+    ] = Field(
+        min_length=1,
+        description="The RAGAS metrics scored on the CI subset; the gate reads "
+        "faithfulness, so the others would be judge calls it never reads.",
+    )
+    judge_workers: int = Field(
+        gt=0,
+        description="Judge calls RAGAS makes at once; a local judge serves one "
+        "at a time, so many queue past the timeout.",
+    )
+    judge_timeout: float = Field(
+        gt=0, description="Seconds RAGAS waits for one judge call."
+    )
 
 
 HttpUrl = Annotated[str, StringConstraints(pattern=r"^https?://\S+$")]
@@ -355,6 +372,21 @@ class Tracking(BaseModel):
     experiments: Experiments = Field(
         description="The experiment for each kind of work."
     )
+
+
+class Distillation(BaseModel):
+    """The reranker distillation (Phase 13): a smaller cross-encoder trained on
+    ``reranker``'s scores, with the same student trained on hard labels as the
+    control."""
+
+    student: Reranker = Field(description="The student's starting checkpoint.")
+    questions: int = Field(
+        gt=0, description="Synthetic training questions, one per sampled article."
+    )
+    seed: int = Field(description="Seeds the article sample and the training.")
+    epochs: int = Field(gt=0, description="Passes over the training pairs.")
+    learning_rate: float = Field(gt=0, description="The student's learning rate.")
+    train_batch_size: int = Field(gt=0, description="Pairs per training step.")
 
 
 def fallback_threshold_error(search: Search, answer: Answer) -> str | None:
@@ -420,6 +452,9 @@ class Settings(BaseSettings):
         description="How answers are scored with RAGAS."
     )
     gate: Gate = Field(description="CI's quality gate on answers and retrieval.")
+    distillation: Distillation = Field(
+        description="The reranker distillation experiment."
+    )
 
     # From the environment or .env
     llm_api_key: SecretStr | None = Field(
@@ -453,6 +488,13 @@ class Settings(BaseSettings):
         "build (`champion export`, D26), which the API loads instead of the "
         "registry, so a container needs no tracking server or AWS. Blank: load "
         "`production` from the registry.",
+    )
+    models_wait_seconds: float = Field(
+        default=0,
+        ge=0,
+        description="How long the API waits at startup for the `models` service "
+        "to answer before checking its components. Compose sets it, because a "
+        "restart policy brings containers back without waiting for each other.",
     )
     models_url: HttpUrl = Field(
         default="http://localhost:8001",

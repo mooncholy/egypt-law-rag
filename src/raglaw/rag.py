@@ -24,7 +24,7 @@ For one question, ``AnswerPipeline.answer``:
 import asyncio
 import re
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from importlib.resources import files
 from typing import Literal
@@ -243,6 +243,16 @@ class Answer:
     contexts: list[str] = field(default_factory=list)  # each article as rendered
 
 
+@dataclass
+class _Prompt:
+    """What the LLM is asked, and what checking its reply needs."""
+
+    language: Language
+    articles: list[ContextArticle]
+    messages: list[dict[str, str]]
+    score: float | None
+
+
 class AnswerPipeline:
     """Retrieve, gate, prompt, and check the answer's citations.
 
@@ -303,16 +313,13 @@ class AnswerPipeline:
             ],
         )
 
-    async def answer(self, question: str) -> Answer:
+    async def _prepare(self, question: str) -> Answer | _Prompt:
         """
-        Answer ``question`` from the retrieved articles.
+        Retrieve, then either reply without the LLM (a repealed range, or the
+        no-answer gate) or build the prompt for it.
 
         returns:
-        - answer (Answer): the reply and the article citations it rests on
-
-        exceptions:
-        - ModelsServiceError: the ``models`` service failed during retrieval
-        - LLMError: the LLM call failed
+        - prepared (Answer | _Prompt): the final reply, or what the LLM is asked
         """
         language = question_language(question)
         documents = await asyncio.to_thread(self._retrieve_locked, question)
@@ -333,11 +340,12 @@ class AnswerPipeline:
             )
             return Answer(NO_ANSWER[language], [], language, True, [], score)
         articles = context_articles(documents, self.config.max_sources)
-        text = await self.llm.complete(
-            build_messages(question, language, articles, self.prompt),
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-        )
+        messages = build_messages(question, language, articles, self.prompt)
+        return _Prompt(language, articles, messages, score)
+
+    def _finish(self, prompt: _Prompt, text: str) -> Answer:
+        """Check the reply's citations against the articles it was given."""
+        articles = prompt.articles
         given, hallucinated = check_citations(text, articles)
         for number in hallucinated:
             logger.warning(
@@ -353,7 +361,7 @@ class AnswerPipeline:
             "Question answered",
             extra={
                 "event_type": ANSWER_EVENT,
-                "rank1_rerank_score": score,
+                "rank1_rerank_score": prompt.score,
                 "articles": [a.first for a in articles],
                 "cited": given,
                 "prompt_version": self.config.prompt_version,
@@ -362,10 +370,77 @@ class AnswerPipeline:
         return Answer(
             text=text,
             sources=[citation(n) for n in given],
-            language=language,
+            language=prompt.language,
             unaddressed=False,
             articles=[a.first for a in articles],
-            rank1_rerank_score=score,
+            rank1_rerank_score=prompt.score,
             hallucinated=hallucinated,
             contexts=[a.render() for a in articles],
         )
+
+    async def messages_for(self, question: str) -> list[dict[str, str]] | None:
+        """
+        The chat ``answer`` would send the LLM for ``question``, for measuring
+        a generator on exactly /ask's prompts.
+
+        returns:
+        - messages (list[dict] | None): None when no LLM call would be made (a
+          repealed range, or the no-answer gate)
+        """
+        prepared = await self._prepare(question)
+        return None if isinstance(prepared, Answer) else prepared.messages
+
+    async def answer(self, question: str) -> Answer:
+        """
+        Answer ``question`` from the retrieved articles.
+
+        returns:
+        - answer (Answer): the reply and the article citations it rests on
+
+        exceptions:
+        - ModelsServiceError: the ``models`` service failed during retrieval
+        - LLMError: the LLM call failed
+        """
+        prepared = await self._prepare(question)
+        if isinstance(prepared, Answer):
+            return prepared
+        text = await self.llm.complete(
+            prepared.messages,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
+        )
+        return self._finish(prepared, text)
+
+    async def answer_stream(self, question: str) -> AsyncIterator[str | Answer]:
+        """
+        Answer ``question`` as it is generated: the reply's text in pieces,
+        then the finished ``Answer`` (its sources are known only once the whole
+        reply can be checked). A reply made without the LLM comes as one piece,
+        and so does every reply from a model that can't stream.
+
+        returns:
+        - pieces (AsyncIterator[str | Answer]): text pieces, then the Answer
+
+        exceptions:
+        - ModelsServiceError, LLMError: as ``answer``
+        """
+        prepared = await self._prepare(question)
+        if isinstance(prepared, Answer):
+            yield prepared.text
+            yield prepared
+            return
+        stream = getattr(self.llm, "stream", None)
+        options = {
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+        }
+        if stream is None:
+            text = await self.llm.complete(prepared.messages, **options)
+            yield text
+            yield self._finish(prepared, text)
+            return
+        pieces: list[str] = []
+        async for piece in stream(prepared.messages, **options):
+            pieces.append(piece)
+            yield piece
+        yield self._finish(prepared, "".join(pieces).strip())

@@ -1,3 +1,4 @@
+import json
 import time
 import uuid
 from collections.abc import Callable
@@ -8,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from langchain_core.embeddings import Embeddings
 
 from raglaw.api.schemas import (
@@ -28,7 +29,7 @@ from raglaw.logging_conf import (
     correlation_id_var,
     get_logger,
 )
-from raglaw.rag import AnswerPipeline, load_prompt
+from raglaw.rag import Answer, AnswerPipeline, load_prompt
 from raglaw.retrieval.remote import (
     ModelsServiceError,
     RemoteEmbeddings,
@@ -42,6 +43,9 @@ configure_server_logging()
 logger = get_logger(__name__)
 
 CORRELATION_ID_HEADER = "X-Request-ID"
+# Every response names the version that served it, so a canary's traffic can be
+# told apart (README, "Canary rollout").
+VERSION_HEADER = "X-Raglaw-Version"
 SERVICE_VERSION = version("egypt-law-rag")
 
 # Responses raised outside FastAPI's view (the exception handlers, HTTPException,
@@ -218,6 +222,32 @@ def retriever_component(
     ), champion
 
 
+def wait_for_models(
+    settings: Settings,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """
+    Wait up to ``models_wait_seconds`` for the ``models`` service to answer,
+    so a container restarted before it doesn't come up degraded for good
+    (components are checked once, at startup).
+
+    returns:
+    - answered (bool): whether it answered before the wait ran out
+    """
+    deadline = clock() + settings.models_wait_seconds
+    while True:
+        try:
+            models_health(settings.models_url)
+            return True
+        except ModelsServiceError as exc:
+            if clock() >= deadline:
+                return False
+            logger.info("Waiting for the models service: %s", exc)
+            sleep(5)
+
+
 def load_service(
     settings: Settings,
     *,
@@ -239,6 +269,8 @@ def load_service(
     - FileNotFoundError: ``answer.prompt_version`` names no prompt file
     """
     load_prompt(settings.answer.prompt_version)  # a config error stops startup
+    if embeddings is None and reranker is None:
+        wait_for_models(settings)
     llm_status, llm = llm_component(settings)
     retriever_status, champion = retriever_component(
         settings, embeddings=embeddings, reranker=reranker
@@ -327,6 +359,7 @@ async def correlation_id_middleware(request: Request, call_next):
             )
 
         response.headers[CORRELATION_ID_HEADER] = correlation_id
+        response.headers[VERSION_HEADER] = SERVICE_VERSION
         logger.info(
             "Request completed",
             extra={
@@ -486,6 +519,46 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
     except LLMError as exc:
         raise ServiceUnavailableError({"llm": str(exc)}) from exc
     return AskResponse(answer=answer.text, sources=answer.sources)
+
+
+def _event(data: dict, event: str | None = None) -> str:
+    """One server-sent event."""
+    head = f"event: {event}\n" if event else ""
+    return f"{head}data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.post(
+    "/ask/stream",
+    responses={**INVALID_REQUEST_RESPONSE, **UNAVAILABLE_RESPONSE},
+)
+async def ask_stream(request: Request, body: AskRequest) -> StreamingResponse:
+    """
+    Answer as ``/ask`` does, streamed as server-sent events: ``data:
+    {"token": ...}`` per piece of the reply as the LLM writes it, then
+    ``event: sources`` with ``{"sources": [...]}``. A failure after the first
+    piece arrives as ``event: error``, since the status is already sent.
+
+    exceptions:
+    - ServiceUnavailableError: 503 when a component isn't ready at startup
+    - RequestValidationError: 422 when the question is empty or too long
+    """
+    service: Service = request.app.state.service
+    reasons = {name: c.detail for name, c in service.components.items() if not c.ready}
+    if reasons or service.pipeline is None:
+        raise ServiceUnavailableError(reasons or {"pipeline": "not built"})
+    pipeline = service.pipeline
+
+    async def events():
+        try:
+            async for piece in pipeline.answer_stream(body.question):
+                if isinstance(piece, Answer):
+                    yield _event({"sources": piece.sources}, event="sources")
+                else:
+                    yield _event({"token": piece})
+        except (ModelsServiceError, LLMError) as exc:
+            yield _event({"error": str(exc)}, event="error")
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 def create_app(

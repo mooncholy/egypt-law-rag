@@ -31,6 +31,9 @@ services:
       dockerfile: docker/api/Dockerfile
     environment:
       RAGLAW_MODELS_URL: http://models:8001
+      # A restart policy ignores depends_on; wait for models instead of
+      # starting degraded.
+      RAGLAW_MODELS_WAIT_SECONDS: "600"
       RAGLAW_LLM_BASE_URL: http://ollama:11434/v1
       RAGLAW_LLM_MODEL: *llm-model
       RAGLAW_LLM_API_KEY: ollama  # Ollama ignores it; the client needs one
@@ -42,6 +45,7 @@ services:
         condition: service_healthy
       ollama-pull:
         condition: service_completed_successfully
+        required: false  # docker/compose.vllm.yml serves vLLM instead
     restart: unless-stopped
 
   models:

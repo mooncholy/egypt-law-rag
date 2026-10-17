@@ -966,6 +966,17 @@ class StubLLM:
         return self.reply
 
 
+class StreamingStubLLM(StubLLM):
+    """A ``StubLLM`` that also streams its reply, one word at a time."""
+
+    async def stream(
+        self, messages: list[dict[str, str]], *, temperature: float, max_tokens: int
+    ):
+        self.calls.append(messages)
+        for word in self.reply.split(" "):
+            yield word + " "
+
+
 @pytest.fixture
 def stub_llm() -> Callable[..., StubLLM]:
     """Build a ``StubLLM`` with a fixed reply."""
@@ -1145,9 +1156,14 @@ def ask_client(
     with ``with``."""
 
     def _make(
-        documents: list[Document], reply: str = "", documents_indexed: int = 1150
+        documents: list[Document],
+        reply: str = "",
+        documents_indexed: int = 1150,
+        streaming: bool = False,
     ) -> TestClient:
         pipeline, _ = make_pipeline(documents, reply)
+        if streaming:
+            pipeline.llm = StreamingStubLLM(reply)
         return TestClient(make_app(make_service(pipeline, documents_indexed)))
 
     return _make

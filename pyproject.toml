@@ -75,6 +75,7 @@ module-name = "raglaw"
 [dependency-groups]
 dev = [
     "httpx2>=2.13.1",
+    "locust>=2.46.7",
     "pdfplumber>=0.11.10",
     "pre-commit>=4.6.2",
     "pylint>=4.1.1",
@@ -105,6 +106,12 @@ embed = [
 # The torch build the embed group runs on; exactly one of the two is installed.
 torch-cpu = ["torch>=2.14.1"]
 torch-gpu = ["torch>=2.14.1"]
+bento = [
+    "bentoml>=1.4.39",
+]
+distill = [
+    "accelerate>=1.1.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

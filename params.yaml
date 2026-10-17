@@ -97,6 +97,9 @@ answer:
 answer_evaluation:
   subset: full   # | ci: the 20-question stratified subset CI scores
   ci_size: 20
+  ci_metrics: [faithfulness]   # what CI scores on its subset: the gate reads faithfulness only
+  judge_workers: 4     # the local judge (gemma3:12b) serves one call at a time
+  judge_timeout: 900   # seconds per judge call
 
 # CI's quality gate (Phase 11): the 20-question CI set must keep faithfulness at
 # or above min_faithfulness (the handbook's 0.75), and the tuning half's recall@5
@@ -104,3 +107,17 @@ answer_evaluation:
 gate:
   min_faithfulness: 0.75
   max_recall_drop: 1
+
+# The reranker distillation (Phase 13): the student learns `reranker`'s scores on
+# synthetic questions about articles outside the eval set, and is measured on it.
+distillation:
+  student:
+    model: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1   # 118M parameters, the teacher's 568M
+    revision: 1427fd652930e4ba29e8149678df786c240d8825
+    max_length: 512   # its position limit; the longest chunks are truncated
+    batch_size: 32
+  questions: 600
+  seed: 13
+  epochs: 2
+  learning_rate: 2.0e-5
+  train_batch_size: 32

@@ -75,6 +75,18 @@ def test_u32_below_the_threshold_the_no_answer_reply_has_no_sources(
     assert llm.calls == []  # no LLM call is made
 
 
+def test_messages_for_is_the_chat_answer_sends(make_pipeline, retrieved, make_chunk):
+    """Phase 13's generator benchmark times exactly /ask's prompts."""
+    pipeline, llm = make_pipeline(retrieved([make_chunk(1)]), reply="Article 1.")
+
+    messages = asyncio.run(pipeline.messages_for("What does Article 1 say?"))
+    ask(pipeline, "What does Article 1 say?")
+
+    assert messages == llm.calls[0]
+    gated, _ = make_pipeline(retrieved([make_chunk(1)], rerank_score=0.05))
+    assert asyncio.run(gated.messages_for("What does Article 1 say?")) is None
+
+
 @pytest.mark.parametrize(
     "question", ["How are foundations set up?", "كيف تنشأ المؤسسة؟"]
 )

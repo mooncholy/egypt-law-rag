@@ -1,0 +1,118 @@
+[
+  {
+    "reranker": "teacher (bge-reranker-v2-m3)",
+    "parameters": 567755777,
+    "questions": 131,
+    "recall_at_5": 0.839695,
+    "mrr": 0.831688,
+    "context_precision_at_5": 0.8203986429177269,
+    "latency": [
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 573.0070947560235,
+        "p50_ms": 553.2832379994943,
+        "p95_ms": 787.2206267506044,
+        "p99_ms": 885.6114208707913
+      },
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 572.1476337419626,
+        "p50_ms": 552.5082065005336,
+        "p95_ms": 785.329946600632,
+        "p99_ms": 880.7812465001916
+      }
+    ],
+    "p95_rerun_change": -0.002401715714407282,
+    "candidates": 30,
+    "hardware": "NVIDIA GeForce RTX 5060 Ti"
+  },
+  {
+    "reranker": "student, untrained",
+    "parameters": 117641089,
+    "questions": 131,
+    "recall_at_5": 0.732824,
+    "mrr": 0.699976,
+    "context_precision_at_5": 0.6970313825275658,
+    "latency": [
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 104.87520845598192,
+        "p50_ms": 118.4252884986563,
+        "p95_ms": 129.04329585026062,
+        "p99_ms": 130.0008690985851
+      },
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 105.02312102600263,
+        "p50_ms": 118.53593700016063,
+        "p95_ms": 129.14158489966212,
+        "p99_ms": 130.1609521503451
+      }
+    ],
+    "p95_rerun_change": 0.0007616749770213982,
+    "candidates": 30,
+    "hardware": "NVIDIA GeForce RTX 5060 Ti"
+  },
+  {
+    "reranker": "student, teacher's scores",
+    "parameters": 117641089,
+    "questions": 131,
+    "recall_at_5": 0.732824,
+    "mrr": 0.678823,
+    "context_precision_at_5": 0.6734520780322307,
+    "latency": [
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 100.37992010801099,
+        "p50_ms": 109.9267299996427,
+        "p95_ms": 128.9523554506559,
+        "p99_ms": 130.65142130108143
+      },
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 100.36493346401403,
+        "p50_ms": 109.64845200032869,
+        "p95_ms": 128.61949345042376,
+        "p99_ms": 129.39384007020635
+      }
+    ],
+    "p95_rerun_change": -0.002581278946544696,
+    "candidates": 30,
+    "hardware": "NVIDIA GeForce RTX 5060 Ti"
+  },
+  {
+    "reranker": "student, hard labels (control)",
+    "parameters": 117641089,
+    "questions": 131,
+    "recall_at_5": 0.725191,
+    "mrr": 0.713207,
+    "context_precision_at_5": 0.7044105173876166,
+    "latency": [
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 96.83145923398843,
+        "p50_ms": 100.25000300083775,
+        "p95_ms": 128.59364729865774,
+        "p99_ms": 130.03343051081174
+      },
+      {
+        "warmup": 20,
+        "iterations": 500,
+        "mean_ms": 97.01153903005252,
+        "p50_ms": 101.42609450031159,
+        "p95_ms": 128.87588959993082,
+        "p99_ms": 130.03330870938953
+      }
+    ],
+    "p95_rerun_change": 0.002194838603633009,
+    "candidates": 30,
+    "hardware": "NVIDIA GeForce RTX 5060 Ti"
+  }
+]

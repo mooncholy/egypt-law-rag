@@ -37,9 +37,17 @@ class CrossEncoderReranker:
         returns:
         - scores (list[float]): the model's relevance, in 0 to 1 (its sigmoid)
         """
+        return self.score_pairs([(query, t) for t in texts])
+
+    def score_pairs(self, pairs: Sequence[tuple[str, str]]) -> list[float]:
+        """
+        Score (question, chunk text) pairs, from any number of questions: what
+        a batching server feeds it.
+
+        returns:
+        - scores (list[float]): the model's relevance, in 0 to 1, in order
+        """
         scores = self.model.predict(
-            [(query, t) for t in texts],
-            batch_size=self.batch_size,
-            show_progress_bar=False,
+            list(pairs), batch_size=self.batch_size, show_progress_bar=False
         )
         return [float(s) for s in scores]

@@ -234,6 +234,17 @@ class HybridRetriever(BaseRetriever):
         self._parts = {n: [c for _, c in sorted(ps)] for n, ps in parts.items()}
         self._cites = {c: _citations(meta) for c, (_, meta) in payloads.items()}
 
+    def text_articles(self) -> dict[str, frozenset[int]]:
+        """
+        Each indexed text, as the reranker reads it, -> every article whose
+        chunk has that text. Two chunks may share a text, so a text can stand
+        for more than one article.
+        """
+        found: dict[str, set[int]] = {}
+        for text, meta in self._payloads.values():
+            found.setdefault(text, set()).add(meta["article_number"])
+        return {text: frozenset(articles) for text, articles in found.items()}
+
     def close(self) -> None:
         """Release the Qdrant client and its directory lock."""
         self._client.close()

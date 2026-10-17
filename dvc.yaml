@@ -11,8 +11,9 @@ stages:
       - src/raglaw/ingest/measure.py
       - src/raglaw/ingest/table.py
     outs:
-      - ${paths.analysis_dir}:
-          cache: false
+      # Cached, so `dvc pull` restores it and a fresh checkout (CI) needn't
+      # re-profile the PDF; it stays out of git (.gitignore).
+      - ${paths.analysis_dir}
     metrics:
       - ${paths.metrics_dir}/source_profile.json:
           cache: false

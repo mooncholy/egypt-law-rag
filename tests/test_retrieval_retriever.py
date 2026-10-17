@@ -443,3 +443,23 @@ def test_a_different_repealed_text_is_refused(search_index, embedding_config):
 
     with pytest.raises(IndexMismatchError, match="repealed_text"):
         open_retriever(search_index, embedding_config, configured)
+
+
+def test_a_text_two_chunks_share_stands_for_both_articles(
+    build_search_index, make_chunk, embedding_config
+):
+    """Distillation labels candidates by text; a shared text mustn't lose an
+    article to the other."""
+    chunks = [
+        make_chunk(1, "نص مشترك", text_en="Shared text."),
+        make_chunk(2, "نص مشترك", text_en="Shared text."),
+        make_chunk(3, "نص آخر", text_en="Other text."),
+    ]
+    index = build_search_index(
+        chunks, {c.chunk_id: [1.0, 0.0] for c in chunks}, [1.0, 0.0]
+    )
+
+    with open_retriever(index, embedding_config) as retriever:
+        found = retriever.text_articles()
+
+    assert sorted(found.values(), key=min) == [frozenset({1, 2}), frozenset({3})]

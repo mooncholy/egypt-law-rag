@@ -62,7 +62,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
-      - run: uv sync --locked
+      # bento: so the BentoML service's tests run rather than skip.
+      - run: uv sync --locked --group bento
       # The 80% threshold lives in [tool.coverage.report]; --cov applies it.
       - run: uv run --no-sync pytest -m unit --cov
 
@@ -124,8 +125,11 @@ jobs:
           uv run --no-sync dvc remote modify --local storage profile "$profile"
       - name: Pull the data (DVC remote)
         run: uv run --no-sync dvc pull
-      - name: Rebuild the index (embed, bm25)
-        run: uv run --no-sync dvc repro --force embed bm25
+      # Rebuilt when anything it's built from changed (chunks, params, the
+      # embedder, the code); otherwise the pulled index matches dvc.lock and
+      # DVC skips it, saving about 3 minutes of embedding.
+      - name: Rebuild the index if its inputs changed (embed, bm25)
+        run: uv run --no-sync dvc repro embed bm25
       - name: Retrieval on the tuning half
         run: uv run --no-sync dvc repro --force --single-item evaluate_retrieval
       - name: Answers on the 20-question CI set (RAGAS)

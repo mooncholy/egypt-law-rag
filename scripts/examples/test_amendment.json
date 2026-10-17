@@ -1,0 +1,12 @@
+[
+  {
+    "article_number": 1150,
+    "text_en": "TEST DOCUMENT, not part of the Egyptian Civil Code. (1) A digital signature on an electronic contract has the force of a handwritten signature. (2) The party relying on the signature bears the burden of proving its authenticity.",
+    "text_ar": "(١) وثيقة اختبار وليست من القانون المدني المصري: يكون للتوقيع الرقمي على العقد الإلكتروني حجية التوقيع الخطي.\n(٢) ويقع عبء إثبات صحة التوقيع على من يتمسك به.",
+    "heading_path": ["Test documents for re-indexing"],
+    "heading_path_ar": ["وثائق اختبار لإعادة الفهرسة"],
+    "source_pages": [0],
+    "source_rows": [[0, 0]],
+    "is_repealed": false
+  }
+]

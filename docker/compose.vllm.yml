@@ -1,0 +1,70 @@
+# vLLM override (Phase 12), after the GPU one:
+#   docker compose -f compose.yaml -f docker/compose.gpu.yml -f docker/compose.vllm.yml up
+# Serves Qwen2.5-7B-Instruct-AWQ (the D20 model in 4 bits) with continuous
+# batching instead of Ollama's 8-bit build: under 50 users, twice the
+# throughput and 1.7% failures instead of 32%, but faithfulness 0.052 lower,
+# past Phase 13's 0.03 limit, so it isn't the default
+# (docs/reports/optimization.md). Ollama is left out (profile `ollama`).
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  # 60% of the GPU: 5.3 GiB of weights, 0.3 GiB of CUDA graphs and about 2 GiB
+  # of KV cache (about 36k tokens), leaving `models` its 5.6 GB on a 16 GB
+  # card. Under WSL the desktop's ~1.4 GB counts inside vLLM's share, which is
+  # why 50% left no KV cache. 64 sequences cover the 50-user load test.
+  # Weights go to the shared `hf-cache` volume on first start.
+  vllm:
+    <<: *gpu
+    image: vllm/vllm-openai:v0.30.0@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
+    command:
+      - --model=Qwen/Qwen2.5-7B-Instruct-AWQ
+      - --revision=b25037543e9394b818fdfca67ab2a00ecc7dd641
+      - --served-model-name=qwen2.5-7b-instruct-awq
+      - --gpu-memory-utilization=0.6
+      - --max-model-len=8192
+      - --max-num-seqs=64
+    environment:
+      HF_HUB_DISABLE_XET: "1"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    shm_size: 2gb
+    ports:
+      - "127.0.0.1:8002:8000"  # for scripts/bench_generator.py and RAGAS runs from the host
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10m
+    restart: unless-stopped
+
+  # vLLM sizes its KV cache from the memory that changes while it profiles;
+  # loading the models then would be counted against it (under WSL the GPU's
+  # memory is device-wide), so they load once vLLM is up.
+  models:
+    depends_on:
+      vllm:
+        condition: service_healthy
+
+  api:
+    environment:
+      RAGLAW_LLM_BASE_URL: http://vllm:8000/v1
+      RAGLAW_LLM_MODEL: qwen2.5-7b-instruct-awq
+      RAGLAW_LLM_API_KEY: vllm  # vLLM started without --api-key ignores it
+    depends_on:
+      vllm:
+        condition: service_healthy
+
+  ollama:
+    profiles: [ollama]
+
+  ollama-pull:
+    profiles: [ollama]
