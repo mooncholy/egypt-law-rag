@@ -28,13 +28,25 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--hours", type=float, default=24)
+    ap.add_argument(
+        "--until",
+        type=datetime.fromisoformat,
+        help="only traces started before this UTC time (ISO), e.g. to score one window",
+    )
     ap.add_argument("--sample", type=int, default=20)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="judge calls at once; a local judge serves one at a time",
+    )
     args = ap.parse_args()
     settings = Settings()
     from langchain_openai import ChatOpenAI
     from langfuse import Langfuse
     from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
+    from ragas import RunConfig
 
     from raglaw.answer_eval import ragas_scores
     from raglaw.monitoring.tracing import faithfulness_sample
@@ -46,11 +58,13 @@ def main() -> None:
         secret_key=settings.langfuse_secret_key.get_secret_value(),
         base_url=settings.langfuse_host,
     )
-    since = datetime.now(UTC) - timedelta(hours=args.hours)
+    until = args.until.replace(tzinfo=UTC) if args.until else datetime.now(UTC)
+    since = until - timedelta(hours=args.hours)
     found = langfuse.api.observations.get_many(
         name=TRACE,
         is_root_observation=True,
         from_start_time=since,
+        to_start_time=until,
         fields="core,basic,io,metadata",
         expand_metadata="contexts",
         parse_io_as_json=False,
@@ -74,7 +88,13 @@ def main() -> None:
         temperature=0,
     )
     rows = [{k: v for k, v in s.items() if k != "trace_id"} for s in picked]
-    scores = ragas_scores(rows, judge, None, metrics=["faithfulness"])
+    scores = ragas_scores(
+        rows,
+        judge,
+        None,
+        metrics=["faithfulness"],
+        run_config=RunConfig(max_workers=args.workers, timeout=900),
+    )
     values = []
     for sample, score in zip(picked, scores, strict=True):
         if (value := score["faithfulness"]) is None:
