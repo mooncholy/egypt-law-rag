@@ -68,6 +68,10 @@ class Paths(BaseModel):
         description="The repealed ranges' former text, for matching only, and "
         "their repeal records (`search.repealed_fallback`; DVC-tracked)."
     )
+    drift_baseline: RepoPath = Field(
+        description="The eval set's centroid and spread for query drift "
+        "(`scripts/drift_baseline.py`; the API reads it)."
+    )
 
 
 class RootHeading(BaseModel):
@@ -481,6 +485,22 @@ class Settings(BaseSettings):
     )
     judge_api_key: SecretStr | None = Field(
         default=None, description="The judge endpoint's key."
+    )
+    langfuse_host: NonEmptyStr | None = Field(
+        default=None,
+        description="The Langfuse server /ask sends traces to (Phase 14); "
+        "tracing is off unless it and both keys are set.",
+    )
+    langfuse_public_key: SecretStr | None = Field(
+        default=None, description="The Langfuse project's public key."
+    )
+    langfuse_secret_key: SecretStr | None = Field(
+        default=None, description="The Langfuse project's secret key."
+    )
+    pushgateway_url: NonEmptyStr | None = Field(
+        default=None,
+        description="Where `scripts/score_traces.py` pushes the sampled "
+        "faithfulness for Prometheus (Phase 14).",
     )
     champion_dir: Path | None = Field(
         default=None,

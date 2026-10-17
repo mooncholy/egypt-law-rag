@@ -6,6 +6,7 @@
 !README.md
 !src/
 !params.yaml
+!docs/metrics/drift_baseline.json
 !data/index/
 !build/champion/
 **/__pycache__

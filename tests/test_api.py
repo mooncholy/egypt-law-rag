@@ -96,7 +96,12 @@ def sse(text: str) -> list[tuple[str | None, dict]]:
 def test_u38_a_streamed_answer_arrives_in_pieces_then_its_sources(
     ask_client, retrieved, make_chunk
 ):
-    reply = "Article 44 sets majority at twenty-one."
+    # Longer than the PII guard's hold-back (10 words), as any real answer is;
+    # a shorter one leaves in one piece, at the end.
+    reply = (
+        "Article 44 sets majority at twenty-one completed Gregorian years, "
+        "and a person of age is fully capable."
+    )
     documents = retrieved([make_chunk(44), make_chunk(45)])
 
     with ask_client(documents, reply=reply, streaming=True) as client:
@@ -420,3 +425,43 @@ def test_startup_waits_for_the_models_service_then_stops_waiting(monkeypatch):
     now[0] = 0.0
     assert not main.wait_for_models(settings, sleep=sleep, clock=lambda: now[0])
     assert now[0] >= 30
+
+
+def test_u42_ask_redacts_personal_data_and_metrics_count_it(
+    ask_client, retrieved, make_chunk
+):
+    """Phase 14: the guardrail runs on every answer, and each decision is a metric."""
+    reply = "Under Article 44, the holder of ID 29801011234567 is of age."
+    with ask_client(retrieved([make_chunk(44)]), reply=reply) as client:
+        before = _sample(client.get("/metrics").text, "redacted")
+        answer = client.post("/ask", json=QUESTION).json()["answer"]
+        exposed = client.get("/metrics").text
+
+    assert answer == "Under Article 44, the holder of ID [national_id] is of age."
+    assert _sample(exposed, "redacted") == before + 1
+    assert 'raglaw_requests_total{path="/ask",status="200"}' in exposed
+
+
+def test_u42_a_streamed_answer_is_redacted_too(ask_client, retrieved, make_chunk):
+    reply = (
+        "Call 01012345678 about Article 44, which sets majority at twenty-one years."
+    )
+    with ask_client(retrieved([make_chunk(44)]), reply=reply, streaming=True) as c:
+        timed = _count(c.get("/metrics").text, "raglaw_pii_seconds_count")
+        events = sse(c.post("/ask/stream", json=QUESTION).text)
+        exposed = c.get("/metrics").text
+
+    text = "".join(data["token"] for event, data in events if event is None)
+    assert "01012345678" not in text and "[phone]" in text
+    assert _count(exposed, "raglaw_pii_seconds_count") == timed + 1  # its latency too
+
+
+def _count(exposition: str, name: str) -> float:
+    lines = [ln for ln in exposition.splitlines() if ln.startswith(name + " ")]
+    return float(lines[0].split()[-1]) if lines else 0.0
+
+
+def _sample(exposition: str, decision: str) -> float:
+    prefix = f'raglaw_pii_decisions_total{{decision="{decision}"}} '
+    lines = [ln for ln in exposition.splitlines() if ln.startswith(prefix)]
+    return float(lines[0].removeprefix(prefix)) if lines else 0.0

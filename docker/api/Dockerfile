@@ -25,6 +25,8 @@ RUN useradd --create-home --uid 10001 raglaw
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY params.yaml ./
+# The query-drift baseline (Phase 14): numbers only, no question text.
+COPY docs/metrics/drift_baseline.json ./docs/metrics/drift_baseline.json
 # Qdrant's local mode writes a lock file beside the collection.
 COPY --chown=raglaw:raglaw data/index ./data/index
 COPY build/champion ./champion

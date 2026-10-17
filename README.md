@@ -6,13 +6,51 @@ A retrieval-augmented generation (RAG) chatbot that answers questions about the 
 The source is a bilingual PDF (170 pages, English and Arabic side by side).
 A DVC pipeline turns it into a validated corpus of articles and chunks, and a FastAPI service answers questions over that corpus.
 
-**Status:** the corpus, retrieval, `/ask`, its containers, CI/CD and serving are built; monitoring is next.
+**Status:** every handbook phase is built, from the corpus to monitoring (CHANGELOG.md has each PR). Open: the owner confirms the latency target (docs/reports/optimization.md) and captures the screenshots.
 - `profile → extract → repair → assemble → chunk` turn the PDF into 1,149 articles and 1,150 chunks.
 - `embed` and `bm25` index the chunks (bge-m3 in Qdrant, BM25 over folded Arabic), and `evaluate_retrieval` scores retrieval before any LLM is involved.
 - The registered retriever (`models:/civil-code-retriever@production`, version 4) fuses dense and BM25 search, reranks the top 30 with a cross-encoder, and answers questions on the repealed ranges (Articles 54–80, 389–417) from the Code's repeal note. It finds the governing articles in the top 5 for 86% of held-out questions (recall@5 0.864; the target is 0.9).
 - `/ask` answers from that retriever and `qwen2.5:7b-instruct-q8_0`, citing only articles it retrieved: faithfulness 0.868 on 65 questions (RAGAS, `docs/metrics/answers.json`). When the rank-1 reranker score is below a threshold, it replies that the Code doesn't address the question, without calling the LLM.
 - `validate` checks the corpus against C1–C16 and the gold sample (Arabic character error rate 0.03%).
 - Serving (Phase 12–13): `/ask/stream` streams the answer; a canary config; a BentoML form of the service; vLLM as an opt-in generator; batch re-indexing; a load test at 50 users; AWQ and a distilled reranker measured, and both rejected on quality (`docs/reports/optimization.md`).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph corpus["Corpus (DVC stages)"]
+    pdf[(civil_code.pdf)] --> profile --> extract --> repair --> assemble --> validate
+    assemble --> chunk
+  end
+  subgraph index["Index"]
+    chunk --> embed["embed: bge-m3 → Qdrant"]
+    chunk --> bm25["bm25: folded Arabic"]
+  end
+  subgraph tracking["Tracking (MLflow, S3)"]
+    evalr["evaluate_retrieval"] --> registry[("registry: civil-code-retriever @production")]
+    evala["evaluate_answers (RAGAS)"]
+  end
+  embed --> evalr
+  bm25 --> evalr
+  subgraph serving["Serving (docker compose)"]
+    api["api: /ask, /ask/stream, /metrics; retriever baked in; PII guard"]
+    models["models: embed + rerank (GPU)"]
+    llm["generator: Ollama q8 (vLLM AWQ opt-in)"]
+    api --> models
+    api --> llm
+  end
+  registry -- "export at build (D26)" --> api
+  subgraph monitoring["Monitoring"]
+    prom[Prometheus] --> grafana["Grafana: p95, cost, drift, alerts"]
+    langfuse["Langfuse: traces"]
+    scorer["score_traces.py: sampled faithfulness"] --> push[Pushgateway] --> prom
+  end
+  api -- "/metrics" --> prom
+  api -- "traces" --> langfuse
+  langfuse --> scorer
+  ci["CI: lint, tests, self-hosted GPU deliver job (gate on RAGAS and recall)"] --> evala
+  ci -- "images" --> hub[(Docker Hub)]
+```
 
 ## Run it with Docker
 
@@ -154,6 +192,61 @@ curl -s localhost:3000/ask -H 'Content-Type: application/json' -d '{"question": 
 ```
 
 Retrieval runs under a lock (Qdrant's local mode isn't safe across threads), so concurrent questions reach `Models` one at a time; batching then pays off within a question (30 rerank pairs in one batch) more than across questions. A Qdrant server would lift the lock.
+
+## Monitoring
+
+Add the monitoring override to either `up` command:
+
+```bash
+docker compose -f compose.yaml -f docker/compose.gpu.yml -f docker/compose.monitoring.yml up
+```
+
+| Service | Where | What |
+| --- | --- | --- |
+| Grafana | localhost:3200 (admin / admin) | The `egypt-law-rag` dashboard and two alert rules, provisioned from `docker/monitoring/grafana` |
+| Prometheus | localhost:9090 | Scrapes the API's `/metrics` and the Pushgateway every 15 s |
+| Langfuse | localhost:3100 (admin@raglaw.local / raglaw-admin) | A trace per `/ask`: `retrieve` (with `rerank` inside it), then `generate` with token usage; the prompt version, retriever version and correlation ID on every trace |
+| alert-sink | `docker compose logs alert-sink` | The webhook each alert notification is posted to |
+
+The login, the Langfuse project and its API keys are created at first start from local-only defaults in `docker/compose.monitoring.yml`; change them before exposing any port.
+
+What `/metrics` exposes (`raglaw.monitoring.metrics`):
+
+- `raglaw_requests_total{path,status}` and `raglaw_request_seconds{path}`: traffic and latency (the dashboard's p50 and p95 panel).
+- `llm_tokens_total{model,type}`: prompt and completion tokens, as the LLM endpoint reports them.
+- `raglaw_answers_total{outcome}`: answered, refused by the no-answer gate, or answered from a repeal note.
+- `raglaw_pii_decisions_total{decision}`, `raglaw_pii_findings_total{kind}` and `raglaw_pii_seconds`: the PII guardrail on every answer.
+- `raglaw_query_drift_ratio` and `raglaw_query_drift_threshold`: query drift over the last 20 questions.
+
+**Alerts.**
+- Faithfulness below **0.80**: `scripts/score_traces.py` is the scheduled evaluation. It samples the last day's answered `/ask` traces, scores each with RAGAS faithfulness against the article texts it was given, attaches the score to the trace in Langfuse, and pushes the mean to the Pushgateway (`raglaw_faithfulness`). Run it from cron or the CI runner: `uv run python scripts/score_traces.py --hours 24 --sample 20`, with `RAGLAW_PUSHGATEWAY_URL=http://localhost:9091` in `.env`.
+- Query drift below its line for 10 minutes.
+
+**The alert, tested on a real regression.**
+1. The API was pointed at the 3B generator (faithfulness 0.693 in Phase 9) and asked 25 eval questions.
+2. `score_traces.py` scored 20 of the answered traces at **0.761** and pushed the mean.
+3. Grafana's "Faithfulness below 0.80" fired, and the webhook received the notification.
+
+One wrong answer stood out: "the deadline to appeal a civil court judgment is fifteen days". That rule is in procedure law, not the Civil Code.
+
+**The judge.** The cloud judge (`gpt-oss:120b-cloud`) ran out of its free quota (HTTP 429), so RAGAS now uses a local one: `gemma3:12b` on Ollama. It's stronger than the 7B generator and from another family. It serves one call at a time, so RAGAS sends it 4 at once with 900 s each (`answer_evaluation.judge_workers` and `judge_timeout`). Scores from the two judges aren't directly comparable. Re-measured with the new judge, the q8 baseline scores all 57 answered questions:
+
+| Judge | Faithfulness | Answer relevancy | Context precision | Context recall |
+| --- | --- | --- | --- | --- |
+| `gpt-oss:120b-cloud` | 0.868 | 0.703 | 0.834 | 0.780 |
+| `gemma3:12b` | 0.905 | 0.636 | 0.886 | 0.927 |
+
+Source: `docs/metrics/answers_local_judge.json`. The new judge is more lenient on faithfulness. The 0.75 gate and the 0.80 alert still separate the 8-bit model (0.905) from the 3B regression (0.761). Eight traces alone once scored 0.796, so the scheduled evaluation samples 20.
+
+**Query drift.** Each question's embedding is compared with the eval set's centroid. The ratio is the window's mean cosine over the eval set's own (0.6689), so on-topic questions score about 1.0. The line is 3 standard errors below 1 for a 20-question window: 0.9461. On the real embedder (`docs/reports/drift.md`): the eval set scores 1.000, its halves 1.010 and 0.990, and 12 family-law questions (personal status law, not the Civil Code) 0.914.
+
+**PII guardrail** (`raglaw.monitoring.pii`). It redacts Egyptian national IDs (14 digits with a real birth date and governorate code), Egyptian mobile numbers, email addresses, and Arabic names after an honorific, in Western or Arabic-Indic digits. It runs on every `/ask` answer, and on `/ask/stream`, where it holds back the last 10 words (the longest number it recognizes, a phone written with a separator between every digit) until they're checked. On the Code's own text (1,149 articles, both languages, no personal data) it redacted nothing (0 false positives in 2,298 texts) and took 0.046 ms per text.
+
+**Token cost.** The self-hosted price of a token is the GPU's hourly price over the tokens it serves in an hour at the measured throughput. The cost panel multiplies the completion tokens per second by that price. Both inputs are dashboard constants:
+- `throughput_tokens_per_s` is 44.2, the default generator's measured rate. Ollama decodes one answer at a time, so that is its capacity (`docs/metrics/generator.json`).
+- `gpu_usd_per_hour` is 0.35, an **assumed** hourly price for a 16 GB GPU. Set your own.
+
+With those two, a token costs about $2.2 per million.
 
 ## Develop locally
 

@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+from raglaw.rag import Answer
+
 bento = pytest.importorskip("raglaw.serving.bento_service")
 
 pytestmark = pytest.mark.unit
@@ -53,3 +55,22 @@ def test_the_clients_work_from_the_retrievers_worker_thread():
     assert query == [3.0]
     assert documents == [[1.0], [2.0]]
     assert scores == [1.0, 0.0]
+
+
+def test_bentos_ask_redacts_like_the_fastapi_app():
+    """The PII guardrail covers every /ask, the BentoML form included."""
+    answer = Answer(
+        text="The holder of ID 29801011234567 is of age under Article 44.",
+        sources=["Egyptian Civil Code, Article 44"],
+        language="en",
+        unaddressed=False,
+        articles=[44],
+        rank1_rerank_score=0.9,
+    )
+
+    reply = bento.respond(answer)
+
+    assert reply == {
+        "answer": "The holder of ID [national_id] is of age under Article 44.",
+        "sources": ["Egyptian Civil Code, Article 44"],
+    }

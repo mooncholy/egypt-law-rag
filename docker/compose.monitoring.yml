@@ -1,0 +1,191 @@
+# Monitoring override (Phase 14):
+#   docker compose -f compose.yaml [-f docker/compose.gpu.yml] -f docker/compose.monitoring.yml up
+#
+# - prometheus  (localhost:9090): scrapes api's /metrics and the pushgateway
+# - pushgateway: the scheduled evaluation pushes faithfulness here
+#                (scripts/score_traces.py, RAGLAW_PUSHGATEWAY_URL=http://localhost:9091)
+# - grafana     (localhost:3200, admin / admin): the dashboard, and the alert
+#                rules on faithfulness and drift, all provisioned from
+#                docker/monitoring/grafana; alerts go to alert-sink
+# - alert-sink  : a webhook receiver that logs each notification
+#                (docker compose logs alert-sink)
+# - langfuse-web (localhost:3100) and its worker, Postgres, ClickHouse, Redis
+#                and MinIO: the traces of every /ask (Langfuse's own compose,
+#                v4.63.0, with only the UIs published, on localhost)
+#
+# The Langfuse project, its keys and a login are created at first start from
+# the LANGFUSE_INIT_* values below, so api traces with no setup. They and the
+# other secrets are local-only defaults: change them before exposing anything.
+
+x-langfuse-env: &langfuse-env
+  NEXTAUTH_URL: http://localhost:3100
+  DATABASE_URL: postgresql://postgres:postgres@langfuse-postgres:5432/postgres
+  SALT: raglaw-local-salt
+  ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+  CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  REDIS_HOST: langfuse-redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: myredissecret
+
+x-langfuse-depends: &langfuse-depends
+  langfuse-postgres:
+    condition: service_healthy
+  langfuse-minio:
+    condition: service_healthy
+  langfuse-redis:
+    condition: service_healthy
+  langfuse-clickhouse:
+    condition: service_healthy
+
+services:
+  api:
+    environment:
+      RAGLAW_LANGFUSE_HOST: http://langfuse-web:3000
+      RAGLAW_LANGFUSE_PUBLIC_KEY: pk-lf-raglaw-local
+      RAGLAW_LANGFUSE_SECRET_KEY: sk-lf-raglaw-local
+
+  prometheus:
+    image: prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    volumes:
+      - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    restart: unless-stopped
+
+  pushgateway:
+    image: prom/pushgateway:v1.11.2@sha256:c835998819105d84d484918908df132807c78c05f3e0e649df0c0479c6780d98
+    ports:
+      - "127.0.0.1:9091:9091"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.3.0@sha256:70d9599b186ce287be0d2c5ba9a78acb2e86c1a68c9c41449454d0fc3eeb84e8
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./docker/monitoring/grafana:/etc/grafana/provisioning:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3200:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  alert-sink:
+    image: mendhak/http-https-echo:37@sha256:f55000d9196bd3c853d384af7315f509d21ffb85de315c26e9874033b9f83e15
+    environment:
+      HTTP_PORT: "8080"
+    restart: unless-stopped
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4.63.0@sha256:67f48d12a190e4ad585249c75ae1ce172b449de3dbbe7486b8179cd28e21408e
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_SECRET: raglaw-local-secret
+      LANGFUSE_INIT_ORG_ID: raglaw
+      LANGFUSE_INIT_ORG_NAME: raglaw
+      LANGFUSE_INIT_PROJECT_ID: raglaw
+      LANGFUSE_INIT_PROJECT_NAME: egypt-law-rag
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-raglaw-local
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-raglaw-local
+      LANGFUSE_INIT_USER_EMAIL: admin@raglaw.local
+      LANGFUSE_INIT_USER_NAME: admin
+      LANGFUSE_INIT_USER_PASSWORD: raglaw-admin
+    depends_on: *langfuse-depends
+    ports:
+      - "127.0.0.1:3100:3000"
+    restart: unless-stopped
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4.63.0@sha256:ca32a8fb2a214c7b5f42dd9c540c8072e41db659cb621f317911ce695ad6bca2
+    environment: *langfuse-env
+    depends_on: *langfuse-depends
+    restart: unless-stopped
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:25.12@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse-clickhouse:/var/lib/clickhouse
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  langfuse-minio:
+    image: chainguard/minio:latest@sha256:c93745c56fccdaf0e5dcb88999a96a65a136428beb045ef5d546255a80d747a7
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    volumes:
+      - langfuse-minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  langfuse-redis:
+    image: redis:7.4@sha256:4fa24486b8bcca8eec45ee0eb166edc674795e53a2b53d1a9ef263eecebaac85
+    command: --requirepass myredissecret --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "myredissecret", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  langfuse-postgres:
+    image: postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  prometheus:
+  grafana:
+  langfuse-clickhouse:
+  langfuse-minio:
+  langfuse-postgres:

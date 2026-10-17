@@ -31,7 +31,13 @@ from langchain_core.embeddings import Embeddings
 from raglaw.api.schemas import AskRequest
 from raglaw.config import Settings
 from raglaw.llm import OpenAIChat
-from raglaw.rag import AnswerPipeline
+from raglaw.monitoring.pii import redact
+from raglaw.rag import Answer, AnswerPipeline
+
+
+def respond(answer: Answer) -> dict[str, Any]:
+    """``/ask``'s reply, through the same PII guardrail as the FastAPI app."""
+    return {"answer": redact(answer.text).text, "sources": answer.sources}
 
 
 class _OnLoop:
@@ -134,5 +140,4 @@ class RagLaw:
         The request body is ``{"question": "..."}``."""
         asked = AskRequest(question=question)
         pipeline = await self._pipeline()
-        answer = await pipeline.answer(asked.question)
-        return {"answer": answer.text, "sources": answer.sources}
+        return respond(await pipeline.answer(asked.question))

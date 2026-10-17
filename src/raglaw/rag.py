@@ -241,6 +241,7 @@ class Answer:
     rank1_rerank_score: float | None
     hallucinated: list[int] = field(default_factory=list)
     contexts: list[str] = field(default_factory=list)  # each article as rendered
+    repealed: bool = False  # answered from a repeal note, without the LLM
 
 
 @dataclass
@@ -303,6 +304,7 @@ class AnswerPipeline:
             unaddressed=False,
             articles=[record.first],
             rank1_rerank_score=score,
+            repealed=True,
             contexts=[
                 note.page_content,
                 (
