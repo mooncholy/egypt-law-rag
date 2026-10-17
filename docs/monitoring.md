@@ -42,6 +42,14 @@ The login, the Langfuse project and its API keys are created at first start from
 
 One wrong answer stood out: "the deadline to appeal a civil court judgment is fifteen days". That rule is in procedure law, not the Civil Code.
 
+![Grafana: faithfulness against the 0.80 alert line](images/grafana_faithfulness.png)
+
+![Grafana: the faithfulness alert firing](images/grafana_alert_firing.png)
+
+The README's Evidence section explains each step on the panel. A trace with its faithfulness score:
+
+![Langfuse: an /ask trace with its spans and faithfulness score](images/langfuse_trace.png)
+
 ## The judge
 
 The cloud judge (`gpt-oss:120b-cloud`) ran out of its free quota (HTTP 429), so RAGAS now uses a local one: `gemma3:12b` on Ollama. It's stronger than the 7B generator and from another family. It serves one call at a time, so RAGAS sends it 4 at once with 900 s each (`answer_evaluation.judge_workers` and `judge_timeout`). Scores from the two judges aren't directly comparable. Re-measured with the new judge, the q8 baseline scores all 57 answered questions:

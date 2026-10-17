@@ -171,7 +171,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Faithfulness (scheduled evaluation)",
-      "description": "Sampled /ask traces scored with RAGAS by scripts/score_traces.py; the alert fires under 0.80.",
+      "description": "Mean RAGAS faithfulness of the sampled /ask traces (scripts/score_traces.py); the alert fires below the dashed 0.80 line. Traces scored on the right axis.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -184,6 +184,9 @@
       },
       "fieldConfig": {
         "defaults": {
+          "min": 0.6,
+          "max": 1.0,
+          "decimals": 3,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -199,11 +202,70 @@
           },
           "custom": {
             "thresholdsStyle": {
-              "mode": "line"
-            }
+              "mode": "dashed+area"
+            },
+            "lineWidth": 3,
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "showPoints": "always",
+            "pointSize": 8
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "traces scored"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 40
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.thresholdsStyle",
+                "value": {
+                  "mode": "off"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#999999"
+                }
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "traces scored"
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {

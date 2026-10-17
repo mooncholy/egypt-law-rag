@@ -187,6 +187,54 @@ Every number comes from a committed report or metrics file.
 
 The handbook's rubric and checklist, line by line: [rubric_crosscheck.md](docs/reports/rubric_crosscheck.md).
 
+### Evidence
+
+**Faithfulness against the 0.80 alert line** (Grafana, the scheduled evaluation):
+
+![Grafana: faithfulness of the sampled /ask traces against the dashed 0.80 alert line](docs/images/grafana_faithfulness.png)
+
+Each step is one run of `scripts/score_traces.py`, with the local judge, on real `/ask` traces:
+- **Until 18:20, 0.761:** the 3B regression from the alert test.
+- **18:20, 0.797:** the 8-bit model, but with only 10 traces.
+- **18:28, 0.840:** the 8-bit model, 20 traces, above the line.
+- **18:32, 0.754:** the 3B regression again, 20 traces, below the line.
+
+The gray right-hand axis shows how many traces each run scored.
+
+**The alert firing:**
+
+![Grafana: "Faithfulness below 0.80" firing, the drift rule normal](docs/images/grafana_alert_firing.png)
+
+"Faithfulness below 0.80" is firing on the regression, while the drift rule stays normal. Both rules are provisioned from `docker/monitoring/grafana`.
+
+**The whole dashboard**, over the same 90 minutes:
+
+![Grafana: the egypt-law-rag dashboard](docs/images/grafana_dashboard.png)
+
+At 18:21, 35 eval questions went through the 8-bit model. The panels show:
+- p50 and p95 latency
+- cost per hour and tokens per second
+- requests by status and answers by outcome
+- query drift against its line
+- the PII guardrail's decisions and added latency
+- faithfulness
+
+**One `/ask` traced in Langfuse:**
+
+![Langfuse: an /ask trace with retrieve, rerank and generate spans and its faithfulness score](docs/images/langfuse_trace.png)
+
+The trace shows `retrieve` (with `rerank` inside it), then `generate` with 2,032 tokens. Its faithfulness score of 1.00 was attached by the scheduled evaluation.
+
+**MLflow:**
+
+![MLflow: retriever runs logged as models and registered as civil-code-retriever versions 1 and 2](docs/reports/model_registry.png)
+
+Retriever runs logged as models and registered as `civil-code-retriever`. This is an early snapshot from Phase 8, showing versions 1 and 2; production is now version 4.
+
+![MLflow: reranking against the hybrid baseline, recall@5 0.708 against 0.569](docs/reports/champion_vs_baseline_comparison.png)
+
+MLflow's run comparison from Phase 6: reranking against the hybrid baseline, recall@5 0.708 against 0.569 on the tuning half.
+
 ## Limitations and honesty
 
 **Not legal advice.** The answers come from the Code's text alone: no other law, no case law, no amendments after the source PDF. A question governed by another law can still get a confident answer. In one test, the appeal deadline from procedure law was stated as if the Code said it. Check every answer against the cited articles.
@@ -215,7 +263,6 @@ The handbook's rubric and checklist, line by line: [rubric_crosscheck.md](docs/r
 - **Names:** the PII guardrail matches patterns. It catches Egyptian national IDs, mobile numbers and emails, but finds names only after an honorific. It has no named-entity model, so a bare name passes.
 - **Credentials:** the monitoring stack's logins and keys are local-only defaults. Change them before exposing any port.
 
-**Not done yet:** the screenshots of the dashboards, the alert and the traces are still to be captured.
 
 ## Documentation
 
