@@ -12,8 +12,8 @@
 # The tracking server is apart, in docker/compose.tracking.yml: it needs the
 # project's AWS profile, which a reviewer doesn't have.
 #
-# Maintainers build the images instead of pulling them (README, "Build the
-# images"); RAGLAW_IMAGE_TAG picks a version (default `latest`).
+# Maintainers build the images instead of pulling them (CONTRIBUTING.md,
+# "Build the images"); RAGLAW_IMAGE_TAG picks a version (default `latest`).
 
 name: raglaw
 

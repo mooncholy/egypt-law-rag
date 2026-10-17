@@ -2,7 +2,7 @@
 # torch; the `models` service embeds and reranks). It bakes in the index and a
 # copy of the production retriever (D26), so it needs no DVC, tracking server
 # or AWS at runtime. Build from the repo root after `dvc pull` and
-# `python -m raglaw.retrieval.champion export` (README, "Build the images").
+# `python -m raglaw.retrieval.champion export` (CONTRIBUTING.md, "Build the images").
 
 FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170 AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.12.20@sha256:100047e74f30778ab704942321a09750d6158739573ff58bf3924085cc6cd2d8 /uv /bin/uv
