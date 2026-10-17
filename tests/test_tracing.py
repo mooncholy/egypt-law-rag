@@ -10,6 +10,7 @@ from raglaw.monitoring.tracing import (
     TracedLLM,
     TracedReranker,
     Tracer,
+    every_page,
     faithfulness_sample,
     langfuse_tracer,
     traced_retrieve,
@@ -176,3 +177,26 @@ def test_personal_data_never_reaches_a_trace():
     stored = repr([o.fields for o in client.observations])
     assert "29801011234567" not in stored and "01012345678" not in stored
     assert "[national_id]" in stored and "[phone]" in stored
+
+
+class Page:
+    def __init__(self, data, cursor):
+        self.data = data
+        self.meta = type("Meta", (), {"cursor": cursor})()
+
+
+def test_every_page_of_a_window_is_read():
+    """A window past one page is sampled whole, not from its first page."""
+    pages = {None: Page([1, 2], "c1"), "c1": Page([3, 4], "c2"), "c2": Page([5], None)}
+    asked = []
+
+    def fetch(*, limit, cursor, **query):
+        asked.append((cursor, query))
+        return pages[cursor]
+
+    assert every_page(fetch, page_size=2, name="ask") == [1, 2, 3, 4, 5]
+    assert asked == [
+        (None, {"name": "ask"}),
+        ("c1", {"name": "ask"}),
+        ("c2", {"name": "ask"}),
+    ]

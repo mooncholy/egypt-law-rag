@@ -229,3 +229,24 @@ def faithfulness_sample(observation: Any) -> dict[str, Any] | None:
         "response": observation.output,
         "retrieved_contexts": list(contexts),
     }
+
+
+def every_page(
+    fetch: Callable[..., Any], *, page_size: int = 500, **query: Any
+) -> list:
+    """
+    Every item Langfuse's cursor-paged ``fetch`` (``api.observations.get_many``)
+    returns for ``query``, following the cursor until the last page, so a busy
+    window is sampled whole rather than from its first page.
+
+    returns:
+    - items (list): every page's ``data``, in order
+    """
+    found: list = []
+    cursor = None
+    while True:
+        page = fetch(limit=page_size, cursor=cursor, **query)
+        found += page.data
+        cursor = page.meta.cursor if page.meta else None
+        if not cursor or not page.data:
+            return found

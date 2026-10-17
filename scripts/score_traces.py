@@ -49,18 +49,20 @@ def main() -> None:
     from ragas import RunConfig
 
     from raglaw.answer_eval import ragas_scores
-    from raglaw.monitoring.tracing import faithfulness_sample
+    from raglaw.monitoring.tracing import every_page, faithfulness_sample
 
-    if not (settings.langfuse_host and settings.langfuse_public_key):
+    public, secret = settings.langfuse_public_key, settings.langfuse_secret_key
+    if not (settings.langfuse_host and public and secret):
         raise SystemExit("set RAGLAW_LANGFUSE_HOST and both keys in .env")
     langfuse = Langfuse(
-        public_key=settings.langfuse_public_key.get_secret_value(),
-        secret_key=settings.langfuse_secret_key.get_secret_value(),
+        public_key=public.get_secret_value(),
+        secret_key=secret.get_secret_value(),
         base_url=settings.langfuse_host,
     )
     until = args.until.replace(tzinfo=UTC) if args.until else datetime.now(UTC)
     since = until - timedelta(hours=args.hours)
-    found = langfuse.api.observations.get_many(
+    found = every_page(
+        langfuse.api.observations.get_many,
         name=TRACE,
         is_root_observation=True,
         from_start_time=since,
@@ -68,8 +70,7 @@ def main() -> None:
         fields="core,basic,io,metadata",
         expand_metadata="contexts",
         parse_io_as_json=False,
-        limit=500,
-    ).data
+    )
     samples = [s for s in map(faithfulness_sample, found) if s]
     picked = random.Random(args.seed).sample(samples, min(args.sample, len(samples)))
     logger.info(
