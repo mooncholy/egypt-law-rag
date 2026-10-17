@@ -304,7 +304,7 @@ egypt-law-rag/
 | lint | `pre-commit run --all-files` | dev group only |
 | test | `pytest -m unit --cov` (80% coverage gate) | no S3 access |
 | runtime | serves `/health` with `uv sync --no-default-groups` | API dependencies only |
-| deliver | `dvc pull` → rebuild the index → retrieval and RAGAS on the 20-question CI set → quality gate (`scripts/ci_gate.py`) → export the production retriever → build both images; pushes them (`sha-<commit>` and `latest`) on merges | The self-hosted GPU runner (label `raglaw-gpu`) with `~/.config/raglaw/ci.env`; never runs for forks |
+| deliver | `dvc pull` → rebuild the index when its inputs changed → retrieval, and RAGAS faithfulness on the 20-question CI set → quality gate (`scripts/ci_gate.py`) → export the production retriever → build both images; pushes them (`sha-<commit>` and `latest`) on merges | The self-hosted GPU runner (label `raglaw-gpu`) with `~/.config/raglaw/ci.env`; never runs for forks |
 
 The gate fails a build when faithfulness on the CI set is below 0.75, or recall@5 on the tuning half loses more than one question against the base branch (`gate:` in `params.yaml`).
 
