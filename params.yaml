@@ -97,6 +97,8 @@ answer:
 answer_evaluation:
   subset: full   # | ci: the 20-question stratified subset CI scores
   ci_size: 20
+  judge_workers: 4     # the local judge (gemma3:12b) serves one call at a time
+  judge_timeout: 900   # seconds per judge call
 
 # CI's quality gate (Phase 11): the 20-question CI set must keep faithfulness at
 # or above min_faithfulness (the handbook's 0.75), and the tuning half's recall@5

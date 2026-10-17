@@ -344,6 +344,14 @@ class AnswerEvaluation(BaseModel):
         "CI scores (Phase 11)."
     )
     ci_size: int = Field(gt=0, description="Questions in the CI subset.")
+    judge_workers: int = Field(
+        gt=0,
+        description="Judge calls RAGAS makes at once; a local judge serves one "
+        "at a time, so many queue past the timeout.",
+    )
+    judge_timeout: float = Field(
+        gt=0, description="Seconds RAGAS waits for one judge call."
+    )
 
 
 HttpUrl = Annotated[str, StringConstraints(pattern=r"^https?://\S+$")]

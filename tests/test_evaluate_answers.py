@@ -17,7 +17,7 @@ from raglaw.retrieval.scoring import EvalQuestion
 pytestmark = pytest.mark.unit
 
 
-def fake_scores(samples, judge, embeddings):
+def fake_scores(samples, judge, embeddings, run_config=None):
     """Faithfulness 1.0 when the answer cites Article 44, else 0.0."""
     return [
         {

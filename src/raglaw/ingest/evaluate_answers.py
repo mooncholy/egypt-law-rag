@@ -126,11 +126,21 @@ def record(item: AnswerItem, answer: Answer) -> dict[str, Any]:
     }
 
 
-def score(rows: list[dict[str, Any]], judge: Any, embeddings: Any) -> None:
-    """Attach RAGAS scores to each answered row; a refused row keeps none."""
+def score(
+    rows: list[dict[str, Any]],
+    judge: Any,
+    embeddings: Any,
+    *,
+    workers: int = 16,
+    timeout: float = 180,
+) -> None:
+    """Attach RAGAS scores to each answered row; a refused row keeps none.
+    ``workers`` judge calls run at once, each given ``timeout`` seconds."""
     answered = [r for r in rows if not r["unaddressed"]]
     if not answered:
         return
+    from ragas import RunConfig
+
     samples = [
         {
             "user_input": r["question"],
@@ -141,7 +151,14 @@ def score(rows: list[dict[str, Any]], judge: Any, embeddings: Any) -> None:
         for r in answered
     ]
     for row, scores in zip(
-        answered, ragas_scores(samples, judge, embeddings), strict=True
+        answered,
+        ragas_scores(
+            samples,
+            judge,
+            embeddings,
+            run_config=RunConfig(max_workers=workers, timeout=timeout),
+        ),
+        strict=True,
     ):
         row["scores"] = scores
 
@@ -249,7 +266,13 @@ def run_evaluate_answers(
     pipeline = AnswerPipeline(retrieve, generator, settings.answer)
     answers = asyncio.run(_answer_all(pipeline, items))
     rows = [record(i, a) for i, a in zip(items, answers, strict=True)]
-    score(rows, judge, embeddings)
+    score(
+        rows,
+        judge,
+        embeddings,
+        workers=settings.answer_evaluation.judge_workers,
+        timeout=settings.answer_evaluation.judge_timeout,
+    )
     summary = summarize(rows)
     metrics = {
         "llm_model": settings.llm_model,
