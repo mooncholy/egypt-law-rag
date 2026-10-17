@@ -64,3 +64,60 @@ def test_an_article_already_indexed_is_refused(
             retrieval=RETRIEVAL,
             embeddings=stub_embeddings({}, default=[1.0, 0.0]),
         )
+
+
+@pytest.mark.parametrize(
+    ("indexed", "new", "why"),
+    [
+        ([1, (54, 80)], [60], r"\[60\] are already"),  # inside a repealed range
+        ([1, 2], [1150, 1150], r"\[1150\] appear more than once"),
+    ],
+)
+def test_a_number_covered_by_a_range_or_repeated_is_refused(
+    make_chunk,
+    make_article,
+    stub_embeddings,
+    embedding_config,
+    tmp_path,
+    indexed,
+    new,
+    why,
+):
+    chunks = [
+        make_chunk(n) if isinstance(n, int) else make_chunk(n[0], range_end=n[1])
+        for n in indexed
+    ]
+    write_records(tmp_path / "chunks.json", Chunk, chunks)
+
+    with pytest.raises(ReindexError, match=why):
+        reindex(
+            tmp_path / "chunks.json",
+            [make_article(n) for n in new],
+            tmp_path / "reindexed",
+            chunking=Settings(_env_file=None).chunking,
+            embedding=embedding_config,
+            retrieval=RETRIEVAL,
+            embeddings=stub_embeddings({}, default=[1.0, 0.0]),
+        )
+
+
+def test_the_semantic_strategy_gets_the_embedder(
+    make_chunk, make_article, stub_embeddings, embedding_config, tmp_path
+):
+    """structural_semantic splits by meaning, so it needs the embedder."""
+    embeddings = stub_embeddings({}, default=[1.0, 0.0])
+    chunking = Settings(_env_file=None).chunking.model_copy(
+        update={"strategy": "structural_semantic"}
+    )
+
+    result = reindex(
+        index_of(make_chunk, tmp_path),
+        [make_article(1150)],
+        tmp_path / "reindexed",
+        chunking=chunking,
+        embedding=embedding_config,
+        retrieval=RETRIEVAL,
+        embeddings=embeddings,
+    )
+
+    assert result.added_articles == [1150]

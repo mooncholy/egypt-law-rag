@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class ReindexError(ValueError):
-    """A new article's number is already in the index."""
+    """A new article's number is already indexed, or repeats among the new ones."""
 
 
 @dataclass(frozen=True)
@@ -64,18 +64,29 @@ def reindex(
     - reindexed (Reindexed): the chunk counts before and after, and the articles added
 
     exceptions:
-    - ReindexError: a new article's number is already indexed
+    - ReindexError: a new article's number is already indexed (a repealed
+      range's chunk covers every number in its range), or appears twice among
+      ``new_articles``
     """
     chunks = read_records(chunks_path, Chunk)
-    taken = {c.article_number for c in chunks}
-    clash = sorted(a.article_number for a in new_articles if a.article_number in taken)
+    taken = {
+        n
+        for c in chunks
+        for n in range(c.article_number, (c.range_end or c.article_number) + 1)
+    }
+    numbers = [a.article_number for a in new_articles]
+    repeated = sorted({n for n in numbers if numbers.count(n) > 1})
+    if repeated:
+        raise ReindexError(f"articles {repeated} appear more than once")
+    clash = sorted(n for n in numbers if n in taken)
     if clash:
         raise ReindexError(f"articles {clash} are already in the index")
     out_dir.mkdir(parents=True, exist_ok=True)
     staged = out_dir / "new_articles.json"
     write_records(staged, Article, list(new_articles))
+    # The embedder too: the structural_semantic strategy splits by meaning.
     new_chunks, _ = chunk_documents(
-        list(CivilCodeArticleLoader(staged).lazy_load()), chunking
+        list(CivilCodeArticleLoader(staged).lazy_load()), chunking, embeddings
     )
     combined = [*chunks, *new_chunks]
     combined_path = out_dir / "chunks.json"
