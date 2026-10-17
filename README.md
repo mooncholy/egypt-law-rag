@@ -148,7 +148,7 @@ The split draws each request on its own (`$request_id`); to keep one client on o
 `raglaw.serving.bento_service` is the same service as two BentoML services: `RagLaw` (an async `/ask`, the same `AnswerPipeline` and baked retriever as the FastAPI app) over `Models`, whose `embed` and `rerank` are batchable APIs. BentoML's adaptive batching merges calls that arrive within 50 ms into one model batch (up to 64 texts or 128 pairs).
 
 ```bash
-uv sync --group bento --no-group torch-cpu --group torch-gpu
+uv sync --group bento --no-group torch-cpu --group torch-gpu   # keeps the default groups, embed included
 RAGLAW_CHAMPION_DIR=build/champion uv run bentoml serve raglaw.serving.bento_service:RagLaw
 curl -s localhost:3000/ask -H 'Content-Type: application/json' -d '{"question": "What is the age of majority?"}'
 ```
