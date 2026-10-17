@@ -144,3 +144,35 @@ def test_only_traces_the_llm_answered_are_scored(metadata, kept):
     assert (sample is not None) is kept
     if kept:
         assert sample["retrieved_contexts"] == ["Art. 44"]
+
+
+class EchoingChat:
+    """An LLM that echoes the caller's phone number back."""
+
+    model = "qwen"
+
+    async def complete(self, messages, *, temperature, max_tokens):
+        return "Call 01012345678 about Article 44."
+
+
+def test_personal_data_never_reaches_a_trace():
+    """The question and the LLM's reply are redacted before Langfuse stores them."""
+    client = FakeLangfuse()
+    tracer = Tracer(client)
+    question = "My ID is 29801011234567; can I sign contracts?"
+    llm = TracedLLM(EchoingChat(), tracer, prompt_version="v2")
+
+    async def ask():
+        documents = await asyncio.to_thread(
+            traced_retrieve(lambda q: [Document("t", metadata={})], tracer), question
+        )
+        await llm.complete(
+            [{"role": "user", "content": question}], temperature=0.0, max_tokens=64
+        )
+        return documents
+
+    asyncio.run(ask())
+
+    stored = repr([o.fields for o in client.observations])
+    assert "29801011234567" not in stored and "01012345678" not in stored
+    assert "[national_id]" in stored and "[phone]" in stored

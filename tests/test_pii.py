@@ -71,3 +71,19 @@ def test_a_role_after_an_honorific_is_not_a_name():
     text = "يضمن المهندس المعماري والمقاول متضامنين ما يحدث خلال عشر سنوات"
 
     assert redact(text).text == text
+
+
+def test_a_phone_spread_over_ten_words_is_held_until_whole():
+    """+20 and a separator before each of its last 8 digits: the longest match."""
+    text = (
+        "Call +20 10 1 2 3 4 5 6 7 8 about Article 44, which sets the age of majority."
+    )
+    stream = StreamRedactor()
+
+    sent = "".join(stream.feed(word + " ") for word in text.split()) + stream.flush()
+
+    assert "[phone]" in sent and not any(
+        d in sent.split("[phone]")[0] for d in "12345678"
+    )
+    assert sent.strip() == redact(text).text
+    assert stream.seconds > 0

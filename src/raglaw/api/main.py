@@ -44,6 +44,7 @@ from raglaw.monitoring.tracing import (
     TracedReranker,
     Tracer,
     langfuse_tracer,
+    redacted,
     traced_retrieve,
 )
 from raglaw.rag import Answer, AnswerPipeline, load_prompt
@@ -612,7 +613,7 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
         metrics.PII_SECONDS.observe(time.perf_counter() - start)
         count_pii(guarded.findings)
         root.update(
-            input=body.question,
+            input=redacted(body.question),
             output=guarded.text,
             metadata=answer_metadata(answer, guarded.findings),
         )
@@ -704,8 +705,9 @@ async def ask_stream(request: Request, body: AskRequest) -> StreamingResponse:
                             yield _event({"token": rest})
                         count_outcome(piece)
                         count_pii(guard.findings)
+                        metrics.PII_SECONDS.observe(guard.seconds)
                         root.update(
-                            input=body.question,
+                            input=redacted(body.question),
                             output="".join(sent),
                             metadata=answer_metadata(piece, guard.findings),
                         )

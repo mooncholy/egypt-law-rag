@@ -6,6 +6,8 @@ Each /ask is a trace named ``ask`` holding three spans:
   inside it (the cross-encoder's call to the ``models`` service);
 - ``generate`` (a generation): the LLM call, with its model and token usage.
 
+Everything a span stores goes through the PII guardrail first (``redacted``),
+so personal data in a question or echoed by the LLM never reaches Langfuse.
 The trace carries the question, the (guarded) answer, the article texts the
 LLM was given (``contexts``, which the scheduled evaluation scores
 faithfulness against: ``scripts/score_traces.py``), the prompt version, the
@@ -24,7 +26,26 @@ from typing import Any
 from langchain_core.documents import Document
 
 from raglaw.config import Settings
+from raglaw.monitoring.pii import redact
 from raglaw.retrieval.rerank import RerankScorer
+
+
+def redacted(value: Any) -> Any:
+    """
+    ``value`` with personal data redacted, as a trace may store it: the user's
+    question can carry their own ID, phone or name, and the LLM can echo it.
+    A string, or chat messages (their ``content``); anything else unchanged.
+    """
+    if isinstance(value, str):
+        return redact(value).text
+    if isinstance(value, list):
+        return [
+            {**m, "content": redact(m["content"]).text}
+            if isinstance(m, dict) and isinstance(m.get("content"), str)
+            else m
+            for m in value
+        ]
+    return value
 
 
 class _NoSpan:
@@ -108,7 +129,9 @@ def traced_retrieve(
     """``retrieve`` inside a ``retrieve`` span, its output the articles found."""
 
     def run(question: str) -> list[Document]:
-        with tracer.span("retrieve", as_type="retriever", input=question) as span:
+        with tracer.span(
+            "retrieve", as_type="retriever", input=redacted(question)
+        ) as span:
             documents = retrieve(question)
             span.update(
                 output=[d.metadata.get("article_number") for d in documents],
@@ -153,20 +176,20 @@ class TracedLLM:
         with self.tracer.span(
             "generate",
             as_type="generation",
-            input=messages,
+            input=redacted(messages),
             model=getattr(self.inner, "model", None),
             model_parameters=options,
             version=self.prompt_version,
         ) as generation:
             text = await self.inner.complete(messages, **options)
-            generation.update(output=text)
+            generation.update(output=redacted(text))
             return text
 
     async def _stream(self, messages: list[dict[str, str]], **options: Any):
         with self.tracer.span(
             "generate",
             as_type="generation",
-            input=messages,
+            input=redacted(messages),
             model=getattr(self.inner, "model", None),
             model_parameters=options,
             version=self.prompt_version,
@@ -175,7 +198,7 @@ class TracedLLM:
             async for piece in self.inner.stream(messages, **options):
                 pieces.append(piece)
                 yield piece
-            generation.update(output="".join(pieces))
+            generation.update(output=redacted("".join(pieces)))
 
 
 def _flag(value: Any) -> bool:

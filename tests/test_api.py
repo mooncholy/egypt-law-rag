@@ -96,7 +96,7 @@ def sse(text: str) -> list[tuple[str | None, dict]]:
 def test_u38_a_streamed_answer_arrives_in_pieces_then_its_sources(
     ask_client, retrieved, make_chunk
 ):
-    # Longer than the PII guard's hold-back (6 words), as any real answer is;
+    # Longer than the PII guard's hold-back (10 words), as any real answer is;
     # a shorter one leaves in one piece, at the end.
     reply = (
         "Article 44 sets majority at twenty-one completed Gregorian years, "
@@ -447,10 +447,18 @@ def test_u42_a_streamed_answer_is_redacted_too(ask_client, retrieved, make_chunk
         "Call 01012345678 about Article 44, which sets majority at twenty-one years."
     )
     with ask_client(retrieved([make_chunk(44)]), reply=reply, streaming=True) as c:
+        timed = _count(c.get("/metrics").text, "raglaw_pii_seconds_count")
         events = sse(c.post("/ask/stream", json=QUESTION).text)
+        exposed = c.get("/metrics").text
 
     text = "".join(data["token"] for event, data in events if event is None)
     assert "01012345678" not in text and "[phone]" in text
+    assert _count(exposed, "raglaw_pii_seconds_count") == timed + 1  # its latency too
+
+
+def _count(exposition: str, name: str) -> float:
+    lines = [ln for ln in exposition.splitlines() if ln.startswith(name + " ")]
+    return float(lines[0].split()[-1]) if lines else 0.0
 
 
 def _sample(exposition: str, decision: str) -> float:

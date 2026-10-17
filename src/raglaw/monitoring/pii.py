@@ -23,6 +23,7 @@ words until they can't be part of a match.
 """
 
 import re
+import time
 from dataclasses import dataclass
 from datetime import date
 
@@ -72,7 +73,10 @@ TAGS = {
     "email": "[email]",
     "name": "[name]",
 }
-HOLD_WORDS = 6  # a streamed match never spans more words than this
+# The most words one match can span: a phone number written with ``+20`` and a
+# separator before each of its 8 last digits is 10 words. A streamed answer
+# holds that many back, so no match can be released half seen.
+HOLD_WORDS = 10
 
 
 @dataclass(frozen=True)
@@ -146,14 +150,23 @@ def redact(text: str) -> Redaction:
 
 class StreamRedactor:
     """Redact a streamed answer: release text only once its last
-    ``HOLD_WORDS`` words are past, so no match is cut in two."""
+    ``HOLD_WORDS`` words are past, so no match is cut in two. ``seconds`` adds
+    up the time spent checking, for the guardrail's latency metric."""
 
     def __init__(self) -> None:
         self._pending = ""
         self.findings: list[Finding] = []
+        self.seconds = 0.0
 
     def feed(self, piece: str) -> str:
         """Take the next piece; return the text that is safe to send now."""
+        start = time.perf_counter()
+        try:
+            return self._feed(piece)
+        finally:
+            self.seconds += time.perf_counter() - start
+
+    def _feed(self, piece: str) -> str:
         self._pending += piece
         cuts = [m.start() for m in re.finditer(r"\s+", self._pending)]
         if len(cuts) <= HOLD_WORDS:
@@ -167,8 +180,12 @@ class StreamRedactor:
 
     def flush(self) -> str:
         """Return whatever is still held back, redacted."""
+        start = time.perf_counter()
         ready, self._pending = self._pending, ""
-        return self._redact(ready)
+        try:
+            return self._redact(ready)
+        finally:
+            self.seconds += time.perf_counter() - start
 
     def _redact(self, text: str) -> str:
         result = redact(text)
