@@ -222,6 +222,22 @@ What `/metrics` exposes (`raglaw.monitoring.metrics`):
 - Faithfulness below **0.80**: `scripts/score_traces.py` is the scheduled evaluation. It samples the last day's answered `/ask` traces, scores each with RAGAS faithfulness against the article texts it was given, attaches the score to the trace in Langfuse, and pushes the mean to the Pushgateway (`raglaw_faithfulness`). Run it from cron or the CI runner: `uv run python scripts/score_traces.py --hours 24 --sample 20`, with `RAGLAW_PUSHGATEWAY_URL=http://localhost:9091` in `.env`.
 - Query drift below its line for 10 minutes.
 
+**The alert, tested on a real regression.**
+1. The API was pointed at the 3B generator (faithfulness 0.693 in Phase 9) and asked 25 eval questions.
+2. `score_traces.py` scored 20 of the answered traces at **0.761** and pushed the mean.
+3. Grafana's "Faithfulness below 0.80" fired, and the webhook received the notification.
+
+One wrong answer stood out: "the deadline to appeal a civil court judgment is fifteen days". That rule is in procedure law, not the Civil Code.
+
+**The judge.** The cloud judge (`gpt-oss:120b-cloud`) ran out of its free quota (HTTP 429), so RAGAS now uses a local one: `gemma3:12b` on Ollama. It's stronger than the 7B generator and from another family. It serves one call at a time, so RAGAS sends it 4 at once with 900 s each (`answer_evaluation.judge_workers` and `judge_timeout`). Scores from the two judges aren't directly comparable. Re-measured with the new judge, the q8 baseline scores all 57 answered questions:
+
+| Judge | Faithfulness | Answer relevancy | Context precision | Context recall |
+| --- | --- | --- | --- | --- |
+| `gpt-oss:120b-cloud` | 0.868 | 0.703 | 0.834 | 0.780 |
+| `gemma3:12b` | 0.905 | 0.636 | 0.886 | 0.927 |
+
+Source: `docs/metrics/answers_local_judge.json`. The new judge is more lenient on faithfulness. The 0.75 gate and the 0.80 alert still separate the 8-bit model (0.905) from the 3B regression (0.761). Eight traces alone once scored 0.796, so the scheduled evaluation samples 20.
+
 **Query drift.** Each question's embedding is compared with the eval set's centroid. The ratio is the window's mean cosine over the eval set's own (0.6689), so on-topic questions score about 1.0. The line is 3 standard errors below 1 for a 20-question window: 0.9461. On the real embedder (`docs/reports/drift.md`): the eval set scores 1.000, its halves 1.010 and 0.990, and 12 family-law questions (personal status law, not the Civil Code) 0.914.
 
 **PII guardrail** (`raglaw.monitoring.pii`). It redacts Egyptian national IDs (14 digits with a real birth date and governorate code), Egyptian mobile numbers, email addresses, and Arabic names after an honorific, in Western or Arabic-Indic digits. It runs on every `/ask` answer, and on `/ask/stream`, where it holds back the last 6 words until they're checked. On the Code's own text (1,149 articles, both languages, no personal data) it redacted nothing (0 false positives in 2,298 texts) and took 0.046 ms per text.
