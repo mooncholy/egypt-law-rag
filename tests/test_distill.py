@@ -46,7 +46,9 @@ def test_pairs_carry_the_teachers_logit_and_the_source_label(stub_reranker):
     teacher.score("q", ["a", "b", "c"])
     query, texts, scores = teacher.calls[0]
 
-    pairs = distill.pairs_for(query, texts, scores, [7, 8, 7], source=7)
+    pairs = distill.pairs_for(
+        query, texts, scores, [frozenset({7}), frozenset({8}), frozenset({7, 9})], 7
+    )
 
     assert [p["label"] for p in pairs] == [1.0, 0.0, 1.0]
     assert pairs[0]["teacher_logit"] == pytest.approx(0.0)

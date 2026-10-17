@@ -172,23 +172,24 @@ def pairs_for(
     query: str,
     texts: Sequence[str],
     scores: Sequence[float],
-    articles: Sequence[int],
+    articles: Sequence[frozenset[int]],
     source: int,
 ) -> list[dict[str, Any]]:
     """
     One training pair per candidate: the teacher's logit and the hard label.
 
-    ``articles`` gives each text's article number; the label is 1 for the
-    question's ``source`` article.
+    ``articles`` gives the articles each text stands for (a text two chunks
+    share stands for both); the label is 1 when the question's ``source``
+    article is among them.
     """
     return [
         {
             "query": query,
             "text": text,
             "teacher_logit": to_logit(score),
-            "label": float(article == source),
+            "label": float(source in numbers),
         }
-        for text, score, article in zip(texts, scores, articles, strict=True)
+        for text, score, numbers in zip(texts, scores, articles, strict=True)
     ]
 
 
