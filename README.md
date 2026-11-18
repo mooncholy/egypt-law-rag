@@ -275,4 +275,5 @@ MLflow's run comparison from Phase 6: reranking against the hybrid baseline, rec
 | [docs/monitoring.md](docs/monitoring.md) | Metrics, traces, alerts, query drift, the PII guardrail, token cost |
 | [docs/reports/0_source_pdf_analysis.md](docs/reports/0_source_pdf_analysis.md) | The source PDF's facts and the rules built on them |
 | [docs/normalization.md](docs/normalization.md) | Arabic normalization, shared by ingestion and query time |
+| [docs/guidelines.md](docs/guidelines.md) | The build phases and the check IDs (C1–C20, G1–G6, U-tests) the reports cite |
 | [docs/reports/](docs/reports/) | Every evaluation, comparison and benchmark report |

@@ -664,8 +664,8 @@ stages:
       size: 12572
     - path: src/raglaw/ingest/validate.py
       hash: md5
-      md5: a181ca53376522fbaed64f88de9e4a2b
-      size: 19343
+      md5: 17da0b5aa584adc9595c14235c2869a3
+      size: 19319
     - path: src/raglaw/records.py
       hash: md5
       md5: b470051d287b2c26fc47e23ff0baf566
@@ -690,5 +690,5 @@ stages:
       size: 1826
     - path: docs/reports/corpus_validation.md
       hash: md5
-      md5: 8015abadb2574abb7506f51b2120a305
-      size: 2212
+      md5: 263e64677e4aa62d8f990cdc58ba9a87
+      size: 2200
