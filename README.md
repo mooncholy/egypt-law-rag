@@ -11,7 +11,7 @@ It's a study project, not legal advice; read [Limitations and honesty](#limitati
 
 ### 1. Run the service, no clone needed
 
-All you need is Docker and about 16 GB of RAM. The images come from Docker Hub (`mooncholy/raglaw-api`, `mooncholy/raglaw-models`), with the index and the production retriever baked in, so there's no AWS account, data download or Python setup:
+All you need is Docker on an x86-64 (amd64) machine, with about 16 GB of memory available to Docker. On macOS and Windows, that's Docker Desktop's limit (Settings > Resources), not the machine's RAM. The images come from Docker Hub (`mooncholy/raglaw-api`, `mooncholy/raglaw-models`), with the index and the production retriever baked in, so there's no AWS account, data download or Python setup:
 
 ```bash
 mkdir egypt-law-rag && cd egypt-law-rag
@@ -58,6 +58,7 @@ curl -N localhost:8000/ask/stream -H 'Content-Type: application/json' \
 | `models` | 8001 | The embedder and reranker, on pinned revisions; weights in the `hf-cache` volume |
 | `ollama` | – | The generator, pulled once into the `ollama` volume |
 
+- **Apple Silicon and other ARM machines:** not supported yet. The `api` and `models` images on Docker Hub are built for amd64 only, so `docker compose up` stops with `no matching manifest for linux/arm64/v8`. A 4-core GitHub Codespace (x86, 16 GB) runs it with the 4-bit model below.
 - **Less than about 16 GB of RAM** (a 4-core GitHub Codespace, say): run `RAGLAW_LLM_MODEL=qwen2.5:7b-instruct-q4_K_M docker compose up`. That's the same model in 4 bits, 4.7 GB instead of 8.1 GB, but it isn't measured.
 - **CPU only:** the published images run on CPU, and answer slowly. To use an NVIDIA GPU, clone the repository (step 2): the GPU build of the `models` image is built from it.
 - **To stop:** `docker compose down`. The volumes keep the models for the next start.
